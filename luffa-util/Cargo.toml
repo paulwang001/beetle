@@ -1,0 +1,23 @@
+[package]
+name = "luffa-util"
+version.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ctrlc.workspace = true
+cid.workspace = true
+futures.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+dirs-next.workspace = true
+config.workspace = true
+serde.workspace = true
+rlimit.workspace = true
+sysinfo.workspace = true
+thiserror.workspace = true
+humansize.workspace = true
+
+[target.'cfg(unix)'.dev-dependencies]
+nix.workspace = true

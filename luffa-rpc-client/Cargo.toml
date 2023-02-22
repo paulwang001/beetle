@@ -1,0 +1,23 @@
+[package]
+name = "luffa-rpc-client"
+version.workspace = true
+edition.workspace = true
+
+
+[dependencies]
+anyhow.workspace = true
+async-stream.workspace = true
+bytes.workspace = true
+cid.workspace = true
+config.workspace = true
+futures.workspace = true
+hyper.workspace = true
+luffa-metrics.workspace = true
+luffa-rpc-types.workspace = true
+luffa-util.workspace = true
+libp2p = { workspace = true, features = ["gossipsub"] }
+quic-rpc = { workspace = true, features = ["http2"] }
+serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["sync"] }
+# toml.workspace = true
+tracing.workspace = true

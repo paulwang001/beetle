@@ -1,0 +1,34 @@
+[package]
+name = "luffa"
+version.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+cid.workspace = true
+async-stream.workspace = true
+clap = { workspace = true, features = ["derive"] }
+config.workspace = true
+console.workspace = true
+crossterm.workspace = true
+futures.workspace = true
+git-version.workspace = true
+indicatif.workspace = true
+libp2p.workspace = true
+luffa-process.workspace = true
+luffa-metrics.workspace = true
+luffa-rpc-client.workspace = true
+luffa-bitswap.workspace = true
+luffa-util.workspace = true
+serde = { workspace = true, features = ["derive"] }
+sysinfo.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util"] }
+tracing.workspace = true
+which.workspace = true
+thiserror.workspace = true
+multihash.workspace = true
+libipld.workspace = true
