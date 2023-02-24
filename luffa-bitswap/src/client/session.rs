@@ -123,6 +123,7 @@ impl Session {
                         break;
                     }
                     oper = incoming_r.recv() => {
+                        info!("session incoming: {oper:?}");
                         match oper {
                             Ok(Op::Receive(keys)) => {
                                 loop_state.handle_receive(keys).await;
@@ -224,7 +225,7 @@ impl Session {
         haves: &[Cid],
         dont_haves: &[Cid],
     ) {
-        debug!(
+        warn!(
             "session:{}: received updates from: {:?} keys: {:?}\n  haves: {:?}\n  dont_haves: {:?}",
             self.inner.id,
             from.map(|s| s.to_string()),
@@ -297,7 +298,7 @@ impl Session {
     /// guaranteed on the returned blocks.
     pub async fn get_blocks(&self, keys: &[Cid]) -> Result<BlockReceiver> {
         ensure!(!keys.is_empty(), "missing keys");
-        debug!("get blocks: {:?}", keys);
+        tracing::warn!("get blocks: {:?}", keys);
 
         let (s, r) = async_channel::bounded(8);
         let mut remaining: AHashSet<Cid> = keys.iter().copied().collect();
@@ -318,7 +319,7 @@ impl Session {
                             Ok(block) => {
                                 let cid = *block.cid();
                                 if remaining.contains(&cid) {
-                                    debug!("received wanted block {}", cid);
+                                    tracing::warn!("received wanted block {}", cid);
                                     match s.send(block).await {
                                         Ok(_) => {
                                             remaining.remove(&cid);
@@ -331,7 +332,7 @@ impl Session {
                                 }
 
                                 if remaining.is_empty() {
-                                    debug!("found all requested blocks");
+                                    tracing::warn!("found all requested blocks");
                                     break;
                                 }
                             }

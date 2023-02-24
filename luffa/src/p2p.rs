@@ -36,6 +36,22 @@ pub enum P2pCommands {
     #[clap(about = "List connected peers")]
     #[clap(after_help = "")]
     Peers {},
+
+    #[clap(about = "List addresses")]
+    #[clap(after_help = "")]
+    Addresses {},
+
+    #[clap(about = "Mesh peers")]
+    #[clap(after_help = "")]
+    Mesh { topic: String },
+
+    #[clap(about = "Push ")]
+    #[clap(after_help = "")]
+    Push { data: String },
+
+    #[clap(about = "Fetch ")]
+    #[clap(after_help = "")]
+    Fetch { ctx: u64, cid: String },
 }
 
 #[derive(Debug, Clone)]
@@ -77,11 +93,38 @@ pub async fn run_command(p2p: &P2pApi, cmd: &P2p) -> Result<()> {
                 Some(addr) => p2p.lookup(&addr.0).await?,
                 None => p2p.lookup_local().await?,
             };
+            
             display_lookup(&lookup);
         }
         P2pCommands::Peers {} => {
             let peers = p2p.peers().await?;
             display_peers(peers);
+        }
+        P2pCommands::Addresses {} => {  
+            let addresses = p2p.addresses().await?;
+            display_addresses(addresses);
+        }
+        P2pCommands::Mesh { topic } =>{
+            let peers = p2p.mesh_peers(topic.clone()).await?;
+            for (i,peer) in peers.into_iter().enumerate() {
+                println!("{} [{}] {}",topic,i+1,peer.to_string());
+            }
+        }
+        P2pCommands::Push { data } =>{
+            let cid = p2p.push(bytes::Bytes::from(data.as_bytes().to_vec())).await?;
+            println!("cid: {}",cid.to_string());
+        }
+        P2pCommands::Fetch { ctx, cid } => {
+            let cid = cid::Cid::from_str(cid)?;
+            let data = p2p.fetch(*ctx, cid).await?;
+            match data {
+                Some(data)=>{
+                    println!("not found: {}",String::from_utf8(data.to_vec()).unwrap());
+                }
+                None=>{
+                    println!("not found: {cid}");
+                }
+            }
         }
     };
     Ok(())
@@ -115,6 +158,12 @@ fn display_lookup(l: &Lookup) {
         format!("({}):", l.protocols.len()).bold().dim(),
         l.protocols.join("\n  ")
     );
+}
+
+fn display_addresses(addresses: Vec<Multiaddr>) {
+    for (i, addr) in addresses.into_iter().enumerate() {
+        println!("{}:{}", i + 1, addr.to_string());
+    }
 }
 
 fn display_peers(peers: HashMap<PeerId, Vec<Multiaddr>>) {

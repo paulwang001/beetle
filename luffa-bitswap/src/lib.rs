@@ -26,7 +26,7 @@ use luffa_metrics::record;
 use luffa_metrics::{bitswap::BitswapMetrics, core::MRecorder, inc};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
-use tracing::{debug, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 use self::client::{Client, Config as ClientConfig};
 use self::message::BitswapMessage;
@@ -301,6 +301,7 @@ impl<S: Store> Bitswap<S> {
     fn receive_message(&self, peer: PeerId, message: BitswapMessage) {
         inc!(BitswapMetrics::MessagesReceived);
         record!(BitswapMetrics::MessageBytesIn, message.encoded_len() as u64);
+        info!("receive_message: {peer:?} ->{message:?}");
         // TODO: Handle backpressure properly
         if let Err(err) = self.incoming_messages.try_send((peer, message)) {
             warn!(

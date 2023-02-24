@@ -7,10 +7,12 @@ use futures::stream::BoxStream;
 use futures::{StreamExt, TryStreamExt};
 use libipld::{
     cbor::DagCborCodec,
-    prelude::{Codec, Encode},
+    prelude::{Codec, Decode, Encode},
     Ipld, IpldCodec,
 };
 use libp2p::gossipsub::{MessageId, TopicHash};
+use libp2p::multihash::Code;
+use luffa_bitswap::Block;
 use luffa_metrics::config::Config as MetricsConfig;
 use luffa_rpc_client::Config as RpcClientConfig;
 use luffa_rpc_client::{Client, ClientStatus};
@@ -19,11 +21,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use luffa_util::{insert_into_config_map, luffa_config_path, make_config};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
-/// CONFIG_FILE_NAME is the name of the optional config file located in the iroh home directory
+/// CONFIG_FILE_NAME is the name of the optional config file located in the luffa home directory
 pub const CONFIG_FILE_NAME: &str = "ctl.config.toml";
 /// ENV_PREFIX should be used along side the config field name to set a config field using
 /// environment variables
@@ -63,12 +66,12 @@ impl Source for Config {
     }
 }
 
-/// API to interact with an iroh system.
+/// API to interact with an luffa system.
 ///
-/// This provides an API to use the iroh system consisting of several services working
+/// This provides an API to use the luffa system consisting of several services working
 /// together.  It offers both a higher level API as well as some lower-level APIs.
 ///
-/// Unless working on iroh directly this should probably be constructed via the `iroh-embed`
+/// Unless working on luffa directly this should probably be constructed via the `luffa-embed`
 /// crate rather then directly.
 #[derive(Debug, Clone)]
 pub struct Api {
@@ -92,7 +95,7 @@ impl fmt::Debug for OutType {
 }
 
 impl Api {
-    /// Creates a new instance from the iroh configuration.
+    /// Creates a new instance from the luffa configuration.
     ///
     /// This loads configuration from an optional configuration file and environment
     /// variables.
@@ -174,6 +177,10 @@ impl Api {
                 let providers = providers.collect::<Vec<_>>();
                 let mut itr = providers.await.into_iter();
                 while let Some(Ok(pp)) = itr.next() {
+                    tracing::warn!("fetch from: {pp:?}");
+                    if pp.is_empty() {
+                        continue;
+                    }
                     if let Ok(data) = p2p.fetch_bitswap(ctx, cid, pp).await {
                         return Ok(Some(data));
                     }
@@ -184,20 +191,27 @@ impl Api {
         }
     }
 
-    pub async fn put(&self, data: Bytes) -> Result<()> {
-        let data = DagCborCodec.encode(&data[..]).unwrap();
-        let cid = Cid::new_v1(DagCborCodec.into(), multihash::Code::Sha2_256.digest(&data));
-        self.client.try_p2p().unwrap().start_providing(&cid).await?;
+    pub async fn put(&self, data: Bytes) -> Result<Cid> {
+        let rsp = self.client.try_p2p().unwrap().push_data(data).await?;
+        // let data = data.to_vec();
+        // let cid = Cid::new_v1(DagCborCodec.into(), multihash::Code::Sha2_256.digest(&data));
+        // self.client
+        //     .try_p2p()
+        //     .unwrap()
+        //     .start_providing(&rsp.cid)
+        //     .await?;
+        // self.client
+        //     .try_store()
+        //     .unwrap()
+        //     .put(cid, Bytes::from(data), vec![])
+        //     .await?;
 
-        self.client
-            .try_store()
-            .unwrap()
-            .put(cid, Bytes::from(data), vec![])
-            .await
+        Ok(rsp.cid)
+
     }
 
-    pub async fn put_record(&self, data: Bytes, expires: Option<u64>) -> Result<()> {
-        let data = DagCborCodec.encode(&data[..]).unwrap();
+    pub async fn put_record(&self, data: Bytes, expires: Option<u64>) -> Result<Cid> {
+        let data = data.to_vec();
         let cid = Cid::new_v1(DagCborCodec.into(), multihash::Code::Sha2_256.digest(&data));
         let publisher = match self.client.try_p2p().unwrap().local_peer_id().await {
             Ok(p) => Some(p),
@@ -208,6 +222,15 @@ impl Api {
             .try_p2p()
             .unwrap()
             .put_record(&cid, data, publisher, expires)
-            .await
+            .await?;
+        Ok(cid)
+    }
+    pub async fn get_record(&self, key: &String) -> Result<Option<Bytes>> {
+        let key = Cid::from_str(&key)?;
+        if let Ok(rsp) = self.client.try_p2p().unwrap().get_record(&key).await {
+            Ok(Some(rsp.data))
+        } else {
+            Ok(None)
+        }
     }
 }

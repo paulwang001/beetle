@@ -9,8 +9,8 @@ use luffa_util::insert_into_config_map;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// CONFIG_FILE_NAME is the name of the optional config file located in the iroh home directory
-pub const CONFIG_FILE_NAME: &str = "luffa.config.toml";
+/// CONFIG_FILE_NAME is the name of the optional config file located in the luffa home directory
+pub const CONFIG_FILE_NAME: &str = "luffa.relay.toml";
 /// ENV_PREFIX should be used along side the config field name to set a config field using
 /// environment variables
 /// For example, `LUFFA_ONE_PORT=1000` would set the value of the `Config.port` field
@@ -49,8 +49,6 @@ impl Config {
 
     /// When running in single binary mode, the resolver will use memory channels to
     /// communicate with the p2p and store modules.
-    /// The gateway itself is exposing a grpc endpoint to be also usable
-    /// as a single entry point for other system services.
     pub fn default_rpc_config() -> RpcClientConfig {
         RpcClientConfig {
             p2p_addr: None,
@@ -96,9 +94,12 @@ fn default_p2p_config(
     ipfsd: RpcClientConfig,
     key_store_path: PathBuf,
 ) -> luffa_node::config::Config {
+    let mut p2p_config = Libp2pConfig::default();
+    p2p_config.bootstrap_peers = vec![];
+
     luffa_node::config::Config {
         key_store_path,
-        libp2p: Libp2pConfig::default(),
+        libp2p: p2p_config,
         rpc_client: ipfsd,
     }
 }

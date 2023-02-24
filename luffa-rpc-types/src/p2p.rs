@@ -52,6 +52,10 @@ pub struct BitswapResponse {
     pub data: Bytes,
     pub ctx: u64,
 }
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PushBitswapResponse {
+    pub cid: Cid,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct FetchProvidersDhtRequest {
@@ -142,6 +146,10 @@ pub struct PutRecordRequest {
     pub publisher: Option<PeerId>,
     /// The expiration time as measured by a local, monotonic clock.
     pub expires: Option<u64>,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PushBitswapRequest {
+    pub data: Bytes,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -262,6 +270,7 @@ pub enum P2pRequest {
     StopProviding(StopProvidingRequest),
     GetRecordDht(GetRecordRequest),
     PutRecordDht(PutRecordRequest),
+    PushBitswap(PushBitswapRequest),
     LocalPeerId(LocalPeerIdRequest),
     ExternalAddrs(ExternalAddrsRequest),
     Listeners(ListenersRequest),
@@ -272,6 +281,7 @@ pub enum P2pResponse {
     Watch(WatchResponse),
     Version(VersionResponse),
     FetchBitswap(RpcResult<BitswapResponse>),
+    PushBitswap(RpcResult<PushBitswapResponse>),
     FetchProviderDht(RpcResult<FetchProvidersDhtResponse>),
     GetListeningAddrs(RpcResult<GetListeningAddrsResponse>),
     GetPeers(RpcResult<GetPeersResponse>),
@@ -315,6 +325,9 @@ impl RpcMsg<P2pService> for ShutdownRequest {
 
 impl RpcMsg<P2pService> for BitswapRequest {
     type Response = RpcResult<BitswapResponse>;
+}
+impl RpcMsg<P2pService> for PushBitswapRequest {
+    type Response = RpcResult<PushBitswapResponse>;
 }
 
 impl Msg<P2pService> for FetchProvidersDhtRequest {

@@ -8,13 +8,13 @@ use luffa_relay::{
     config::{Config, CONFIG_FILE_NAME, ENV_PREFIX},
 };
 use luffa_rpc_types::Addr;
-use luffa_util::lock::ProgramLock;
+// use luffa_util::lock::ProgramLock;
 use luffa_util::{luffa_config_path, make_config};
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
-    let mut lock = ProgramLock::new("luffa-relay")?;
-    lock.acquire_or_exit();
+    // let mut lock = ProgramLock::new("luffa-relay")?;
+    // lock.acquire_or_exit();
 
     let args = Args::parse();
 
@@ -43,10 +43,15 @@ async fn main() -> Result<()> {
     let (store_rpc, p2p_rpc) = {
         let store_recv = Addr::new_mem();
         let store_sender = store_recv.clone();
-        let p2p_recv = Addr::from_str("irpc://0.0.0.0:8887").unwrap();
-        let p2p_sender = p2p_recv.clone();
+        let p2p_recv = match config.rpc_client.p2p_addr.as_ref() {
+            Some(addr) => addr.clone(),
+            None => Addr::new_mem(),
+        };
+        // let p2p_recv = Addr::from_str("irpc://0.0.0.0:8887").unwrap();
+        // let p2p_recv = Addr::new_mem();
+        // let p2p_sender = p2p_recv.clone();
         config.rpc_client.store_addr = Some(store_sender);
-        config.rpc_client.p2p_addr = Some(p2p_sender);
+        // config.rpc_client.p2p_addr = Some(p2p_sender);
         config.synchronize_subconfigs();
 
         let store_rpc = luffa_relay::mem_store::start(store_recv, config.store.clone()).await?;

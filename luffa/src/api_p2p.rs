@@ -1,5 +1,6 @@
-use anyhow::Result;
-use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
+use anyhow::{Ok, Result};
+use futures::StreamExt;
+use libp2p::{gossipsub::TopicHash, multiaddr::Protocol, Multiaddr, PeerId};
 use luffa_rpc_client::{Lookup, P2pClient};
 use std::collections::HashMap;
 
@@ -52,6 +53,73 @@ impl P2p {
             .get_peers()
             .await
             .map_err(|e| map_service_error("relay", e))
+    }
+
+    pub async fn addresses(&self) -> Result<Vec<Multiaddr>> {
+        self.client
+            .external_addresses()
+            .await
+            .map_err(|e| map_service_error("relay", e))
+    }
+    pub async fn listening(&self) -> Result<(PeerId, Vec<Multiaddr>)> {
+        self.client
+            .get_listening_addrs()
+            .await
+            .map_err(|e| map_service_error("relay", e))
+    }
+
+    pub async fn publish(&self, topic: String, data: bytes::Bytes) -> Result<()> {
+        let topic_hash = TopicHash::from_raw(topic);
+        let msg = self.client.gossipsub_publish(topic_hash, data).await?;
+        tracing::info!("gossip publish:{msg:?}");
+        Ok(())
+    }
+
+    pub async fn subscribe(&self, topic: String) -> Result<bool> {
+        let topic_hash = TopicHash::from_raw(topic);
+        let msg = self.client.gossipsub_subscribe(topic_hash).await?;
+        tracing::info!("gossip subscribe:{msg:?}");
+        Ok(msg)
+    }
+    pub async fn unsubscribe(&self, topic: String) -> Result<bool> {
+        let topic_hash = TopicHash::from_raw(topic);
+        let msg = self.client.gossipsub_unsubscribe(topic_hash).await?;
+        tracing::info!("gossip unsubscribe:{msg:?}");
+        Ok(msg)
+    }
+    pub async fn mesh_peers(&self, topic: String) -> Result<Vec<PeerId>> {
+        let topic_hash = TopicHash::from_raw(topic);
+        self.client
+            .gossipsub_mesh_peers(topic_hash)
+            .await
+            .map_err(|e| map_service_error("relay", e))
+    }
+    pub async fn push(&self, data: bytes::Bytes) -> Result<cid::Cid> {
+        let rsp = self
+            .client
+            .push_data(data)
+            .await
+            .map_err(|e| map_service_error("relay", e))?;
+        Ok(rsp.cid)
+    }
+    pub async fn fetch(&self, ctx: u64, cid: cid::Cid) -> Result<Option<bytes::Bytes>> {
+        let providers = self.client.fetch_providers_dht(&cid).await?;
+        let providers = providers.collect::<Vec<_>>();
+        let mut itr = providers.await.into_iter();
+        while let Some(pp) = itr.next() {
+            let pp = pp.unwrap_or_default();
+            tracing::warn!("fetch from: {pp:?}");
+            if pp.is_empty() {
+                continue;
+            }
+            let rsp = self
+                .client
+                .fetch_bitswap(ctx, cid, pp)
+                .await
+                .map_err(|e| map_service_error("relay", e))?;
+            return Ok(Some(rsp));
+        }
+        Ok(None)
     }
 }
 

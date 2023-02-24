@@ -223,7 +223,7 @@ where
     }
 
     let cfg = builder.build()?;
-    debug!("make_config:\n{:#?}\n", cfg);
+    tracing::debug!("make_config:\n{:#?}\n", cfg);
     let cfg: T = cfg.try_deserialize()?;
     Ok(cfg)
 }

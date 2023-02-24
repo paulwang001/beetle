@@ -54,7 +54,7 @@ impl P2pClient {
         cid: Cid,
         providers: HashSet<PeerId>,
     ) -> Result<Bytes> {
-        debug!("rpc p2p client fetch_bitswap: {:?}", cid);
+        warn!("rpc p2p client fetch_bitswap: {:?}", cid);
         let providers = providers.into_iter().collect();
         let res = self
             .client
@@ -132,6 +132,12 @@ impl P2pClient {
         };
         self.client.rpc(req).await??;
         Ok(())
+    }
+    #[tracing::instrument(skip(self, data))]
+    pub async fn push_data(&self, data: Bytes) -> Result<PushBitswapResponse> {
+        let req = PushBitswapRequest { data };
+        let rsp = self.client.rpc(req).await??;
+        Ok(rsp)
     }
 
     #[tracing::instrument(skip(self))]

@@ -3,15 +3,15 @@ use clap::Parser;
 use luffa_node::config::{Config, CONFIG_FILE_NAME, ENV_PREFIX};
 use luffa_node::ServerConfig;
 use luffa_node::{cli::Args, metrics, DiskStorage, Keychain, Node};
-use luffa_util::lock::ProgramLock;
+// use luffa_util::lock::ProgramLock;
 use luffa_util::{luffa_config_path, make_config};
 use tokio::task;
 use tracing::error;
 
 /// Starts daemon process
 fn main() -> Result<()> {
-    let mut lock = ProgramLock::new("luffa-node")?;
-    lock.acquire_or_exit();
+    // let mut lock = ProgramLock::new("luffa-node")?;
+    // lock.acquire_or_exit();
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .max_blocking_threads(2048)
@@ -54,15 +54,21 @@ fn main() -> Result<()> {
                 Ok(soft) => tracing::debug!("NOFILE limit: soft = {}", soft),
                 Err(err) => error!("Error increasing NOFILE limit: {}", err),
             }
-        }
-
+        } 
+        tracing::info!("network_config:{network_config:?}");
         let network_config = Config::from(network_config);
         let kc = Keychain::<DiskStorage>::new(network_config.key_store_path.clone()).await?;
         let rpc_addr = network_config
             .rpc_addr()
             .ok_or_else(|| anyhow!("missing p2p rpc addr"))?;
         let mut p2p = Node::new(network_config, rpc_addr, kc).await?;
-
+        let mut events = p2p.network_events(); 
+        task::spawn(async move {
+            while let Some(e) = events.recv().await {
+                tracing::warn!("e:{e:?}");
+            }
+            tracing::warn!("---------event exit-----------");
+        });
         // Start services
         let p2p_task = task::spawn(async move {
             if let Err(err) = p2p.run().await {

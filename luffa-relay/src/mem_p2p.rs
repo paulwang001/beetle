@@ -14,8 +14,9 @@ pub async fn start(rpc_addr: P2pAddr, config: Config) -> anyhow::Result<JoinHand
     let mut events = p2p.network_events();
     task::spawn(async move {
         while let Some(e) = events.recv().await {
-            tracing::info!("e:{e:?}");
+            tracing::warn!("e:{e:?}");
         }
+        tracing::warn!("---------event exit-----------");
     });
     // Start services
     let p2p_task = task::spawn(async move {

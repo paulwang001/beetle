@@ -12,14 +12,17 @@ async-trait.workspace = true
 async-stream.workspace = true
 bytecheck.workspace = true
 bytes.workspace = true
+clap = { workspace = true, features = ["derive"] }
 cid.workspace = true
 config.workspace = true
+ctrlc.workspace = true
 futures.workspace = true
 git-version.workspace = true
 rkyv = { workspace = true, features = ["validation"] }
 luffa-util.workspace = true
 luffa-rpc-client.workspace = true
 luffa-rpc-types.workspace = true
+luffa-metrics = { workspace = true, features = ["store"] }
 multihash.workspace = true
 rocksdb.workspace = true
 serde = { workspace = true, features = ["derive"] }
@@ -27,4 +30,3 @@ smallvec = { workspace = true, features = ["write"] }
 tokio = { workspace = true, features = ["rt"] }
 tracing.workspace = true
 
-luffa-metrics = { workspace = true, features = ["store"] }

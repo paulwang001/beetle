@@ -6,7 +6,13 @@ use std::time::Duration;
 use ahash::AHashMap;
 use anyhow::{anyhow, bail, Context, Result};
 use cid::Cid;
+use futures::SinkExt;
 use futures_util::stream::StreamExt;
+use libipld::{
+    cbor::DagCborCodec,
+    prelude::{Codec, Decode, Encode},
+    Ipld, IpldCodec,
+};
 use libp2p::core::Multiaddr;
 use libp2p::gossipsub::{GossipsubMessage, MessageId, TopicHash};
 pub use libp2p::gossipsub::{IdentTopic, Topic};
@@ -28,6 +34,7 @@ use luffa_bitswap::{BitswapEvent, Block};
 use luffa_metrics::{core::MRecorder, inc, libp2p_metrics, p2p::P2PMetrics};
 use luffa_rpc_client::{Client as RpcClient, Lookup};
 use luffa_rpc_types::p2p::P2pAddr;
+use multihash::MultihashDigest;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot::{self, Sender as OneShotSender};
 use tokio::task::JoinHandle;
@@ -139,7 +146,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             ..
         } = config;
         let rpc_task = tokio::task::spawn(async move {
-            // TODO: handle error
+            // start rpc server
             rpc::new(rpc_addr, P2p::new(network_sender_in))
                 .await
                 .unwrap()
@@ -189,7 +196,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         info!("Listen addrs: {:?}", self.listen_addrs());
         info!("Local Peer ID: {}", self.local_peer_id());
 
-        let mut nice_interval = self.use_dht.then(|| tokio::time::interval(NICE_INTERVAL));
+        let mut nice_interval = self.use_dht.then(|| tokio::time::interval(NICE_INTERVAL * 10));
         let mut bootstrap_interval = tokio::time::interval(BOOTSTRAP_INTERVAL);
         let mut expiry_interval = tokio::time::interval(EXPIRY_INTERVAL);
 
@@ -237,6 +244,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     }
                 }, if nice_interval.is_some() => {
                     // Print peer count on an interval.
+                    info!("Listen addrs: {:?}", self.listen_addrs());
+                    info!("Local Peer ID: {}", self.local_peer_id());
                     info!("Peers connected: {:?}", self.swarm.connected_peers().count());
                     // self.dht_nice_tick().await;
                 }
@@ -640,7 +649,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 }
                             }
                             GetRecordOk::FinishedWithNoAdditionalRecord { .. } => {
-                                todo!()
+                                warn!("FinishedWithNoAdditionalRecord");
                             }
                         },
                         QueryResult::GetRecord(Err(e)) => {
@@ -853,10 +862,31 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 response_channels,
                 providers,
             } => {
-                trace!("context:{} bitswap_request", ctx);
+                tracing::warn!("context:{} bitswap_request", ctx);
                 for (cid, response_channel) in cids.into_iter().zip(response_channels.into_iter()) {
                     self.want_block(ctx, cid, providers.clone(), response_channel)
                         .map_err(|err| anyhow!("Failed to send a bitswap want_block: {:?}", err))?;
+                }
+            }
+            RpcMessage::PushBitswapRequest { data, response_channels } => {
+                tracing::warn!("PushBitswapRequest:--{}---",data.len());
+                let cid = Cid::new_v1(DagCborCodec.into(), multihash::Code::Sha2_256.digest(&data[..]));
+
+                let store = self.rpc_client.try_store().unwrap();
+                let blob = data.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = store.put(cid, blob, vec![]).await {
+                        tracing::warn!("store put> {:?}",e);
+                    }
+                });
+                let ret = cid.clone();
+                if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
+                    let key = libp2p::kad::record::Key::new(&ret.hash().to_bytes());
+                    kad.start_providing(key).map_err(|_|anyhow!("Failed to push bitswap") )?;
+                }
+                self.swarm.behaviour().notify_new_blocks(vec![Block {cid,data}]);
+                for channel in response_channels {
+                    channel.send(Ok(ret.clone())).map_err(|_| anyhow!("Failed to push bitswap"))?;
                 }
             }
             RpcMessage::BitswapNotifyNewBlocks {
@@ -935,7 +965,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
                     let key = record.key.clone();
                     match kad
-                        .put_record(record, Quorum::N(NonZeroUsize::new(3).expect("3 != 1")))
+                        .put_record(record, Quorum::N(NonZeroUsize::new(2).expect("3 != 1")))
                         .map_err(|e| e.into())
                     {
                         Ok(q) => match self.record_on_dht_queries.entry(key.to_vec()) {
@@ -1096,7 +1126,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     }
                     rpc::GossipsubMessage::Publish(response_channel, topic_hash, bytes) => {
                         let res = gossipsub
-                            .publish(IdentTopic::new(topic_hash.into_string()), bytes.to_vec());
+                            .publish(topic_hash, bytes.to_vec());
                         response_channel
                             .send(res)
                             .map_err(|_| anyhow!("sender dropped"))?;

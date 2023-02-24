@@ -32,7 +32,7 @@ pub enum ServiceType {
 impl ServiceType {
     pub fn name(&self) -> &'static str {
         match self {
-            ServiceType::P2p => "p2p",
+            ServiceType::P2p => "relay",
             ServiceType::Store => "store",
         }
     }

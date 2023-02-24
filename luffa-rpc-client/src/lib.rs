@@ -51,6 +51,7 @@ pub async fn create_server<S: Service>(
             // Ok(Some(RpcServer::new(combined::Channel::new(Some(addr), None))))
         }
         Addr::Irpc(addr) => {
+            tracing::warn!("Rpc server host on {addr:?}");
             let channel = quic_rpc::transport::http2::ServerChannel::serve(&addr)?;
             let channel = combined::ServerChannel::new(Some(channel), None);
             let server = RpcServer::new(channel);
@@ -68,7 +69,9 @@ pub async fn open_client<S: Service>(addr: Addr<S>) -> anyhow::Result<RpcClient<
         Addr::Irpc(uri) => {
             let uri = format!("http://{uri}").parse()?;
             let channel = http2::ClientChannel::new(uri);
+            
             let channel = combined::ClientChannel::new(Some(channel), None);
+            
             Ok(RpcClient::<S, ChannelTypes>::new(channel))
         }
         Addr::IrpcLookup(_addr) => {

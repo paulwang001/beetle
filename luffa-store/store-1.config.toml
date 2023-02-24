@@ -1,0 +1,3 @@
+[store]
+path = "/home/snqu/.local/share/store-1"
+rpc_client = { store_addr = "irpc://0.0.0.0:30001",channels = 4 }

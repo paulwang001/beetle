@@ -103,7 +103,7 @@ pub struct Config {
     /// Configuration for libp2p.
     pub libp2p: Libp2pConfig,
 
-    /// Configuration of RPC to other iroh services.
+    /// Configuration of RPC to other luffa services.
     pub rpc_client: RpcClientConfig,
 
     /// Directory where cryptographic keys are stored.
@@ -207,7 +207,7 @@ impl Default for Libp2pConfig {
 
         Self {
             listening_multiaddrs: vec![
-                "/ip4/0.0.0.0/tcp/8888".parse().unwrap(),
+                // "/ip4/0.0.0.0/tcp/8888".parse().unwrap(),
                 "/ip4/0.0.0.0/udp/8889/quic-v1".parse().unwrap(),
             ],
             bootstrap_peers,

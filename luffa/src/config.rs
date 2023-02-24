@@ -1,26 +1,29 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
 use config::{ConfigError, Map, Source, Value};
-use luffa_util::insert_into_config_map;
+use luffa_util::{insert_into_config_map, luffa_data_path};
 use serde::{Deserialize, Serialize};
 
-/// CONFIG_FILE_NAME is the name of the optional config file located in the iroh home directory
+/// CONFIG_FILE_NAME is the name of the optional config file located in the luffa home directory
 pub const CONFIG_FILE_NAME: &str = "cli.config.toml";
+pub const STORE_FILE_NAME: &str = "luffa";
 /// ENV_PREFIX should be used along side the config field name to set a config field using
 /// environment variables
 /// For example, `LUFFA_CLI_PATH=/path/to/config` would set the value of the `Config.path` field
 pub const ENV_PREFIX: &str = "LUFFA_CLI";
 
-/// The configuration for the iroh cli.
+/// The configuration for the luffa cli.
 #[derive(PartialEq, Eq, Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
-    /// The set of services to start if no arguments are given to 'iroh start'
+    /// The set of services to start if no arguments are given to 'luffa start'
     pub start_default_services: Vec<String>,
 }
 
 impl Config {
     pub fn new() -> Self {
         Self {
-            start_default_services: vec!["node".to_string(), "relay".to_string()],
+            start_default_services: vec!["store".to_string(), "relay".to_string()],
         }
     }
 }

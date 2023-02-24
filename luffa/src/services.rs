@@ -21,7 +21,7 @@ const SERVICE_START_TIMEOUT_SECONDS: u64 = 15;
 /// Start any given services that aren't currently running.
 pub async fn start(api: &Api, services: &Vec<String>) -> Result<()> {
     let services = match services.is_empty() {
-        true => BTreeSet::from(["store", "node", "relay"]),
+        true => BTreeSet::from(["node", "relay"]),
         false => {
             let mut hs: BTreeSet<&str> = BTreeSet::new();
             for s in services {
@@ -129,7 +129,7 @@ async fn start_services(api: &Api, services: BTreeSet<&str>) -> Result<()> {
 /// identified by lockfiles
 pub async fn stop(api: &Api, services: &Vec<String>) -> Result<()> {
     let services = match services.is_empty() {
-        true => BTreeSet::from(["relay"]),
+        true => BTreeSet::from(["node", "relay"]),
         false => {
             let mut hs: BTreeSet<&str> = BTreeSet::new();
             for s in services {
@@ -156,7 +156,7 @@ pub async fn stop_services(api: &Api, services: BTreeSet<&str>) -> Result<()> {
                         if is_down {
                             println!("{}", "stopped".red());
                         } else {
-                            eprintln!("{}", format!("{service} API is still running, but the lock is removed.\nYou may need to manually stop iroh via your operating system").red());
+                            eprintln!("{}", format!("{service} API is still running, but the lock is removed.\nYou may need to manually stop luffa via your operating system").red());
                         }
                     }
                     Err(error) => {

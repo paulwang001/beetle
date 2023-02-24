@@ -41,7 +41,7 @@ impl Source for Config {
 impl Config {
     pub fn default_network() -> Self {
         Self {
-            p2p_addr: Some("irpc://127.0.0.1:4401".parse().unwrap()),
+            p2p_addr: Some("irpc://127.0.0.1:8887".parse().unwrap()),
             store_addr: Some("irpc://127.0.0.1:4402".parse().unwrap()),
             /// disable load balancing by default by just having 1 channel
             channels: Some(1),

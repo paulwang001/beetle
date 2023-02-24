@@ -1,22 +1,18 @@
-use std::collections::{BTreeSet, HashMap};
-use std::path::{Path, PathBuf};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::str::FromStr;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
-use console::style;
-use crossterm::style::Stylize;
-use futures::StreamExt;
-use indicatif::{ProgressBar, ProgressStyle};
 
+use libp2p::gossipsub::TopicHash;
 use luffa_metrics::config::Config as MetricsConfig;
-use luffa_util::{human, luffa_config_path, make_config};
+use luffa_util::{luffa_config_path, make_config};
 
 use crate::api::Api;
 use crate::config::{Config, CONFIG_FILE_NAME, ENV_PREFIX};
 
 use crate::p2p::{run_command as run_p2p_command, P2p};
-use crate::services::require_services;
-use crate::size::size_stream;
 
 #[derive(Parser, Debug, Clone)]
 #[clap(version, long_about = None, propagate_version = true)]
@@ -44,7 +40,7 @@ enum Commands {
         all: bool,
     },
     /// status checks the health of the different processes
-    #[clap(about = "Check the health of the different iroh services")]
+    #[clap(about = "Check the health of the different luffa services")]
     #[clap(after_help = "")]
     Status {
         #[clap(short, long)]
@@ -55,6 +51,50 @@ enum Commands {
     #[clap(after_help = "")]
     Stop {
         service: Vec<String>,
+    },
+
+    #[clap(about = "gossip publish")]
+    #[clap(after_help = "")]
+    Pub {
+        topic: String,
+        data: String,
+        codec: u8,
+    },
+
+    #[clap(about = "gossip sub")]
+    #[clap(after_help = "")]
+    Sub {
+        topic: String,
+        codec: u8,
+    },
+
+    #[clap(about = "gossip unsub")]
+    #[clap(after_help = "")]
+    UnSub {
+        topic: String,
+        codec: u8,
+    },
+
+    #[clap(about = "DHT Put Record")]
+    #[clap(after_help = "")]
+    Put {
+        data: String,
+        codec: u8,
+    },
+    #[clap(about = "DHT Get Record")]
+    #[clap(after_help = "")]
+    Get {
+        key: String,
+        codec: u8,
+    },
+    #[clap(about = "Bitswap Put Block")]
+    Push {
+        data: String,
+    },
+    #[clap(about = "Bitswap Fetch Block")]
+    Fetch {
+        ctx: u64,
+        cid: String,
     },
 }
 
@@ -105,6 +145,7 @@ impl Cli {
                         false => service.clone(),
                     },
                 };
+                
                 crate::services::start(api, &svc).await?;
             }
             Commands::Status { watch } => {
@@ -112,6 +153,56 @@ impl Cli {
             }
             Commands::Stop { service } => {
                 crate::services::stop(api, service).await?;
+            }
+            Commands::Put { data,.. } => {
+                // let (_,data) = multibase::decode(data)?;
+                let data = data.as_bytes();
+                let expires = Some(60);
+                let cid = api.put_record(bytes::Bytes::from(data.to_vec()),expires).await?;
+                println!("Put success, Cid: {}",cid.to_string());
+            }
+            Commands::Pub { topic, data, .. } => {
+                let data = data.as_bytes();
+                let data = bytes::Bytes::from(data.to_vec());
+                let msg_id = api.publish(TopicHash::from_raw(topic),data).await?;
+                println!("Pub success, id: {}",msg_id.to_string());
+            }
+            Commands::Get { key, .. } => {
+                match api.get_record(key).await? {
+                    Some(data)=>{
+                        println!("Get> {}",String::from_utf8(data.to_vec())?);
+                    }
+                    None=>{
+                        println!("Get not found: {}",key);
+                    }
+                }
+            }
+            Commands::Sub { topic, .. } =>{
+                let ret = api.subscribe(TopicHash::from_raw(topic)).await?;
+                println!("Sub topic:{}",ret);
+            }
+            Commands::UnSub { topic, .. } =>{
+                let ret = api.unsubscribe(TopicHash::from_raw(topic)).await?;
+                
+                println!("UnSub topic:{}",ret);
+            }
+            Commands::Push { data } =>{
+                let cid = api.put(bytes::Bytes::from(data.as_bytes().to_vec())).await?;
+                println!("Push: {}",cid.to_string());
+            }
+            Commands::Fetch { ctx,cid } =>{
+                let cid = cid::Cid::from_str(&cid)?;
+                match api.fetch_data(*ctx, cid).await {
+                    Ok(Some(data))=>{
+                        println!("Fetch> {cid} : {}",String::from_utf8(data.to_vec())?);
+                    }
+                    Ok(None)=>{
+                        println!("Fetch> {cid} not found.");
+                    }
+                    Err(e)=>{
+                        eprintln!("fetch error:{e:?}");
+                    }
+                }
             }
         };
 

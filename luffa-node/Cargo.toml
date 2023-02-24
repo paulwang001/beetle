@@ -24,6 +24,8 @@ luffa-rpc-client.workspace = true
 luffa-rpc-types.workspace = true
 luffa-bitswap.workspace = true
 lru.workspace = true
+libipld.workspace = true
+multihash.workspace = true
 rand.workspace = true
 serde = { workspace = true, features = ["derive"] }
 smallvec.workspace = true

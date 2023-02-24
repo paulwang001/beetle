@@ -10,7 +10,7 @@ async fn main() -> Result<()> {
     // version of `run` designed for testing purposes using mocked test
     // fixtures is invoked.
     // Without the `testing` feature, the version of
-    // `run` that interacts with the real Iroh API is used.
+    // `run` that interacts with the real Luffa API is used.
     let r = cli.run().await;
     let r = transform_error(r);
     match r {
@@ -32,7 +32,7 @@ fn transform_error(r: Result<()>) -> Result<()> {
             if let Some(luffa_rpc_client::ClientError::Open(_)) = rpc_error {
                 return Err(anyhow!(
                     "Connection refused. Are services running?\n{}",
-                    "hint: see 'iroh start' for more on starting services".yellow(),
+                    "hint: see 'luffa start' for more on starting services".yellow(),
                 ));
             }
 
@@ -41,7 +41,7 @@ fn transform_error(r: Result<()>) -> Result<()> {
                 return Err(anyhow!(
                     "Connection refused. This command requires a running {} service.\n{}",
                     service,
-                    format!("hint: try 'iroh start {service}'").yellow(),
+                    format!("hint: try 'luffa start {service}'").yellow(),
                 ));
             }
             Err(e)

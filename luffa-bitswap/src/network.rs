@@ -120,7 +120,7 @@ impl Network {
         tokio::time::timeout(timeout, async {
             let mut errors: Vec<anyhow::Error> = Vec::new();
             for i in 1..=retries {
-                debug!("send:{}: try {}/{}", peer, i, retries);
+                info!("send:{}: try {}/{}", peer, i, retries);
                 let (s, r) = oneshot::channel();
                 record!(
                     BitswapMetrics::MessageBytesOut,
@@ -211,7 +211,7 @@ impl Network {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         inc!(BitswapMetrics::AttemptedDials);
-        debug!("dial:{}: peer {}", dial_id, peer);
+        info!("dial:{}: peer {}", dial_id, peer);
         let res = tokio::time::timeout(timeout, async move {
             let (s, r) = oneshot::channel();
             self.network_out_sender
@@ -231,7 +231,7 @@ impl Network {
         .await
         .map_err(|e| anyhow!("dial:{} error: {:?}", dial_id, e))??;
 
-        debug!("dial:{}: success {}", dial_id, peer);
+        info!("dial:{}: success {}", dial_id, peer);
         inc!(BitswapMetrics::Dials);
 
         Ok(res)

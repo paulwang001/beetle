@@ -92,21 +92,22 @@ impl NodeBehaviour {
         let peer_id = pub_key.to_peer_id();
 
         let bitswap = if config.bitswap_client || config.bitswap_server {
-            info!("init bitswap");
             // TODO(dig): server only mode is not implemented yet
             let bs_config = if config.bitswap_server {
                 BitswapConfig::default()
             } else {
                 BitswapConfig::default_client_mode()
             };
+            warn!("init bitswap:{bs_config:?}");
             Some(Bitswap::new(peer_id, BitswapStore(rpc_client), bs_config).await)
         } else {
+            warn!("disabled bitswap");
             None
         }
         .into();
 
         let mdns = if config.mdns {
-            info!("init mdns");
+            warn!("init mdns");
             Some(Mdns::new(Default::default())?)
         } else {
             None
@@ -198,8 +199,11 @@ impl NodeBehaviour {
 
         let gossipsub = if config.gossipsub {
             info!("init gossipsub");
-            let gossipsub_config = gossipsub::GossipsubConfig::default();
+            let gossipsub_config = gossipsub::GossipsubConfigBuilder::default().validation_mode(gossipsub::ValidationMode::Strict).do_px().build().unwrap();
+            // let gossipsub_config = gossipsub::GossipsubConfig::default();
+            
             let message_authenticity = MessageAuthenticity::Signed(local_key.clone());
+            // let message_authenticity = MessageAuthenticity::Anonymous;
             Some(
                 gossipsub::Gossipsub::new(message_authenticity, gossipsub_config)
                     .map_err(|e| anyhow::anyhow!("{}", e))?,

@@ -27,7 +27,7 @@ use std::result;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::oneshot;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 
 use super::node::DEFAULT_PROVIDER_LIMIT;
 use crate::VERSION;
@@ -114,7 +114,7 @@ impl P2p {
         let ctx = req.ctx;
         let cid = req.cid;
 
-        trace!("context:{}, received fetch_bitswap: {:?}", ctx, cid);
+        warn!("context:{}, received fetch_bitswap: {:?}", ctx, cid);
         let providers = req.providers.into_iter().collect();
 
         let (s, r) = oneshot::channel();
@@ -145,6 +145,24 @@ impl P2p {
             data: block.data,
             ctx,
         })
+    }
+
+    #[tracing::instrument(skip(self, req))]
+    async fn push_bitswap(self, req: PushBitswapRequest) -> Result<PushBitswapResponse> {
+        let PushBitswapRequest { data } = req;
+
+        let (s, r) = oneshot::channel();
+        let msg = RpcMessage::PushBitswapRequest {
+            data,
+            response_channels: vec![s],
+        };
+        self.sender.send(msg).await?;
+        let cid = r
+            .await
+            .map_err(|_| anyhow!("bitswap req shut down"))?
+            .map_err(|e| anyhow!("bitswap: {}", e))?;
+
+        Ok(PushBitswapResponse { cid })
     }
 
     #[tracing::instrument(skip(self, req))]
@@ -596,6 +614,7 @@ async fn dispatch(s: P2pServer, req: P2pRequest, chan: ServerSocket<P2pService>,
         Version(req) => s.rpc(req, chan, target, P2p::version).await,
         Shutdown(req) => s.rpc_map_err(req, chan, target, P2p::shutdown).await,
         FetchBitswap(req) => s.rpc_map_err(req, chan, target, P2p::fetch_bitswap).await,
+        PushBitswap(req) => s.rpc_map_err(req, chan, target, P2p::push_bitswap).await,
         GossipsubAddExplicitPeer(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_add_explicit_peer).await,
         GossipsubAllPeers(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_all_peers).await,
         GossipsubMeshPeers(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_mesh_peers).await,
@@ -681,6 +700,10 @@ pub enum RpcMessage {
         cids: Vec<Cid>,
         response_channels: Vec<oneshot::Sender<Result<Block, String>>>,
         providers: HashSet<PeerId>,
+    },
+    PushBitswapRequest {
+        data: Bytes,
+        response_channels: Vec<oneshot::Sender<Result<Cid, String>>>,
     },
     BitswapNotifyNewBlocks {
         blocks: Vec<Block>,

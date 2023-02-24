@@ -1,0 +1,3 @@
+[rpc_client]
+p2p_addr = "irpc://127.0.0.1:40001"
+store_addr = "irpc://127.0.0.1:30001"

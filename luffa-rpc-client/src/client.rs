@@ -109,6 +109,9 @@ impl Client {
                 store.clients.push(sc);
             }
         }
+        else{
+            tracing::warn!("not use store!!!");
+        }
 
         Ok(Client { p2p, store })
     }
