@@ -6,7 +6,6 @@ use std::time::Duration;
 use ahash::AHashMap;
 use anyhow::{anyhow, bail, Context, Result};
 use cid::Cid;
-use futures::SinkExt;
 use futures_util::stream::StreamExt;
 use libipld::{
     cbor::DagCborCodec,
@@ -104,6 +103,7 @@ impl<T: Storage> fmt::Debug for Node<T> {
             .field("lookup_queries", &self.lookup_queries)
             .field("find_on_dht_queries", &self.find_on_dht_queries)
             .field("record_on_dht_queries", &self.record_on_dht_queries)
+            .field("provider_on_dht_queries", &self.provider_on_dht_queries)
             .field("network_events", &self.network_events)
             .field("rpc_client", &self.rpc_client)
             .field("_keychain", &self._keychain)
@@ -244,9 +244,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     }
                 }, if nice_interval.is_some() => {
                     // Print peer count on an interval.
-                    info!("Listen addrs: {:?}", self.listen_addrs());
-                    info!("Local Peer ID: {}", self.local_peer_id());
-                    info!("Peers connected: {:?}", self.swarm.connected_peers().count());
+                    info!("[{}] Peers connected: {:?}",self.local_peer_id(), self.swarm.connected_peers().count());
                     // self.dht_nice_tick().await;
                 }
                 _ = bootstrap_interval.tick() => {
@@ -332,6 +330,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         }
     }
 
+    /// Subscribe to [`NetworkEvent`]s.
+    #[tracing::instrument(skip(self))]
+    pub fn network_events(&mut self) -> Receiver<NetworkEvent> {
+        let (s, r) = channel(512);
+        self.network_events.push(s);
+        r
+    }
+
     fn destroy_session(&mut self, ctx: u64, response_channel: oneshot::Sender<Result<()>>) {
         if let Some(bs) = self.swarm.behaviour().bitswap.as_ref() {
             let workers = self.bitswap_sessions.remove(&ctx);
@@ -361,14 +367,6 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         }
     }
 
-    /// Subscribe to [`NetworkEvent`]s.
-    #[tracing::instrument(skip(self))]
-    pub fn network_events(&mut self) -> Receiver<NetworkEvent> {
-        let (s, r) = channel(512);
-        self.network_events.push(s);
-        r
-    }
-
     /// Send a request for data over bitswap
     fn want_block(
         &mut self,
@@ -378,9 +376,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         mut chan: OneShotSender<Result<Block, String>>,
     ) -> Result<()> {
         if let Some(bs) = self.swarm.behaviour().bitswap.as_ref() {
+            
             let client = bs.client().clone();
             let (closer_s, closer_r) = oneshot::channel();
-
+            
             let entry = self.bitswap_sessions.entry(ctx).or_default();
 
             let providers: Vec<_> = providers.into_iter().collect();
@@ -743,6 +742,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             }
                         }
                     }
+                    if let Some(bitswap) = self.swarm.behaviour().bitswap.as_ref() {
+                        bitswap.on_identify(&peer_id, &info.protocols);
+                    }
 
                     self.swarm
                         .behaviour_mut()
@@ -826,6 +828,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 }
                 mdns::Event::Expired(_) => {}
             },
+            Event::Bitswap(e)=>{
+                
+            }
             _ => {
                 // TODO: check all important events are handled
             }
@@ -863,9 +868,29 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 providers,
             } => {
                 tracing::warn!("context:{} bitswap_request", ctx);
-                for (cid, response_channel) in cids.into_iter().zip(response_channels.into_iter()) {
-                    self.want_block(ctx, cid, providers.clone(), response_channel)
-                        .map_err(|err| anyhow!("Failed to send a bitswap want_block: {:?}", err))?;
+                let store = self.rpc_client.try_store().unwrap();
+                let (tx,rx) = std::sync::mpsc::channel();
+                tokio::spawn(async move {
+                    for (cid, response_channel) in cids.into_iter().zip(response_channels.into_iter()) {
+                        match store.get(cid).await {
+                            Ok(Some(blob))=>{
+                                let blk = Block::new(blob, cid);
+                                if let Err(e) = response_channel.send(Ok(blk)) {
+                                    tracing::error!("{e:?}");
+                                }
+                            }
+                            _=>{
+                                tx.send((cid,response_channel)).unwrap();    
+                            }
+                        }
+                        
+                    }
+                });
+                while let Ok((cid, response_channel)) = rx.recv() {
+                    if let Err(e) = self.want_block(ctx, cid, providers.clone(), response_channel)
+                    .map_err(|err| anyhow!("Failed to send a bitswap want_block: {:?}", err)) {
+                        tracing::error!("{e:?}");
+                    }
                 }
             }
             RpcMessage::PushBitswapRequest { data, response_channels } => {
@@ -1227,7 +1252,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
     }
 }
 
-async fn load_identity<S: Storage>(kc: &mut Keychain<S>) -> Result<Keypair> {
+pub async fn load_identity<S: Storage>(kc: &mut Keychain<S>) -> Result<Keypair> {
     if kc.is_empty().await? {
         info!("no identity found, creating",);
         kc.create_ed25519_key().await?;

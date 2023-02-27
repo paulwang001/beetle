@@ -1,4 +1,5 @@
 pub mod addr;
+pub mod im;
 pub mod p2p;
 pub mod store;
 

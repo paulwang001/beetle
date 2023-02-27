@@ -1,13 +1,13 @@
 use bytes::Bytes;
 use cid::Cid;
 use derive_more::{From, TryInto};
-use libp2p::{kad::Record, Multiaddr, PeerId};
+use libp2p::{Multiaddr, PeerId};
 use quic_rpc::{
     message::{Msg, RpcMsg, ServerStreaming},
     Service,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, time::Instant};
+use std::collections::BTreeMap;
 
 use crate::{RpcResult, VersionRequest, VersionResponse, WatchRequest, WatchResponse};
 

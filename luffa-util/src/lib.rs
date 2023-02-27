@@ -14,7 +14,6 @@ use std::{
         Arc,
     },
 };
-use tracing::debug;
 
 pub mod exitcodes;
 pub mod human;

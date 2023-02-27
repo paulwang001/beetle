@@ -119,7 +119,7 @@ pub async fn run_command(p2p: &P2pApi, cmd: &P2p) -> Result<()> {
             let data = p2p.fetch(*ctx, cid).await?;
             match data {
                 Some(data)=>{
-                    println!("not found: {}",String::from_utf8(data.to_vec()).unwrap());
+                    println!("found: {}",String::from_utf8(data.to_vec()).unwrap());
                 }
                 None=>{
                     println!("not found: {cid}");

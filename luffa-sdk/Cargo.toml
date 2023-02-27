@@ -1,32 +1,42 @@
 [package]
-name = "luffa-relay"
+name = "luffa-sdk"
 version.workspace = true
 edition.workspace = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["staticlib","cdylib"]
 
 [dependencies]
+aes-gcm.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
-# axum.workspace = true
+
+bson.workspace = true
 bytes.workspace = true
 cid.workspace = true
 clap = { workspace = true, features = ["derive"] }
 config.workspace = true
 crc64fast.workspace = true
 futures.workspace = true
-# headers.workspace = true
-# http-serde.workspace = true
-# hyper.workspace = true
+lazy_static.workspace = true
 luffa-metrics.workspace = true
 luffa-node.workspace = true
 luffa-rpc-client.workspace = true
 luffa-rpc-types.workspace = true
 luffa-store.workspace = true
 luffa-util.workspace = true
+
+multibase.workspace = true
 # reqwest = { workspace = true, features = ["rustls-tls"] }
+rand.workspace = true
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process"] }
 tracing.workspace = true
 libp2p = { workspace = true, features = ["gossipsub"] }
-luffa = { version = "0.1.0", path = "../luffa" }
+uniffi = { version = "0.23.0", features = ["cli"] }
+
+
+
+[build-dependencies]
+uniffi = { version = "0.23.0", features = ["build"] }

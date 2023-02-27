@@ -1,0 +1,86 @@
+namespace Luffa {
+
+};
+
+dictionary Event {
+    u64 did;
+    u64 event_time;
+    u64 crc;
+    sequence<u8>? nonce;
+    sequence<u8> msg;
+};
+
+[Enum]
+interface Message {
+  StatusSync(u64 did, AppStatus status);
+  RelayNode(u64 did);
+  ContactsSync(u64 did,sequence<Contacts> contacts);
+  ContactsExchange(ContactsEvent exchange);
+  Chat(ChatContent content);
+};
+
+dictionary Contacts {
+    u64 did;
+    ContactsTypes type;
+};
+
+dictionary ContactsToken {
+    sequence<u8> public_key;
+    u64 create_at;
+    sequence<u8> sign;
+    sequence<u8> secret_key;
+    ContactsTypes contacts_type;
+    string? comment;
+};
+
+[Enum]
+interface ContactsEvent {
+    Offer(ContactsToken token);
+    Answer(ContactsToken token);
+};
+
+[Enum]
+interface ChatContent {
+    Receipt(ReceiptStatus status);
+    Send(u64 publisher_id,ContentData data);
+};
+
+[Enum]
+interface ContentData {
+    Text(DataSource source,string? reference);
+    Link(string txt,string url,string? reference);
+    Media(string title,MediaTypes m_type,DataSource source);
+};
+[Enum]
+interface DataSource {
+    Cid(sequence<u8> cid);
+    Raw(sequence<u8> data);
+    Text(string content);
+};
+
+enum AppStatus {
+    "Active",
+    "Deactive",
+    "Disconnected",
+    "Connected",
+};
+
+enum ContactsTypes {
+  "Private",
+  "Group",
+};
+
+enum ReceiptStatus {
+  "Loaded",
+  "Shown",
+  "Failed",
+};
+
+enum MediaTypes {
+    "File",
+    "Image",
+    "Audio",
+    "Video",
+    "Html",
+    "Markdown",
+};

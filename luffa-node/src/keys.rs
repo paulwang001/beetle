@@ -76,7 +76,7 @@ impl<S: Storage> Keychain<S> {
     pub async fn create_ed25519_key(&mut self) -> Result<()> {
         let keypair = ssh_key::private::Ed25519Keypair::random(rand::thread_rng());
         let keypair = Keypair::Ed25519(keypair);
-
+        
         self.storage.put(keypair).await?;
 
         Ok(())

@@ -7,6 +7,7 @@ edition.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+aes-gcm.workspace = true
 bytes = { workspace = true, features = ["serde"] }
 cid = { workspace = true, features = ["serde-codec"] }
 derive_more.workspace = true
@@ -14,6 +15,11 @@ futures.workspace = true
 libp2p = { workspace = true, features = ["serde"] }
 quic-rpc.workspace = true
 serde.workspace = true
+bson.workspace = true
+crc64fast.workspace = true
+multibase.workspace = true
+multihash.workspace = true
 serde-error.workspace = true
 serde_with.workspace = true
 tokio = { workspace = true, default-features = false }
+

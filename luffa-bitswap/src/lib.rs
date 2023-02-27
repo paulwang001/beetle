@@ -592,7 +592,7 @@ impl<S: Store> NetworkBehaviour for Bitswap<S> {
                         response,
                         connection_id,
                     } => {
-                        tracing::debug!("send message {}", peer);
+                        tracing::info!("send message {}", peer);
                         return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
                             peer_id: peer,
                             handler: NotifyHandler::One(connection_id),
