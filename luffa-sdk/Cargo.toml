@@ -50,7 +50,7 @@ path = "./src/uniffi-bindgen.rs"
 
 [[bin]]
 name = "luffa-client"
-path = "./scr/main.rs"
+path = "./src/main.rs"
 
 [profile.release]
 opt-level = "z"

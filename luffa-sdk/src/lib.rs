@@ -314,6 +314,7 @@ impl Client {
 
     pub fn relay_list(&self) -> Vec<String> {
         let client = self.client.clone();
+        
         RUNTIME.block_on(async {
             let c = client.read().await;
             if let Some(cc) = c.as_ref() {
@@ -387,14 +388,6 @@ impl Client {
         )
         .unwrap();
     
-        config.metrics = luffa_node::metrics::metrics_config_with_compile_time_info(config.metrics);
-        info!("{config:#?}");
-
-        let metrics_config = config.metrics.clone();
-
-        let metrics_handle = luffa_metrics::MetricsHandle::new(metrics_config)
-            .await
-            .expect("failed to initialize metrics");
 
         let kc = RUNTIME.block_on(async {
             let mut kc = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone())
@@ -574,13 +567,16 @@ impl Client {
                         };
                         let event = luffa_rpc_types::Event::new::<Vec<u8>>(0, msg, None, u_id);
                         let event = event.encode().unwrap();
+                        if let Err(e) = 
                         client_t
                             .gossipsub_publish(
                                 TopicHash::from_raw(TOPIC_STATUS),
                                 bytes::Bytes::from(event),
                             )
                             .await
-                            .unwrap();
+                        {
+                            error!("{e:?}");
+                        }
                     }
                     NetworkEvent::PeerDisconnected(peer_id) => {
                         tracing::info!("---------PeerDisconnected-----------{:?}", peer_id);
@@ -594,13 +590,15 @@ impl Client {
                         };
                         let event = luffa_rpc_types::Event::new::<Vec<u8>>(0, msg, None, u_id);
                         let event = event.encode().unwrap();
-                        client_t
+                        if let Err(e) = client_t
                             .gossipsub_publish(
                                 TopicHash::from_raw(TOPIC_STATUS),
                                 bytes::Bytes::from(event),
                             )
                             .await
-                            .unwrap();
+                        {
+                            error!("{e:?}");
+                        }
                     }
                     NetworkEvent::CancelLookupQuery(peer_id) => {
                         tracing::info!("---------CancelLookupQuery-----------{:?}", peer_id);
@@ -638,6 +636,15 @@ impl Client {
                 None => {}
             }
         }
+
+        config.metrics = luffa_node::metrics::metrics_config_with_compile_time_info(config.metrics);
+        info!("{config:#?}");
+
+        let metrics_config = config.metrics.clone();
+
+        let metrics_handle = luffa_metrics::MetricsHandle::new(metrics_config)
+            .await
+            .expect("failed to initialize metrics");
         // luffa_util::block_until_sigint().await;
         // ctl.await.unwrap();
         process.abort();
