@@ -79,7 +79,8 @@ impl<S: Service> FromStr for Addr<S> {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s == "mem" {
-            bail!("memory addresses can not be serialized or deserialized");
+            // bail!("memory addresses can not be serialized or deserialized");
+            return Ok(Addr::new_mem());
         }
 
         let mut parts = s.splitn(2, "://");

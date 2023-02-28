@@ -1,3 +1,3 @@
 fn main() {
-    uniffi::generate_scaffolding("./luffa.udl").unwrap();
+    uniffi::generate_scaffolding("./src/luffa_sdk.udl").unwrap();
 }

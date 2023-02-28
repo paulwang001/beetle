@@ -24,9 +24,18 @@ luffa-rpc-client.workspace = true
 luffa-rpc-types.workspace = true
 luffa-metrics = { workspace = true, features = ["store"] }
 multihash.workspace = true
-rocksdb.workspace = true
+rocksdb = { version = "0.19", optional = true }
+sled = { workspace = true, optional = true}
 serde = { workspace = true, features = ["derive"] }
+serde_cbor.workspace = true
 smallvec = { workspace = true, features = ["write"] }
 tokio = { workspace = true, features = ["rt"] }
 tracing.workspace = true
+
+[features]
+default = []
+node = ["sled"]
+relay = ["rocksdb"]
+
+
 

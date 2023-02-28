@@ -10,6 +10,11 @@ pub async fn start(rpc_addr: StoreAddr, config: Config) -> anyhow::Result<JoinHa
     // This is the file RocksDB itself is looking for to determine if the database already
     // exists or not.  Just knowing the directory exists does not mean the database is
     // created.
+
+    info!("Opening store at {}", config.path.display());
+    // let store =    Store::open(config)
+    //         .await
+    //         .context("failed to open existing store")?;
     let marker = config.path.join("CURRENT");
 
     let store = if marker.exists() {

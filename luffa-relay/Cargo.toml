@@ -22,7 +22,7 @@ luffa-metrics.workspace = true
 luffa-node.workspace = true
 luffa-rpc-client.workspace = true
 luffa-rpc-types.workspace = true
-luffa-store.workspace = true
+luffa-store = {workspace = true, features = ["relay"]}
 luffa-util.workspace = true
 # reqwest = { workspace = true, features = ["rustls-tls"] }
 serde = { workspace = true, features = ["derive"] }

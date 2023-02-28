@@ -54,6 +54,11 @@ async fn main() -> anyhow::Result<()> {
     let rpc_addr = config
         .rpc_addr()
         .ok_or_else(|| anyhow!("missing store rpc addr"))?;
+
+    #[cfg(feature = "node")]
+    let store = Store::open(config).await?;
+
+    #[cfg(feature = "relay")]
     let store = if config.path.exists() {
         info!("Opening store at {}", config.path.display());
         Store::open(config).await?

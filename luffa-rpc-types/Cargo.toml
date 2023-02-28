@@ -5,6 +5,10 @@ edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+# See https://doc.rust-lang.org/reference/linkage.html
+[lib]
+crate-type = ["staticlib","cdylib","lib"]
+
 [dependencies]
 anyhow.workspace = true
 aes-gcm.workspace = true
@@ -15,11 +19,25 @@ futures.workspace = true
 libp2p = { workspace = true, features = ["serde"] }
 quic-rpc.workspace = true
 serde.workspace = true
-bson.workspace = true
 crc64fast.workspace = true
 multibase.workspace = true
 multihash.workspace = true
 serde-error.workspace = true
 serde_with.workspace = true
+serde_cbor.workspace = true
 tokio = { workspace = true, default-features = false }
+uniffi = { version = "0.23.0", features = ["cli"] }
 
+[build-dependencies]
+uniffi = { version = "0.23.0", features = ["build"] }
+
+[[bin]]
+# This can be whatever name makes sense for your project, but the rest of this tutorial assumes uniffi-bindgen.
+name = "uniffi-bindgen"
+path = "./src/uniffi-bindgen.rs"
+
+[profile.release]
+opt-level = "z"
+debug = 0
+lto = false
+panic = "abort"

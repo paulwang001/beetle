@@ -1,0 +1,41 @@
+namespace LuffaSDK {
+
+};
+
+[Error]
+enum ClientError {
+  "CodeParser",
+  "SendFailed",
+};
+
+callback interface Callback {
+    void on_message(sequence<u8> msg);
+};
+
+interface Client {
+    
+    constructor();
+    string show_code(string? comment);
+
+    [Throws=ClientError] 
+    string parse_contacts_code(string code);
+
+    [Throws=ClientError] 
+    void answer_contacts_code(string code,string? comment);
+
+    [Throws=ClientError] 
+    void send_msg(u64 to,sequence<u8> msg);
+
+    u64? get_local_id();
+
+    string? get_peer_id();
+
+    sequence<string> relay_list();
+
+    boolean connect(string peer_id);
+
+    void start(string? cfg_path,Callback cb);
+
+    void stop();
+
+};

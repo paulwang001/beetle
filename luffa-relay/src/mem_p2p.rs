@@ -7,7 +7,7 @@ use luffa_rpc_types::p2p::P2pAddr;
 use tokio::sync::mpsc::Receiver;
 use tokio::task;
 use tokio::task::JoinHandle;
-use tracing::error;
+use tracing::{error, info};
 
 /// Starts a new p2p node, using the given mem rpc channel.
 pub async fn start(
@@ -20,6 +20,7 @@ pub async fn start(
     let mut p2p = Node::new(config, rpc_addr, kc).await?;
     let events = p2p.network_events();
     let local_id = p2p.local_peer_id().clone();
+    info!("peer: {local_id}");
     // Start services
     let p2p_task = task::spawn(async move {
         if let Err(err) = p2p.run().await {

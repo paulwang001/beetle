@@ -5,14 +5,13 @@ edition.workspace = true
 
 
 [lib]
-crate-type = ["staticlib","cdylib"]
+crate-type = ["staticlib","cdylib","lib"]
 
 [dependencies]
 aes-gcm.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 
-bson.workspace = true
 bytes.workspace = true
 cid.workspace = true
 clap = { workspace = true, features = ["derive"] }
@@ -24,19 +23,37 @@ luffa-metrics.workspace = true
 luffa-node.workspace = true
 luffa-rpc-client.workspace = true
 luffa-rpc-types.workspace = true
-luffa-store.workspace = true
+luffa-store = {workspace = true,features = [ "node"]}
 luffa-util.workspace = true
 
 multibase.workspace = true
 # reqwest = { workspace = true, features = ["rustls-tls"] }
 rand.workspace = true
 serde = { workspace = true, features = ["derive"] }
+serde_cbor.workspace = true
+sled.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process"] }
 tracing.workspace = true
 libp2p = { workspace = true, features = ["gossipsub"] }
 uniffi = { version = "0.23.0", features = ["cli"] }
+thiserror = "1.0"
 
 
 
 [build-dependencies]
 uniffi = { version = "0.23.0", features = ["build"] }
+
+[[bin]]
+# This can be whatever name makes sense for your project, but the rest of this tutorial assumes uniffi-bindgen.
+name = "uniffi-bindgen"
+path = "./src/uniffi-bindgen.rs"
+
+[[bin]]
+name = "luffa-client"
+path = "./scr/main.rs"
+
+[profile.release]
+opt-level = "z"
+debug = 0
+lto = false
+panic = "abort"

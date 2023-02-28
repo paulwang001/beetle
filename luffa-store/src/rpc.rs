@@ -14,7 +14,11 @@ use luffa_rpc_types::{
 };
 use tracing::info;
 
+#[cfg(feature = "relay")]
 use crate::{store::Store, VERSION};
+
+#[cfg(feature = "node")]
+use crate::{store_sled::Store, VERSION};
 
 impl luffa_rpc_types::NamedService for Store {
     const NAME: &'static str = "store";
