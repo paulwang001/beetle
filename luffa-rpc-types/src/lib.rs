@@ -71,9 +71,7 @@ pub struct Event {
 }
 
 impl Event {
-    pub fn new<T>(did: u64, msg: Message, key: Option<T>, from_id: u64) -> Self
-    where
-        T: AsRef<[u8]>,
+    pub fn new(did: u64, msg: Message, key: Option<Vec<u8>>, from_id: u64) -> Self
     {
         let event_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -158,8 +156,17 @@ pub enum Message {
     Chat {
         content: ChatContent,
     },
+    WebRtc {
+        user_name: String,
+        action: RtcAction,
+    },
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub enum RtcAction {
+    Offer { dsp: String },
+    Answer { dsp: String },
+}
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Contacts {
     pub did: u64,

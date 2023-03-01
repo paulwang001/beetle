@@ -19,6 +19,7 @@ interface Message {
   ContactsSync(u64 did,sequence<Contacts> contacts);
   ContactsExchange(ContactsEvent exchange);
   Chat(ChatContent content);
+  WebRtc(string user_name,RtcAction action);
 };
 
 dictionary Contacts {
@@ -33,6 +34,12 @@ dictionary ContactsToken {
     sequence<u8> secret_key;
     ContactsTypes contacts_type;
     string? comment;
+};
+
+[Enum]
+interface RtcAction {
+    Offer(string dsp);
+    Answer(string dsp);
 };
 
 [Enum]

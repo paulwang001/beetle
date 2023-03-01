@@ -29,7 +29,7 @@ use tokio::sync::mpsc::Receiver;
 use tokio::sync::RwLock;
 use tokio::task;
 use tokio::task::JoinHandle;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 mod config;
 
@@ -308,7 +308,7 @@ impl Client {
             let key = key
                 .as_ref()
                 .map(|p| PeerId::from_public_key(&p.public()).to_bytes());
-            key.map(|m| multibase::encode(multibase::Base::Base58Btc, m))
+            key.map(|m| bs58::encode(m).into_string())
         })
     }
 
@@ -318,16 +318,25 @@ impl Client {
         RUNTIME.block_on(async {
             let c = client.read().await;
             if let Some(cc) = c.as_ref() {
-                if let Ok(peers) = cc
+                match cc
                     .gossipsub_mesh_peers(TopicHash::from_raw(TOPIC_RELAY))
                     .await
                 {
-                    return peers
-                        .into_iter()
-                        .map(|p| multibase::encode(multibase::Base::Base58Flickr, p.to_bytes()))
-                        .collect::<Vec<_>>();
+                    Ok(peers) => {
+                        info!("peers:{peers:?}"); 
+                        return peers
+                            .into_iter()
+                            .map(|p| bs58::encode(p.to_bytes()).into_string())
+                            .collect::<Vec<_>>();
+                    
+                    }
+                    Err(e)=>{
+                       eprintln!("{e:?}");
+                       tracing::warn!("{e:?}"); 
+                    }
                 }
             }
+            warn!("client is None");
             vec![]
         })
     }
@@ -414,6 +423,7 @@ impl Client {
             // }
             tokio::spawn(async move {
                 Self::run(db, config, kc, cb, client,rx,).await;
+                eprintln!("run exit!....");
             });
         });
     }
@@ -426,6 +436,14 @@ impl Client {
         mut receiver: tokio::sync::mpsc::Receiver<(u64, Vec<u8>, u64)>,
     ) {
         // let (tx, rx) = tokio::sync::mpsc::channel::<NetworkEvent>(4096);
+        config.metrics = luffa_node::metrics::metrics_config_with_compile_time_info(config.metrics);
+
+        let metrics_config = config.metrics.clone();
+
+        let metrics_handle = luffa_metrics::MetricsHandle::new(metrics_config)
+            .await
+            .expect("failed to initialize metrics");
+
         let (peer, store_rpc, p2p_rpc, mut events) = {
             let store_recv = Addr::new_mem();
             let store_sender = store_recv.clone();
@@ -455,30 +473,49 @@ impl Client {
         };
         let client = Arc::new(P2pClient::new(addr).await.unwrap());
 
-        client
-            .gossipsub_subscribe(TopicHash::from_raw(format!(
-                "{}_{}",
-                TOPIC_CHAT, my_id
-            )))
-            .await
-            .unwrap();
-        let topics = vec![TOPIC_STATUS];
-        for t in topics.into_iter() {
-            client
-                .gossipsub_subscribe(TopicHash::from_raw(t))
-                .await
-                .unwrap();
-        }
-        // let msg = luffa_rpc_types::Message::StatusSync {
-        //     did: my_id,
-        //     status: AppStatus::Active,
-        // };
-        // let event = luffa_rpc_types::Event::new::<Vec<u8>>(0, msg, None, my_id);
-        // let event = event.encode().unwrap();
-        // client
-        //     .gossipsub_publish(TopicHash::from_raw(TOPIC_STATUS), bytes::Bytes::from(event))
-        //     .await
-        //     .unwrap();
+        let client_t = client.clone();
+        tokio::spawn(async move {
+            let mut has_err = false;
+            loop {
+                if let Err(e) = client_t
+                    .gossipsub_subscribe(TopicHash::from_raw(format!("{}_{}", TOPIC_CHAT, my_id)))
+                    .await
+                {
+                    error!("{e:?}");
+                    has_err = true;
+                }
+                let topics = vec![TOPIC_STATUS];
+                for t in topics.into_iter() {
+                    if let Err(e) = client_t
+                        .gossipsub_subscribe(TopicHash::from_raw(t))
+                        .await
+                    {
+                        error!("{e:?}");
+                        has_err = true;
+                        break;;
+                    }
+                }
+
+                if !has_err {
+                    info!("subscribed all as client,status sync");
+                    let msg = luffa_rpc_types::Message::StatusSync {
+                        did: 0,
+                        status: AppStatus::Active,
+                        relay_id:my_id
+                    };
+                    let key:Option<Vec<u8>> = None;
+                    let event = Event::new(0, msg, key, my_id);
+                    let data = event.encode().unwrap();
+                    if let Err(e) = client_t.gossipsub_publish(TopicHash::from_raw(format!("{}", TOPIC_STATUS)), bytes::Bytes::from(data)).await {
+                        warn!("{e:?}");
+                    }
+                    // break;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            }
+           
+        });
+
         let client_t = client.clone();
         {
             let mut lock = client_lock.write().await;
@@ -491,6 +528,7 @@ impl Client {
                 match evt {
                     NetworkEvent::Gossipsub(GossipsubEvent::Subscribed { peer_id, topic }) => {
                         // TODO: a group member or my friend online?
+                        info!("Subscribed> peer_id: {peer_id:?} topic:{topic}");
                     }
                     NetworkEvent::Gossipsub(GossipsubEvent::Message { message, from, id }) => {
                         let GossipsubMessage { data, .. } = message;
@@ -501,6 +539,7 @@ impl Client {
                                 from_id,
                                 ..
                             } = im;
+                            info!("Gossipsub> peer_id: {from:?} msg:{}",msg.len());
                             // TODO check did status
                             if nonce.is_none() {
                                 if let Ok(msg) = luffa_rpc_types::Message::decrypt(
@@ -509,6 +548,7 @@ impl Client {
                                     nonce,
                                 ) {
                                     // TODO: did is me or I'm a member any local group
+                                    info!("Gossipsub> on_message peer_id: {from:?} msg:{:?}",msg);
                                     let data = serde_cbor::to_vec(&msg).unwrap();
                                     cb.on_message(data);
                                     // todo!()
@@ -565,7 +605,7 @@ impl Client {
                             relay_id: my_id,
                             status: AppStatus::Connected,
                         };
-                        let event = luffa_rpc_types::Event::new::<Vec<u8>>(0, msg, None, u_id);
+                        let event = luffa_rpc_types::Event::new(0, msg, None, u_id);
                         let event = event.encode().unwrap();
                         if let Err(e) = 
                         client_t
@@ -588,7 +628,7 @@ impl Client {
                             relay_id: my_id,
                             status: AppStatus::Disconnected,
                         };
-                        let event = luffa_rpc_types::Event::new::<Vec<u8>>(0, msg, None, u_id);
+                        let event = luffa_rpc_types::Event::new(0, msg, None, u_id);
                         let event = event.encode().unwrap();
                         if let Err(e) = client_t
                             .gossipsub_publish(
@@ -614,11 +654,11 @@ impl Client {
             let msg = serde_cbor::from_slice::<Message>(&msg).unwrap();
             let evt = if msg.need_encrypt() {
                 match Self::get_aes_key_from_contacts(db.clone(), to) {
-                    Some(key) => Some(Event::new::<Vec<u8>>(to, msg, Some(key), msg_id)),
-                    None => Some(Event::new::<Vec<u8>>(to, msg, None, msg_id)),
+                    Some(key) => Some(Event::new(to, msg, Some(key), msg_id)),
+                    None => Some(Event::new(to, msg, None, msg_id)),
                 }
             } else {
-                Some(Event::new::<Vec<u8>>(to, msg, None, msg_id))
+                Some(Event::new(to, msg, None, msg_id))
             };
             match evt {
                 Some(e) => {
@@ -637,14 +677,7 @@ impl Client {
             }
         }
 
-        config.metrics = luffa_node::metrics::metrics_config_with_compile_time_info(config.metrics);
-        info!("{config:#?}");
-
-        let metrics_config = config.metrics.clone();
-
-        let metrics_handle = luffa_metrics::MetricsHandle::new(metrics_config)
-            .await
-            .expect("failed to initialize metrics");
+       
         // luffa_util::block_until_sigint().await;
         // ctl.await.unwrap();
         process.abort();

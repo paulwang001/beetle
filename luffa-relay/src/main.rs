@@ -124,7 +124,7 @@ async fn main() -> Result<()> {
             if let Ok(_) = tokio::time::timeout(Duration::from_secs(5), async {
                 info!("client publicsh relay.");
                 let msg = luffa_rpc_types::Message::RelayNode { did: my_id };
-                let event = luffa_rpc_types::Event::new::<Vec<u8>>(0, msg, None,my_id);
+                let event = luffa_rpc_types::Event::new(0, msg, None,my_id);
                 let event = event.encode().unwrap();
                 if let Err(e) =
                     client_t
@@ -189,7 +189,7 @@ async fn main() -> Result<()> {
                         relay_id: my_id,
                         status: AppStatus::Connected,
                     };
-                    let event = luffa_rpc_types::Event::new::<Vec<u8>>(0, msg, None,u_id);
+                    let event = luffa_rpc_types::Event::new(0, msg, None,u_id);
                     let event = event.encode().unwrap();
                     if let Err(e)= 
                     client
@@ -211,7 +211,7 @@ async fn main() -> Result<()> {
                         relay_id: my_id,
                         status: AppStatus::Disconnected,
                     };
-                    let event = luffa_rpc_types::Event::new::<Vec<u8>>(0, msg, None,u_id);
+                    let event = luffa_rpc_types::Event::new(0, msg, None,u_id);
                     let event = event.encode().unwrap();
                     if let Err(e)= 
                     client

@@ -13,6 +13,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 
 bytes.workspace = true
+bs58.workspace = true
 cid.workspace = true
 clap = { workspace = true, features = ["derive"] }
 config.workspace = true
@@ -38,6 +39,7 @@ libp2p = { workspace = true, features = ["gossipsub"] }
 uniffi = { version = "0.23.0", features = ["cli"] }
 thiserror = "1.0"
 
+futures-lite = "1.12.0"
 
 
 [build-dependencies]
