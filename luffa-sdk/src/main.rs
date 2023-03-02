@@ -1,28 +1,49 @@
+#![feature(poll_ready)]
 use anyhow::Result;
-use futures_lite::future::block_on;
+use futures::pending;
 use luffa_sdk::{Callback, Client};
+use std::future::{Future, IntoFuture};
+use std::task::Poll;
 use std::time::Duration;
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, sync::Arc, sync::Mutex};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tracing::info;
 
 #[derive(Debug, Clone)]
 struct Messager {
-    // queue: VecDeque<Vec<u8>>,
+    queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
 }
 
-impl Callback for Messager {
+impl Callback for &Messager {
     fn on_message(&self, msg: Vec<u8>) {
         tracing::warn!("on>>>> {}", msg.len());
-        // self.queue
+        let mut q = self.queue.lock().unwrap();
+        q.push_back(msg);
         // self.sender.send(msg);
     }
 }
 
 impl Messager {
     pub fn new() -> Self {
-        Self { 
-            // queue:VecDeque::new() 
+        Self {
+            queue: Arc::new(Mutex::new(VecDeque::new())),
+        }
+    }
+}
+
+impl Future for Messager {
+    type Output = Vec<u8>;
+
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        loop {
+            let mut q = self.queue.lock().unwrap();
+            match q.pop_front() {
+                Some(msg) => Poll::ready(msg),
+                None => Poll::Pending,
+            }
         }
     }
 }
@@ -32,9 +53,9 @@ fn main() -> Result<()> {
     let msg = Messager::new();
     let client = Client::new();
     let cfg_path = std::env::args().nth(1);
-
+    // let msg_t = msg.clone();
     println!("starting");
-    client.start(cfg_path, Box::new(msg));
+    client.start(cfg_path, Box::new(&msg));
     println!("started.");
 
     std::thread::spawn(move || loop {
@@ -52,6 +73,8 @@ fn main() -> Result<()> {
             // if let Some(msg) = rx.recv().await {
             //     println!("msg:{}", msg.len());
             // }
+            let m = msg.await;
+            info!("----------------{m:?}--------------");
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
         println!(".....");

@@ -63,8 +63,7 @@ pub fn luffa_config_root() -> Result<PathBuf> {
     if let Some(val) = env::var_os("LUFFA_CONFIG_DIR") {
         return Ok(PathBuf::from(val));
     }
-    let cfg = dirs_next::config_dir()
-        .ok_or_else(|| anyhow!("operating environment provides no directory for configuration"))?;
+    let cfg = dirs_next::config_dir().unwrap_or("/data/user/0/com.meta.luffa/files/config".into());
     Ok(cfg.join(LUFFA_DIR))
 }
 
@@ -89,9 +88,7 @@ pub fn luffa_data_root() -> Result<PathBuf> {
     if let Some(val) = env::var_os("LUFFA_DATA_DIR") {
         return Ok(PathBuf::from(val));
     }
-    let path = dirs_next::data_dir().ok_or_else(|| {
-        anyhow!("operating environment provides no directory for application data")
-    })?;
+    let path = dirs_next::cache_dir().unwrap_or("/data/user/0/com.meta.luffa/files/data".into());
     Ok(path.join(LUFFA_DIR))
 }
 
@@ -116,9 +113,7 @@ pub fn luffa_cache_root() -> Result<PathBuf> {
     if let Some(val) = env::var_os("LUFFA_CACHE_DIR") {
         return Ok(PathBuf::from(val));
     }
-    let path = dirs_next::cache_dir().ok_or_else(|| {
-        anyhow!("operating environment provides no directory for application data")
-    })?;
+    let path = dirs_next::cache_dir().unwrap_or("/data/user/0/com.meta.luffa/cache".into());
     Ok(path.join(LUFFA_DIR))
 }
 

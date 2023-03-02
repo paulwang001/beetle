@@ -11,6 +11,7 @@ members = [
   "luffa-process",
   "luffa-sdk",
   "luffa",
+  "ios-rust-analyzer",
 ]
 resolver = "2"
 
