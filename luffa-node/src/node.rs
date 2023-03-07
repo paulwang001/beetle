@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 use std::time::Duration;
 
 use ahash::AHashMap;
@@ -31,8 +32,6 @@ use libp2p::swarm::{ConnectionHandler, IntoConnectionHandler, NetworkBehaviour, 
 use libp2p::{PeerId, Swarm};
 use luffa_bitswap::{BitswapEvent, Block};
 use luffa_metrics::{core::MRecorder, inc, libp2p_metrics, p2p::P2PMetrics};
-use luffa_rpc_client::{Client as RpcClient, Lookup};
-use luffa_rpc_types::p2p::P2pAddr;
 use multihash::MultihashDigest;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot::{self, Sender as OneShotSender};
@@ -43,7 +42,7 @@ use crate::behaviour::{Event, NodeBehaviour};
 use crate::config::Config;
 use crate::keys::{Keychain, Storage};
 use crate::providers::Providers;
-use crate::rpc::{self, P2p, ProviderRequestKey, RpcMessage};
+use crate::rpc::{self, ProviderRequestKey,RpcMessage};
 use crate::swarm::build_swarm;
 
 #[allow(clippy::large_enum_variant)]
@@ -74,7 +73,7 @@ pub enum GossipsubEvent {
 
 pub struct Node<KeyStorage: Storage> {
     swarm: Swarm<NodeBehaviour>,
-    net_receiver_in: Receiver<RpcMessage>,
+    net_receiver_in:Receiver<rpc::RpcMessage>,
     dial_queries: AHashMap<PeerId, Vec<OneShotSender<Result<()>>>>,
     lookup_queries: AHashMap<PeerId, Vec<oneshot::Sender<Result<IdentifyInfo>>>>,
     // TODO(ramfox): use new providers queue instead
@@ -82,16 +81,14 @@ pub struct Node<KeyStorage: Storage> {
     record_on_dht_queries: AHashMap<Vec<u8>, (QueryId, Vec<OneShotSender<Result<Option<Record>>>>)>,
     provider_on_dht_queries: AHashMap<Vec<u8>, (QueryId, Vec<OneShotSender<Result<QueryId>>>)>,
     network_events: Vec<Sender<NetworkEvent>>,
-    #[allow(dead_code)]
-    rpc_client: RpcClient,
     _keychain: Keychain<KeyStorage>,
     #[allow(dead_code)]
     kad_last_range: Option<(Distance, Distance)>,
-    rpc_task: JoinHandle<()>,
     use_dht: bool,
     bitswap_sessions: BitswapSessions,
     providers: Providers,
     listen_addrs: Vec<Multiaddr>,
+    store:Arc<luffa_store::Store>,
 }
 
 impl<T: Storage> fmt::Debug for Node<T> {
@@ -105,10 +102,8 @@ impl<T: Storage> fmt::Debug for Node<T> {
             .field("record_on_dht_queries", &self.record_on_dht_queries)
             .field("provider_on_dht_queries", &self.provider_on_dht_queries)
             .field("network_events", &self.network_events)
-            .field("rpc_client", &self.rpc_client)
             .field("_keychain", &self._keychain)
             .field("kad_last_range", &self.kad_last_range)
-            .field("rpc_task", &self.rpc_task)
             .field("use_dht", &self.use_dht)
             .field("bitswap_sessions", &self.bitswap_sessions)
             .field("providers", &self.providers)
@@ -121,50 +116,35 @@ type DHTQuery = (PeerId, Vec<oneshot::Sender<Result<()>>>);
 
 type BitswapSessions = AHashMap<u64, Vec<(oneshot::Sender<()>, JoinHandle<()>)>>;
 
-pub(crate) const DEFAULT_PROVIDER_LIMIT: usize = 10;
+pub const DEFAULT_PROVIDER_LIMIT: usize = 10;
 const NICE_INTERVAL: Duration = Duration::from_secs(6);
-const BOOTSTRAP_INTERVAL: Duration = Duration::from_secs(5 * 60);
+const BOOTSTRAP_INTERVAL: Duration = Duration::from_secs(30);
 const EXPIRY_INTERVAL: Duration = Duration::from_secs(1);
 
-impl<KeyStorage: Storage> Drop for Node<KeyStorage> {
-    fn drop(&mut self) {
-        self.rpc_task.abort();
-    }
-}
 
 impl<KeyStorage: Storage> Node<KeyStorage> {
     pub async fn new(
         config: Config,
-        rpc_addr: P2pAddr,
         mut keychain: Keychain<KeyStorage>,
-    ) -> Result<Self> {
-        let (network_sender_in, network_receiver_in) = channel(1024); // TODO: configurable
-
+        db:Arc<luffa_store::Store>,
+    ) -> Result<(Self,Sender<rpc::RpcMessage>)> {
+        let (network_sender_in, net_receiver_in) = channel(1024); // TODO: configurable
         let Config {
             libp2p: libp2p_config,
-            rpc_client,
             ..
         } = config;
-        let rpc_task = tokio::task::spawn(async move {
-            // start rpc server
-            rpc::new(rpc_addr, P2p::new(network_sender_in))
-                .await
-                .unwrap()
-        });
-        let rpc_client = RpcClient::new(rpc_client)
-            .await
-            .context("failed to create rpc client")?;
+      
         let keypair = load_identity(&mut keychain).await?;
-        let mut swarm = build_swarm(&libp2p_config, &keypair, rpc_client.clone()).await?;
+        let mut swarm = build_swarm(&libp2p_config, &keypair,db.clone()).await?;
         let mut listen_addrs = vec![];
         for addr in &libp2p_config.listening_multiaddrs {
             Swarm::listen_on(&mut swarm, addr.clone())?;
             listen_addrs.push(addr.clone());
         }
 
-        Ok(Node {
+        Ok((Node {
             swarm,
-            net_receiver_in: network_receiver_in,
+            net_receiver_in,
             dial_queries: Default::default(),
             lookup_queries: Default::default(),
             // TODO(ramfox): use new providers queue instead
@@ -172,15 +152,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             record_on_dht_queries: Default::default(),
             provider_on_dht_queries: Default::default(),
             network_events: Vec::new(),
-            rpc_client,
             _keychain: keychain,
             kad_last_range: None,
-            rpc_task,
             use_dht: libp2p_config.kademlia,
             bitswap_sessions: Default::default(),
             providers: Providers::new(4),
             listen_addrs,
-        })
+            store:db,
+        },network_sender_in))
     }
 
     pub fn listen_addrs(&self) -> &Vec<Multiaddr> {
@@ -193,7 +172,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
     /// Starts the libp2p service networking stack. This Future resolves when shutdown occurs.
     pub async fn run(&mut self) -> Result<()> {
-        info!("Listen addrs: {:?}", self.listen_addrs());
+        println!("Listen addrs: {:?}", self.listen_addrs());
         info!("Local Peer ID: {}", self.local_peer_id());
 
         let mut nice_interval = self.use_dht.then(|| tokio::time::interval(NICE_INTERVAL * 10));
@@ -207,7 +186,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 swarm_event = self.swarm.next() => {
                     let swarm_event = swarm_event.expect("the swarm will never die");
                     if let Err(err) = self.handle_swarm_event(swarm_event) {
-                        error!("swarm error: {:?}", err);
+                        eprintln!("swarm error: {:?}", err);
                     }
 
                     if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
@@ -244,12 +223,15 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     }
                 }, if nice_interval.is_some() => {
                     // Print peer count on an interval.
-                    info!("[{}] Peers connected: {:?}",self.local_peer_id(), self.swarm.connected_peers().count());
+                    println!("[{}] Peers connected: {:?}",self.local_peer_id(), self.swarm.connected_peers().count());
                     // self.dht_nice_tick().await;
                 }
                 _ = bootstrap_interval.tick() => {
                     if let Err(e) = self.swarm.behaviour_mut().kad_bootstrap() {
-                        warn!("kad bootstrap failed: {:?}", e);
+                        eprintln!("kad bootstrap failed: {:?}", e);
+                    }
+                    else{
+                        println!("kad bootstrap successfully");
                     }
                 }
                 _ = expiry_interval.tick() => {
@@ -324,7 +306,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             );
 
             if let Err(e) = self.swarm.dial(dial_opts) {
-                warn!("failed to dial: {:?}", e);
+                eprintln!("failed to dial: {:?}", e);
             }
             self.kad_last_range = Some(range);
         }
@@ -421,6 +403,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             <<<NodeBehaviour as NetworkBehaviour>::ConnectionHandler as IntoConnectionHandler>::Handler as ConnectionHandler>::Error>,
     ) -> Result<()> {
         libp2p_metrics().record(&event);
+        println!("swarm>>>> {event:?}");
         match event {
             // outbound events
             SwarmEvent::Behaviour(event) => self.handle_node_event(event),
@@ -435,10 +418,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     }
                 }
 
-                if num_established == 1.try_into().unwrap() {
+                if num_established.get() == 1 {
                     self.emit_network_event(NetworkEvent::PeerConnected(peer_id));
                 }
-                trace!("ConnectionEstablished: {:}", peer_id);
+                println!("ConnectionEstablished: {:}", peer_id);
                 Ok(())
             }
             SwarmEvent::ConnectionClosed {
@@ -450,11 +433,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     self.emit_network_event(NetworkEvent::PeerDisconnected(peer_id));
                 }
 
-                trace!("ConnectionClosed: {:}", peer_id);
+                println!("ConnectionClosed: {:}", peer_id);
                 Ok(())
             }
             SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-                trace!("failed to dial: {:?}, {:?}", peer_id, error);
+                eprintln!("failed to dial: {:?}, {:?}", peer_id, error);
 
                 if let Some(peer_id) = peer_id {
                     if let Some(channels) = self.dial_queries.get_mut(&peer_id) {
@@ -467,18 +450,22 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 }
                 Ok(())
             }
-            _ => Ok(()),
+            _ => {
+                
+                Ok(())
+            },
         }
     }
 
     #[tracing::instrument(skip(self))]
     fn emit_network_event(&mut self, ev: NetworkEvent) {
+        println!("emit>>>{ev:?}");
         for sender in &mut self.network_events {
             let ev = ev.clone();
             let sender = sender.clone();
             tokio::task::spawn(async move {
                 if let Err(e) = sender.send(ev.clone()).await {
-                    warn!("failed to send network event: {:?}", e);
+                    eprintln!("failed to send network event: {:?}", e);
                 }
             });
         }
@@ -486,18 +473,19 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
     #[tracing::instrument(skip(self))]
     fn handle_node_event(&mut self, event: Event) -> Result<()> {
+        println!("node>>> {event:?}");
         match event {
             Event::Bitswap(e) => {
                 match e {
                     BitswapEvent::Provide { key } => {
-                        info!("bitswap provide {}", key);
+                        println!("bitswap provide {}", key);
                         if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
                             match kad.start_providing(key.hash().to_bytes().into()) {
                                 Ok(_query_id) => {
                                     // TODO: track query?
                                 }
                                 Err(err) => {
-                                    error!("failed to provide {}: {:?}", key, err);
+                                    eprintln!("failed to provide {}: {:?}", key, err);
                                 }
                             }
                         }
@@ -721,7 +709,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             }
             Event::Identify(e) => {
                 libp2p_metrics().record(&*e);
-                trace!("tick: identify {:?}", e);
+                println!("tick: identify {:?}", e);
                 if let IdentifyEvent::Received { peer_id, info } = *e {
                     for protocol in &info.protocols {
                         let p = protocol.as_bytes();
@@ -868,11 +856,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 providers,
             } => {
                 tracing::warn!("context:{} bitswap_request", ctx);
-                let store = self.rpc_client.try_store().unwrap();
+                let store = self.store.clone();
                 let (tx,rx) = std::sync::mpsc::channel();
                 tokio::spawn(async move {
                     for (cid, response_channel) in cids.into_iter().zip(response_channels.into_iter()) {
-                        match store.get(cid).await {
+                        match store.get(&cid) {
                             Ok(Some(blob))=>{
                                 let blk = Block::new(blob, cid);
                                 if let Err(e) = response_channel.send(Ok(blk)) {
@@ -897,10 +885,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 tracing::warn!("PushBitswapRequest:--{}---",data.len());
                 let cid = Cid::new_v1(DagCborCodec.into(), multihash::Code::Sha2_256.digest(&data[..]));
 
-                let store = self.rpc_client.try_store().unwrap();
+                let store = self.store.clone();
                 let blob = data.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = store.put(cid, blob, vec![]).await {
+                    if let Err(e) = store.put(cid, blob, vec![]) {
                         tracing::warn!("store put> {:?}",e);
                     }
                 });
@@ -1006,6 +994,28 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             response_channel.send(Err(e)).ok();
                         }
                     }
+                } else {
+                    response_channel
+                        .send(Err(anyhow!("kademlia is not availalbe")))
+                        .ok();
+                }
+            }
+            RpcMessage::PutRecordTo(response_channel,peers, record) => {
+                if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
+                    let key = record.key.clone();
+                    let peers = peers.chunks_exact(1);
+                    // let peers = peers.next().unwrap();
+                    // let q = kad
+                    //     .put_record_to(record,peers, Quorum::One);
+                    // match self.record_on_dht_queries.entry(key.to_vec()) {
+                    //     std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    //         let (_, channels) = entry.get_mut();
+                    //         channels.push(response_channel);
+                    //     }
+                    //     std::collections::hash_map::Entry::Vacant(entry) => {
+                    //         entry.insert((q, vec![response_channel]));
+                    //     }
+                    // }
                 } else {
                     response_channel
                         .send(Err(anyhow!("kademlia is not availalbe")))
@@ -1194,29 +1204,29 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     response_channel.send(None).ok();
                 }
             }
-            RpcMessage::LookupLocalPeerInfo(response_channel) => {
-                let peer_id = self.swarm.local_peer_id();
-                let listen_addrs = self.swarm.listeners().cloned().collect();
-                let observed_addrs = self
-                    .swarm
-                    .external_addresses()
-                    .map(|a| a.addr.clone())
-                    .collect();
-                let protocol_version = String::from(crate::behaviour::PROTOCOL_VERSION);
-                let agent_version = String::from(crate::behaviour::AGENT_VERSION);
-                let protocols = self.swarm.behaviour().peer_manager.supported_protocols();
+            // RpcMessage::LookupLocalPeerInfo(response_channel) => {
+            //     let peer_id = self.swarm.local_peer_id();
+            //     let listen_addrs = self.swarm.listeners().cloned().collect();
+            //     let observed_addrs = self
+            //         .swarm
+            //         .external_addresses()
+            //         .map(|a| a.addr.clone())
+            //         .collect();
+            //     let protocol_version = String::from(crate::behaviour::PROTOCOL_VERSION);
+            //     let agent_version = String::from(crate::behaviour::AGENT_VERSION);
+            //     let protocols = self.swarm.behaviour().peer_manager.supported_protocols();
 
-                response_channel
-                    .send(Lookup {
-                        peer_id: *peer_id,
-                        listen_addrs,
-                        observed_addrs,
-                        agent_version,
-                        protocol_version,
-                        protocols,
-                    })
-                    .ok();
-            }
+            //     response_channel
+            //         .send(Lookup {
+            //             peer_id: *peer_id,
+            //             listen_addrs,
+            //             observed_addrs,
+            //             agent_version,
+            //             protocol_version,
+            //             protocols,
+            //         })
+            //         .ok();
+            // }
             RpcMessage::CancelListenForIdentify(response_channel, peer_id) => {
                 self.lookup_queries.remove(&peer_id);
                 self.emit_network_event(NetworkEvent::CancelLookupQuery(peer_id));

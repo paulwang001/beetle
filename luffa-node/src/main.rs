@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use luffa_node::config::{Config, CONFIG_FILE_NAME, ENV_PREFIX};
@@ -7,6 +8,7 @@ use luffa_node::{cli::Args, metrics, DiskStorage, Keychain, Node};
 use luffa_util::{luffa_config_path, make_config};
 use tokio::task;
 use tracing::error;
+use luffa_node::rpc::P2p;
 
 /// Starts daemon process
 fn main() -> Result<()> {
@@ -56,12 +58,14 @@ fn main() -> Result<()> {
             }
         } 
         tracing::info!("network_config:{network_config:?}");
+        let db_path = &network_config.path.clone();
+        let db = luffa_store::Store::open(db_path.clone()).await?;
         let network_config = Config::from(network_config);
         let kc = Keychain::<DiskStorage>::new(network_config.key_store_path.clone()).await?;
-        let rpc_addr = network_config
-            .rpc_addr()
-            .ok_or_else(|| anyhow!("missing p2p rpc addr"))?;
-        let mut p2p = Node::new(network_config, rpc_addr, kc).await?;
+        
+        
+        let (mut p2p,network_sender_in) = Node::new(network_config, kc,Arc::new(db)).await?;
+        let p2p_client = P2p::new(network_sender_in);
         let mut events = p2p.network_events(); 
         task::spawn(async move {
             while let Some(e) = events.recv().await {

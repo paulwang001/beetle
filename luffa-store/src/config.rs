@@ -1,8 +1,6 @@
 use anyhow::{anyhow, Result};
 use config::{ConfigError, Map, Source, Value};
 use luffa_metrics::config::Config as MetricsConfig;
-use luffa_rpc_client::Config as RpcClientConfig;
-use luffa_rpc_types::store::StoreAddr;
 use luffa_util::{insert_into_config_map, luffa_data_path};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -37,9 +35,8 @@ pub struct ServerConfig {
 
 impl ServerConfig {
     pub fn new(path: PathBuf) -> Self {
-        let addr = "irpc://0.0.0.0:4402".parse().unwrap();
         Self {
-            store: Config::with_rpc_addr(path, addr),
+            store: Config::new(path),
             metrics: Default::default(),
         }
     }
@@ -66,11 +63,6 @@ impl Source for ServerConfig {
 pub struct Config {
     /// The location of the content database.
     pub path: PathBuf,
-    /// The iRPC configuration.
-    ///
-    /// Only used to extract the listening address from the `store_addr` field.
-    // TODO: split off listening address from RpcClientConfig.
-    pub rpc_client: RpcClientConfig,
 }
 
 impl From<ServerConfig> for Config {
@@ -88,24 +80,9 @@ impl Config {
     pub fn new(path: PathBuf) -> Self {
         Self {
             path,
-            rpc_client: Default::default(),
         }
     }
 
-    /// Creates a new store config with the given RPC listen address.
-    pub fn with_rpc_addr(path: PathBuf, addr: StoreAddr) -> Self {
-        Self {
-            path,
-            rpc_client: RpcClientConfig {
-                store_addr: Some(addr),
-                ..Default::default()
-            },
-        }
-    }
-
-    pub fn rpc_addr(&self) -> Option<StoreAddr> {
-        self.rpc_client.store_addr.clone()
-    }
 }
 
 impl Source for Config {
@@ -120,7 +97,6 @@ impl Source for Config {
             .to_str()
             .ok_or_else(|| ConfigError::Foreign("No `path` set. Path is required.".into()))?;
         insert_into_config_map(&mut map, "path", path);
-        insert_into_config_map(&mut map, "rpc_client", self.rpc_client.collect()?);
         Ok(map)
     }
 }

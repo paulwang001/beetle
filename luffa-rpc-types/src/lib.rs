@@ -1,10 +1,10 @@
-pub mod addr;
+// pub mod addr;
 pub mod p2p;
-pub mod store;
+// pub mod store;
 
 use std::fmt;
 
-pub use addr::Addr;
+// pub use addr::Addr;
 
 use serde::{Deserialize, Serialize};
 
@@ -62,7 +62,8 @@ pub struct VersionResponse {
 pub const KEY_SIZE: usize = 32;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Event {
-    pub did: u64,
+    // zero is all
+    pub to: u64,
     pub event_time: u64,
     pub crc: u64,
     pub from_id: u64,
@@ -71,7 +72,7 @@ pub struct Event {
 }
 
 impl Event {
-    pub fn new(did: u64, msg: Message, key: Option<Vec<u8>>, from_id: u64) -> Self
+    pub fn new(to: u64, msg: &Message, key: Option<Vec<u8>>, from_id: u64) -> Self
     {
         let event_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -81,13 +82,13 @@ impl Event {
 
         let mut digest = crc64fast::Digest::new();
         digest.write(&msg);
-        digest.write(&did.to_be_bytes());
+        digest.write(&to.to_be_bytes());
         digest.write(&event_time.to_be_bytes());
         digest.write(&from_id.to_be_bytes());
         let crc = digest.sum64();
         // let msg = Bytes::from(msg);
         Self {
-            did,
+            to,
             event_time,
             from_id,
             nonce,
@@ -106,7 +107,7 @@ impl Event {
         }
         let mut digest = crc64fast::Digest::new();
         digest.write(self.msg.as_ref());
-        digest.write(&self.did.to_be_bytes());
+        digest.write(&self.to.to_be_bytes());
         digest.write(&self.event_time.to_be_bytes());
         digest.write(&self.from_id.to_be_bytes());
         let crc = digest.sum64();
@@ -121,8 +122,8 @@ impl Event {
     pub fn encode(&self) -> Result<Vec<u8>> {
         serde_cbor::to_vec(&self).map_err(|e| anyhow::anyhow!("{e:?}"))
     }
-    pub fn decode(data: Vec<u8>) -> Result<Self> {
-        let evt: Self = serde_cbor::from_slice(&data).map_err(|e| anyhow::anyhow!("{e:?}"))?;
+    pub fn decode(data: &Vec<u8>) -> Result<Self> {
+        let evt: Self = serde_cbor::from_slice(data).map_err(|e| anyhow::anyhow!("{e:?}"))?;
         evt.validate()?;
         Ok(evt)
     }
@@ -132,11 +133,16 @@ impl Event {
 pub enum Message {
     /// App  status
     StatusSync {
-        did: u64,
-        relay_id: u64,
+        to: u64,
+        from_id: u64,
         status: AppStatus,
     },
 
+    Feedback {
+       crc:u64,
+       status: FeedbackStatus, 
+    },
+    
     /// I'm a relay
     RelayNode {
         did: u64,
@@ -157,13 +163,29 @@ pub enum Message {
         content: ChatContent,
     },
     WebRtc {
-        user_name: String,
+        stream_id: u32,
         action: RtcAction,
     },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum RtcAction {
+    Push {
+        audio_id: u32,
+        video_id: u32,
+    },
+    Pull {
+        audio_id: u32,
+        video_id: u32,
+    },
+    Reject {
+        audio_id: u32,
+        video_id: u32,
+    },
+    Status {
+        timestamp:u64,
+        code:String,
+    },
     Offer { dsp: String },
     Answer { dsp: String },
 }
@@ -173,7 +195,7 @@ pub struct Contacts {
     pub r#type: ContactsTypes,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy,PartialEq, Eq)]
 #[repr(u8)]
 pub enum ContactsTypes {
     Private,
@@ -188,6 +210,15 @@ pub enum AppStatus {
     Disconnected,
     Connected,
     Bye,
+}
+
+#[derive(Debug,Serialize,Deserialize)]
+#[repr(u8)]
+pub enum FeedbackStatus {
+    Reach,
+    Read,
+    Fetch,
+    Notice,
 }
 
 impl Message {
@@ -317,21 +348,19 @@ impl ContactsToken {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ChatContent {
-    Receipt {
-        status: ReceiptStatus,
+    Feedback {
+        crc:u64,
+        status: FeedbackStatus,
+    },
+    Burn {
+        crc:u64,
+        expires: u64,
     },
     Send {
-        publisher_id: u64,
         data: ContentData,
     },
 }
-#[derive(Debug, Serialize, Deserialize)]
-#[repr(u8)]
-pub enum ReceiptStatus {
-    Loaded,
-    Shown,
-    Failed,
-}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ContentData {
     Text {

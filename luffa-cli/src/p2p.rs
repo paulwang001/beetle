@@ -2,11 +2,8 @@ use anyhow::{Error, Result};
 use clap::{Args, Subcommand};
 use crossterm::style::Stylize;
 use libp2p::{Multiaddr, PeerId};
-use luffa_rpc_client::Lookup;
 use std::{collections::HashMap, fmt::Display, str::FromStr};
 
-use crate::api_p2p::P2p as P2pApi;
-use crate::api_p2p::PeerIdOrAddr;
 
 #[derive(Args, Debug, Clone)]
 #[clap(about = "Peer-2-peer commands")]

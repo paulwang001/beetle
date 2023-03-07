@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{time::Duration, sync::Arc};
 
 use anyhow::Result;
 use libp2p::{
@@ -11,11 +11,10 @@ use libp2p::{
     identity::Keypair,
     mplex, noise, quic,
     swarm::{derive_prelude::EitherOutput, ConnectionLimits, Executor, SwarmBuilder},
-    tcp, websocket,
+    tcp,
     yamux::{self, WindowUpdateMode},
     PeerId, Swarm, Transport,
 };
-use luffa_rpc_client::Client;
 
 use crate::{behaviour::NodeBehaviour, config::Libp2pConfig};
 
@@ -37,8 +36,8 @@ async fn build_transport(
     let tcp_transport = tcp::tokio::Transport::new(tcp_config.clone());
 
     // Websockets
-    let ws_tcp = websocket::WsConfig::new(tcp::tokio::Transport::new(tcp_config));
-    let tcp_ws_transport = tcp_transport.or_transport(ws_tcp);
+    // let ws_tcp = websocket::WsConfig::new(tcp::tokio::Transport::new(tcp_config));
+    // let tcp_ws_transport = tcp_transport.or_transport(ws_tcp);
 
     // Quic
     let quic_config = quic::Config::new(keypair);
@@ -72,7 +71,7 @@ async fn build_transport(
                 keypair.public().to_peer_id(),
             );
 
-        let transport = OrTransport::new(relay_transport, tcp_ws_transport);
+        let transport = OrTransport::new(relay_transport, tcp_transport);
         let transport = transport
             .upgrade(core::upgrade::Version::V1Lazy)
             .authenticate(auth_config)
@@ -82,7 +81,7 @@ async fn build_transport(
 
         (transport, Some(relay_client))
     } else {
-        let tcp_transport = tcp_ws_transport
+        let tcp_transport = tcp_transport
             .upgrade(core::upgrade::Version::V1Lazy)
             .authenticate(auth_config)
             .multiplex(muxer_config)
@@ -113,12 +112,12 @@ async fn build_transport(
 pub(crate) async fn build_swarm(
     config: &Libp2pConfig,
     keypair: &Keypair,
-    rpc_client: Client,
+    db:Arc<luffa_store::Store>,
 ) -> Result<Swarm<NodeBehaviour>> {
     let peer_id = keypair.public().to_peer_id();
 
     let (transport, relay_client) = build_transport(keypair, config).await;
-    let behaviour = NodeBehaviour::new(keypair, config, relay_client, rpc_client).await?;
+    let behaviour = NodeBehaviour::new(keypair, config, relay_client, db).await?;
 
     let limits = ConnectionLimits::default()
         .with_max_pending_incoming(Some(config.max_conns_pending_in))

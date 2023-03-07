@@ -15,18 +15,19 @@ clap = { workspace = true, features = ["derive"] }
 config.workspace = true
 crc64fast.workspace = true
 futures.workspace = true
+multihash.workspace = true
+libipld.workspace = true
 # headers.workspace = true
 # http-serde.workspace = true
 # hyper.workspace = true
 luffa-metrics.workspace = true
 luffa-node.workspace = true
-luffa-rpc-client.workspace = true
 luffa-rpc-types.workspace = true
-luffa-store = {workspace = true, features = ["relay"]}
+luffa-store = {workspace = true}
 luffa-util.workspace = true
 # reqwest = { workspace = true, features = ["rustls-tls"] }
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process"] }
 tracing.workspace = true
 libp2p = { workspace = true, features = ["gossipsub"] }
-luffa = { version = "0.1.0", path = "../luffa" }
+petgraph = "0.6.3"

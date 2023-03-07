@@ -4,8 +4,6 @@ use anyhow::Result;
 use config::{ConfigError, Map, Source, Value};
 use libp2p::Multiaddr;
 use luffa_metrics::config::Config as MetricsConfig;
-use luffa_rpc_client::Config as RpcClientConfig;
-use luffa_rpc_types::p2p::P2pAddr;
 use luffa_util::{insert_into_config_map, luffa_data_root};
 use serde::{Deserialize, Serialize};
 
@@ -19,7 +17,8 @@ pub const ENV_PREFIX: &str = "LUFFA_";
 /// Default bootstrap nodes
 ///
 pub const DEFAULT_BOOTSTRAP: &[&str] = &[
-    "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ", // i.luffa.io
+    "/ip4/206.238.220.40/udp/8899/quic-v1/p2p/12D3KooWDyjzAiWnZ11H8SGkL11WmB4UJxcmFQirMuyZPPqnyZAD",
+    "/ip4/206.238.123.19/tcp/8666/p2p/12D3KooWJstDDPjAwbUBvBnkmBfaNfzFAAPbtjH5tSVi185ePqxa",
 ];
 // no udp support yet
 
@@ -32,6 +31,7 @@ pub const DEFAULT_BOOTSTRAP: &[&str] = &[
 #[derive(PartialEq, Debug, Deserialize, Serialize, Clone)]
 pub struct ServerConfig {
     pub p2p: Config,
+    pub path: PathBuf,
     pub metrics: MetricsConfig,
 }
 
@@ -45,6 +45,7 @@ impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             p2p: Config::default_network(),
+            path: luffa_util::luffa_data_path("luffa_db").unwrap(),
             metrics: Default::default(),
         }
     }
@@ -102,9 +103,6 @@ pub struct Libp2pConfig {
 pub struct Config {
     /// Configuration for libp2p.
     pub libp2p: Libp2pConfig,
-
-    /// Configuration of RPC to other luffa services.
-    pub rpc_client: RpcClientConfig,
 
     /// Directory where cryptographic keys are stored.
     ///
@@ -192,7 +190,6 @@ impl Source for Config {
     fn collect(&self) -> Result<Map<String, Value>, ConfigError> {
         let mut map: Map<String, Value> = Map::new();
         insert_into_config_map(&mut map, "libp2p", self.libp2p.collect()?);
-        insert_into_config_map(&mut map, "rpc_client", self.rpc_client.collect()?);
         insert_into_config_map(&mut map, "key_store_path", self.key_store_path.to_str());
         Ok(map)
     }
@@ -207,7 +204,7 @@ impl Default for Libp2pConfig {
 
         Self {
             listening_multiaddrs: vec![
-                // "/ip4/0.0.0.0/tcp/8888".parse().unwrap(),
+                "/ip4/0.0.0.0/tcp/8866".parse().unwrap(),
                 "/ip4/0.0.0.0/udp/8889/quic-v1".parse().unwrap(),
             ],
             bootstrap_peers,
@@ -232,27 +229,13 @@ impl Default for Libp2pConfig {
 }
 
 impl Config {
-    pub fn default_with_rpc(client_addr: P2pAddr) -> Self {
-        Self {
-            libp2p: Libp2pConfig::default(),
-            rpc_client: RpcClientConfig {
-                p2p_addr: Some(client_addr),
-                ..Default::default()
-            },
-            key_store_path: luffa_data_root().unwrap(),
-        }
-    }
 
     pub fn default_network() -> Self {
-        let rpc_client = RpcClientConfig::default_network();
 
         Self {
             libp2p: Libp2pConfig::default(),
-            rpc_client,
             key_store_path: luffa_data_root().unwrap(),
         }
     }
-    pub fn rpc_addr(&self) -> Option<P2pAddr> {
-        self.rpc_client.p2p_addr.clone()
-    }
+   
 }

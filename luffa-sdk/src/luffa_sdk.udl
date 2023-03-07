@@ -2,19 +2,32 @@ namespace LuffaSDK {
 
 };
 
+dictionary ChatSession {
+   u64 did;
+   u64 last_time;
+   string tag;
+};
+
+dictionary ContactsView {
+  u64 did;
+  string tag;
+};
+
 [Error]
 enum ClientError {
   "CodeParser",
   "SendFailed",
+  "SearchError",
 };
 
 callback interface Callback {
-    void on_message(sequence<u8> msg);
+    void on_message(u64 crc,u64 from,u64 to,sequence<u8> msg);
 };
 
 interface Client {
     
     constructor();
+
     string show_code(string? comment);
 
     [Throws=ClientError] 
@@ -37,5 +50,14 @@ interface Client {
     void start(string? cfg_path,Callback cb);
 
     void stop();
+
+    void save_session(u64 did,string tag);
+
+    sequence<ChatSession> session_list(u32 top);
+
+    sequence<ContactsView> contacts_list(u8 c_type);
+
+    [Throws=ClientError] 
+    sequence<string> search(string query,u32 offet,u32 limit);
 
 };

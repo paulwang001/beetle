@@ -19,9 +19,9 @@ futures.workspace = true
 futures-util.workspace = true
 git-version.workspace = true
 luffa-util.workspace = true
+luffa-store= {workspace = true,features =["node"]}
 luffa-metrics = { workspace = true, features = ["p2p"] }
 lazy_static.workspace = true
-luffa-rpc-client.workspace = true
 luffa-rpc-types.workspace = true
 luffa-bitswap.workspace = true
 lru.workspace = true
@@ -53,8 +53,6 @@ features = [
   "quic",
   "dns",
   "mplex",
-  "request-response",
-  "websocket",
   "serde",
   "metrics",
   "relay",

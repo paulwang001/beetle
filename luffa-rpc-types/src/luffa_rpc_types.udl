@@ -4,7 +4,7 @@ namespace LuffaRpcTypes {
 };
 
 dictionary Event {
-    u64 did;
+    u64 to;
     u64 event_time;
     u64 crc;
     u64 from_id;
@@ -14,12 +14,13 @@ dictionary Event {
 
 [Enum]
 interface Message {
-  StatusSync(u64 did,u64 relay_id, AppStatus status);
+  StatusSync(u64 to,u64 from_id, AppStatus status);
+  Feedback (u64 crc,FeedbackStatus status);
   RelayNode(u64 did);
   ContactsSync(u64 did,sequence<Contacts> contacts);
   ContactsExchange(ContactsEvent exchange);
   Chat(ChatContent content);
-  WebRtc(string user_name,RtcAction action);
+  WebRtc(u32 stream_id,RtcAction action);
 };
 
 dictionary Contacts {
@@ -38,6 +39,10 @@ dictionary ContactsToken {
 
 [Enum]
 interface RtcAction {
+    Push(u32 audio_id,u32 video_id);
+    Pull(u32 audio_id,u32 video_id);
+    Reject(u32 audio_id,u32 video_id);
+    Status(u64 timestamp,string code);
     Offer(string dsp);
     Answer(string dsp);
 };
@@ -50,8 +55,9 @@ interface ContactsEvent {
 
 [Enum]
 interface ChatContent {
-    Receipt(ReceiptStatus status);
-    Send(u64 publisher_id,ContentData data);
+    Feedback(u64 crc,FeedbackStatus status);
+    Burn(u64 crc,u64 expires);
+    Send(ContentData data);
 };
 
 [Enum]
@@ -75,16 +81,18 @@ enum AppStatus {
     "Bye",
 };
 
+enum FeedbackStatus {
+    "Reach",
+    "Read",
+    "Fetch",
+    "Notice",
+};
+
 enum ContactsTypes {
   "Private",
   "Group",
 };
 
-enum ReceiptStatus {
-  "Loaded",
-  "Shown",
-  "Failed",
-};
 
 enum MediaTypes {
     "File",

@@ -22,7 +22,6 @@ libp2p.workspace = true
 libipld.workspace = true
 luffa-process.workspace = true
 luffa-metrics.workspace = true
-luffa-rpc-client.workspace = true
 luffa-bitswap.workspace = true
 luffa-util.workspace = true
 serde = { workspace = true, features = ["derive"] }

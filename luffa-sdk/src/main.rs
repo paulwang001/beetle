@@ -1,6 +1,6 @@
-#![feature(poll_ready)]
 use anyhow::Result;
 use futures::pending;
+use luffa_rpc_types::Message;
 use luffa_sdk::{Callback, Client};
 use std::future::{Future, IntoFuture};
 use std::task::Poll;
@@ -14,11 +14,31 @@ struct Messager {
     queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
 }
 
-impl Callback for &Messager {
-    fn on_message(&self, msg: Vec<u8>) {
+impl Callback for Messager {
+    fn on_message(&self, crc:u64,from_id:u64,to:u64,msg: Vec<u8>) {
         tracing::warn!("on>>>> {}", msg.len());
-        let mut q = self.queue.lock().unwrap();
-        q.push_back(msg);
+        if let Some(msg) = luffa_rpc_types::message_from(msg) {
+           match msg {
+              Message::RelayNode { did } =>{
+                
+              }
+              Message::ContactsSync { did, contacts }=>{
+
+              }
+              Message::ContactsExchange { exchange }=>{
+
+              }
+              Message::Chat { content }=>{
+
+              }
+              _=>{
+                
+              }
+           }
+        }
+        // let mut q = self.queue.lock().unwrap();
+        // q.push_back(msg);
+        
         // self.sender.send(msg);
     }
 }
@@ -31,22 +51,22 @@ impl Messager {
     }
 }
 
-impl Future for Messager {
-    type Output = Vec<u8>;
+// impl Future for Messager {
+//     type Output = Vec<u8>;
 
-    fn poll(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        loop {
-            let mut q = self.queue.lock().unwrap();
-            match q.pop_front() {
-                Some(msg) => Poll::ready(msg),
-                None => Poll::Pending,
-            }
-        }
-    }
-}
+//     fn poll(
+//         self: std::pin::Pin<&mut Self>,
+//         cx: &mut std::task::Context<'_>,
+//     ) -> std::task::Poll<Self::Output> {
+//         loop {
+//             let mut q = self.queue.lock().unwrap();
+//             match q.pop_front() {
+//                 Some(msg) => Poll::ready(msg),
+//                 None => Poll::Pending,
+//             }
+//         }
+//     }
+// }
 
 fn main() -> Result<()> {
     // let (tx, mut rx) = channel(1024);
@@ -55,7 +75,7 @@ fn main() -> Result<()> {
     let cfg_path = std::env::args().nth(1);
     // let msg_t = msg.clone();
     println!("starting");
-    client.start(cfg_path, Box::new(&msg));
+    client.start(cfg_path, Box::new(msg));
     println!("started.");
 
     std::thread::spawn(move || loop {
@@ -63,6 +83,7 @@ fn main() -> Result<()> {
         let peer_id = client.get_peer_id();
         info!("peer id: {peer_id:?}");
         let peers = client.relay_list();
+        // client.send_msg(to, msg)
         println!("{:?}", peers);
     });
 
@@ -73,12 +94,12 @@ fn main() -> Result<()> {
             // if let Some(msg) = rx.recv().await {
             //     println!("msg:{}", msg.len());
             // }
-            let m = msg.await;
-            info!("----------------{m:?}--------------");
+            // let m = msg.await;
+            // info!("----------------{m:?}--------------");
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
         println!(".....");
     });
-
+    
     Ok(())
 }

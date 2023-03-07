@@ -5,13 +5,10 @@ members = [
   "luffa-store",
   "luffa-bitswap",
   "luffa-rpc-types",
-  "luffa-rpc-client",
   "luffa-node",
   "luffa-relay",
   "luffa-process",
   "luffa-sdk",
-  "luffa",
-  "ios-rust-analyzer",
 ]
 resolver = "2"
 
@@ -71,7 +68,7 @@ opentelemetry = "0.18"
 opentelemetry-otlp = "0.11"
 paste = "1.0.9"
 prometheus-client = "0.18"
-quic-rpc = { version = "0.3.2", default-features = false }
+#quic-rpc = { version = "0.3.2", default-features = false }
 lru = "0.8"
 
 reqwest = { version = "0.11.10", default-features = false}
@@ -119,7 +116,6 @@ libp2p = { version = "0.50", default-features = false }
 luffa-util = { version = "0.1.0", path = "./luffa-util" }
 luffa-metrics = { version = "0.1.0", path = "./luffa-metrics" }
 luffa-rpc-types = { version = "0.1.0", path = "./luffa-rpc-types" }
-luffa-rpc-client = { version = "0.1.0", path = "./luffa-rpc-client" }
 luffa-bitswap = { version = "0.1.0", path = "./luffa-bitswap" }
 luffa-store = { version = "0.1.0", path = "./luffa-store" }
 luffa-node = { version = "0.1.0", path = "./luffa-node" }

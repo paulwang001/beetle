@@ -26,12 +26,15 @@ use opentelemetry::{
     trace::{TraceContextExt, TraceId},
 };
 use opentelemetry_otlp::WithExportConfig;
+use tracing_subscriber::fmt::format::FmtSpan;
 use std::env::consts::{ARCH, OS};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tracing::log::{debug, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter,fmt::Layer};
+use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::prelude::*;
 
 #[derive(Debug)]
 pub struct MetricsHandle {
@@ -130,6 +133,16 @@ fn init_tracer(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
     let registry = tracing_subscriber::registry().with(console_subscriber);
     #[cfg(not(feature = "tokio-console"))]
     let registry = tracing_subscriber::registry();
+    
+    #[cfg(target_os = "android")]
+    {
+        let android_layer = paranoid_android::layer(env!("CARGO_PKG_NAME"))
+        .with_span_events(FmtSpan::CLOSE)
+        .with_thread_names(true)
+        .with_filter(EnvFilter::from_default_env());
+        let registry = registry.with(android_layer);
+    }
+   
 
     registry
         .with(log_subscriber)

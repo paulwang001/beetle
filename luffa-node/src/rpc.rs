@@ -16,24 +16,22 @@ use libp2p::kad::{Quorum, Record};
 use libp2p::Multiaddr;
 use libp2p::PeerId;
 use luffa_bitswap::Block;
-use luffa_rpc_client::{
-    create_server, Lookup, P2pServer, ServerError, ServerSocket, HEALTH_POLL_WAIT,
-};
+
 use luffa_rpc_types::{
     p2p::*, RpcError, RpcResult, VersionRequest, VersionResponse, WatchRequest, WatchResponse,
 };
 use std::collections::{HashMap, HashSet};
-use std::result;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::oneshot;
 use tracing::{debug, info, trace, warn};
 
-use super::node::DEFAULT_PROVIDER_LIMIT;
-use crate::VERSION;
+const DEFAULT_PROVIDER_LIMIT: usize = 10;
 
-#[derive(Clone)]
-pub(crate) struct P2p {
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[derive(Clone,Debug)]
+pub struct P2p {
     sender: Sender<RpcMessage>,
 }
 
@@ -43,30 +41,30 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self))]
-    fn watch(self, _: WatchRequest) -> impl Stream<Item = WatchResponse> {
+    pub fn watch(&self, _: WatchRequest) -> impl Stream<Item = WatchResponse> {
         async_stream::stream! {
             loop {
                 yield WatchResponse { version: VERSION.to_string() };
-                tokio::time::sleep(HEALTH_POLL_WAIT).await;
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
         }
     }
 
     #[tracing::instrument(skip(self))]
-    async fn version(self, _: VersionRequest) -> VersionResponse {
+    pub async fn version(&self, _: VersionRequest) -> VersionResponse {
         VersionResponse {
             version: VERSION.to_string(),
         }
     }
 
     #[tracing::instrument(skip(self))]
-    async fn shutdown(self, _: ShutdownRequest) -> Result<()> {
+    pub async fn shutdown(&self, _: ShutdownRequest) -> Result<()> {
         self.sender.send(RpcMessage::Shutdown).await?;
         Ok(())
     }
 
     #[tracing::instrument(skip(self))]
-    async fn external_addrs(self, _: ExternalAddrsRequest) -> Result<ExternalAddrsResponse> {
+    pub async fn external_addrs(&self, _: ExternalAddrsRequest) -> Result<ExternalAddrsResponse> {
         trace!("received ExternalAddrs request");
 
         let (s, r) = oneshot::channel();
@@ -80,7 +78,7 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn listeners(self, _: ListenersRequest) -> Result<ListenersResponse> {
+    pub async fn listeners(&self, _: ListenersRequest) -> Result<ListenersResponse> {
         trace!("received Listeners request");
 
         let (s, r) = oneshot::channel();
@@ -94,7 +92,7 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn local_peer_id(self, _: LocalPeerIdRequest) -> Result<LocalPeerIdResponse> {
+    pub async fn local_peer_id(&self, _: LocalPeerIdRequest) -> Result<LocalPeerIdResponse> {
         trace!("received LocalPeerId request");
 
         let (s, r) = oneshot::channel();
@@ -110,7 +108,7 @@ impl P2p {
     // TODO: expand to handle multiple cids at once. Probably not a tough fix, just want to push
     // forward right now
     #[tracing::instrument(skip(self, req))]
-    async fn fetch_bitswap(self, req: BitswapRequest) -> Result<BitswapResponse> {
+    pub async fn fetch_bitswap(&self, req: BitswapRequest) -> Result<BitswapResponse> {
         let ctx = req.ctx;
         let cid = req.cid;
 
@@ -148,7 +146,7 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self, req))]
-    async fn push_bitswap(self, req: PushBitswapRequest) -> Result<PushBitswapResponse> {
+    pub async fn push_bitswap(&self, req: PushBitswapRequest) -> Result<PushBitswapResponse> {
         let PushBitswapRequest { data } = req;
 
         let (s, r) = oneshot::channel();
@@ -166,7 +164,7 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self, req))]
-    async fn stop_session_bitswap(self, req: StopSessionBitswapRequest) -> Result<()> {
+    pub async fn stop_session_bitswap(&self, req: StopSessionBitswapRequest) -> Result<()> {
         let ctx = req.ctx;
         debug!("stop session bitswap {}", ctx);
 
@@ -184,7 +182,7 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self, req))]
-    async fn notify_new_blocks_bitswap(self, req: NotifyNewBlocksBitswapRequest) -> Result<()> {
+    pub async fn notify_new_blocks_bitswap(&self, req: NotifyNewBlocksBitswapRequest) -> Result<()> {
         let blocks = req
             .blocks
             .into_iter()
@@ -207,7 +205,7 @@ impl P2p {
     /// by a server_streaming request. Convert errors into something serializable
     /// and flatten to get a single stream of responses.
     #[tracing::instrument(skip(self, req))]
-    fn fetch_provider_dht(
+    pub fn fetch_provider_dht(
         self,
         req: FetchProvidersDhtRequest,
     ) -> BoxStream<'static, RpcResult<FetchProvidersDhtResponse>> {
@@ -220,7 +218,7 @@ impl P2p {
     }
 
     /// Implementation of fetch_provider_dht
-    async fn fetch_provider_dht0(
+    pub async fn fetch_provider_dht0(
         self,
         req: FetchProvidersDhtRequest,
     ) -> anyhow::Result<BoxStream<'static, anyhow::Result<FetchProvidersDhtResponse>>> {
@@ -252,7 +250,7 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self, req))]
-    async fn start_providing(self, req: StartProvidingRequest) -> Result<()> {
+    pub async fn start_providing(&self, req: StartProvidingRequest) -> Result<()> {
         trace!("received StartProviding request: {:?}", req.key);
         let key_bytes: &[u8] = req.key.0.as_ref();
         let key = libp2p::kad::record::Key::new(&key_bytes);
@@ -268,7 +266,7 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self, req))]
-    async fn stop_providing(self, req: StopProvidingRequest) -> Result<()> {
+    pub async fn stop_providing(&self, req: StopProvidingRequest) -> Result<()> {
         trace!("received StopProviding request: {:?}", req.key);
         let key_bytes: &[u8] = req.key.0.as_ref();
         let key = libp2p::kad::record::Key::new(&key_bytes);
@@ -282,7 +280,7 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self, req))]
-    async fn get_record(self, req: GetRecordRequest) -> Result<GetRecordResponse> {
+    pub async fn get_record(&self, req: GetRecordRequest) -> Result<GetRecordResponse> {
         trace!("received GetRecord request: {:?}", req.key);
         let key_bytes: &[u8] = req.key.0.as_ref();
         let key = libp2p::kad::record::Key::new(&key_bytes);
@@ -300,12 +298,12 @@ impl P2p {
         });
         match rsp {
             Some(r) => Ok(r),
-            None => Err(ServerError::UnexpectedUpdateMessage.into()),
+            None => Err(anyhow!("")),
         }
     }
 
     #[tracing::instrument(skip(self, req))]
-    async fn put_record(self, req: PutRecordRequest) -> Result<()> {
+    pub async fn put_record(&self, req: PutRecordRequest) -> Result<()> {
         let PutRecordRequest {
             key,
             data,
@@ -334,8 +332,8 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn get_listening_addrs(
-        self,
+    pub async fn get_listening_addrs(
+        &self,
         _: GetListeningAddrsRequest,
     ) -> Result<GetListeningAddrsResponse> {
         let (s, r) = oneshot::channel();
@@ -348,7 +346,7 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn get_peers(self, _: GetPeersRequest) -> Result<GetPeersResponse> {
+    pub async fn get_peers(&self, _: GetPeersRequest) -> Result<GetPeersResponse> {
         let (s, r) = oneshot::channel();
         let msg = RpcMessage::NetPeers(s);
         self.sender.send(msg).await?;
@@ -361,7 +359,7 @@ impl P2p {
     #[tracing::instrument(skip(self, req))]
     /// First attempts to find the peer on the DHT, if found, it will then ensure we have
     /// a connection to the peer.
-    async fn peer_connect_by_peer_id(self, req: ConnectByPeerIdRequest) -> Result<()> {
+    pub  async fn peer_connect_by_peer_id(&self, req: ConnectByPeerIdRequest) -> Result<()> {
         let peer_id = req.peer_id;
         let (s, r) = oneshot::channel();
         // ask the swarm if we already have address for this peer
@@ -386,7 +384,7 @@ impl P2p {
 
     #[tracing::instrument(skip(self, req))]
     /// Dial the peer directly using the PeerId and Multiaddr
-    async fn peer_connect(self, req: ConnectRequest) -> Result<()> {
+    pub async fn peer_connect(&self, req: ConnectRequest) -> Result<()> {
         let peer_id = req.peer_id;
         let addrs = req.addrs;
         let (s, r) = oneshot::channel();
@@ -396,7 +394,7 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self, req))]
-    async fn peer_disconnect(self, req: DisconnectRequest) -> Result<()> {
+    pub async fn peer_disconnect(&self, req: DisconnectRequest) -> Result<()> {
         let peer_id = req.peer_id;
         let (s, r) = oneshot::channel();
         let msg = RpcMessage::NetDisconnect(s, peer_id);
@@ -407,7 +405,7 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self, req))]
-    async fn lookup(self, req: LookupRequest) -> Result<LookupResponse> {
+    pub async fn lookup(&self, req: LookupRequest) -> Result<LookupResponse> {
         let (s, r) = oneshot::channel();
         let peer_id = req.peer_id;
 
@@ -458,16 +456,16 @@ impl P2p {
         Ok(peer_info_from_identify_info(info))
     }
 
-    #[tracing::instrument(skip(self))]
-    async fn lookup_local(self, _: LookupLocalRequest) -> Result<LookupResponse> {
-        let (s, r) = oneshot::channel();
-        self.sender.send(RpcMessage::LookupLocalPeerInfo(s)).await?;
-        let lookup = r.await?;
-        Ok(peer_info_from_lookup(lookup))
-    }
+    // #[tracing::instrument(skip(self))]
+    // async fn lookup_local(&self, _: LookupLocalRequest) -> Result<LookupResponse> {
+    //     let (s, r) = oneshot::channel();
+    //     self.sender.send(RpcMessage::LookupLocalPeerInfo(s)).await?;
+    //     let lookup = r.await?;
+    //     Ok(peer_info_from_lookup(lookup))
+    // }
 
     #[tracing::instrument(skip(self, req))]
-    async fn gossipsub_add_explicit_peer(self, req: GossipsubAddExplicitPeerRequest) -> Result<()> {
+    pub async fn gossipsub_add_explicit_peer(&self, req: GossipsubAddExplicitPeerRequest) -> Result<()> {
         let (s, r) = oneshot::channel();
         let msg = RpcMessage::Gossipsub(GossipsubMessage::AddExplicitPeer(s, req.peer_id));
         self.sender.send(msg).await?;
@@ -477,8 +475,8 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn gossipsub_all_mesh_peers(
-        self,
+    pub async fn gossipsub_all_mesh_peers(
+        &self,
         _: GossipsubAllMeshPeersRequest,
     ) -> Result<GossipsubPeersResponse> {
         let (s, r) = oneshot::channel();
@@ -489,8 +487,8 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn gossipsub_all_peers(
-        self,
+    pub async fn gossipsub_all_peers(
+        &self,
         _: GossipsubAllPeersRequest,
     ) -> Result<GossipsubAllPeersResponse> {
         let (s, r) = oneshot::channel();
@@ -512,8 +510,8 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self, req))]
-    async fn gossipsub_mesh_peers(
-        self,
+    pub async fn gossipsub_mesh_peers(
+        &self,
         req: GossipsubMeshPeersRequest,
     ) -> Result<GossipsubPeersResponse> {
         let topic = TopicHash::from_raw(req.topic_hash);
@@ -526,8 +524,8 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self, req))]
-    async fn gossipsub_publish(
-        self,
+    pub async fn gossipsub_publish(
+        &self,
         req: GossipsubPublishRequest,
     ) -> Result<GossipsubPublishResponse> {
         let data = req.data;
@@ -544,8 +542,8 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self, req))]
-    async fn gossipsub_remove_explicit_peer(
-        self,
+    pub async fn gossipsub_remove_explicit_peer(
+        &self,
         req: GossipsubRemoveExplicitPeerRequest,
     ) -> Result<()> {
         let peer_id = req.peer_id;
@@ -558,8 +556,8 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self, req))]
-    async fn gossipsub_subscribe(
-        self,
+    pub async fn gossipsub_subscribe(
+        &self,
         req: GossipsubSubscribeRequest,
     ) -> Result<GossipsubSubscribeResponse> {
         let (s, r) = oneshot::channel();
@@ -576,7 +574,7 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn gossipsub_topics(self, _: GossipsubTopicsRequest) -> Result<GossipsubTopicsResponse> {
+    pub async fn gossipsub_topics(&self, _: GossipsubTopicsRequest) -> Result<GossipsubTopicsResponse> {
         let (s, r) = oneshot::channel();
         let msg = RpcMessage::Gossipsub(GossipsubMessage::Topics(s));
 
@@ -588,8 +586,8 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self, req))]
-    async fn gossipsub_unsubscribe(
-        self,
+    pub async fn gossipsub_unsubscribe(
+        &self,
         req: GossipsubUnsubscribeRequest,
     ) -> Result<GossipsubUnsubscribeResponse> {
         let (s, r) = oneshot::channel();
@@ -605,62 +603,62 @@ impl P2p {
     }
 }
 
-/// dispatch a single request from the server 
-#[rustfmt::skip]
-async fn dispatch(s: P2pServer, req: P2pRequest, chan: ServerSocket<P2pService>, target: P2p) -> result::Result<(), ServerError> {
-    use P2pRequest::*;
-    match req {
-        Watch(req) => s.server_streaming(req, chan, target, P2p::watch).await,
-        Version(req) => s.rpc(req, chan, target, P2p::version).await,
-        Shutdown(req) => s.rpc_map_err(req, chan, target, P2p::shutdown).await,
-        FetchBitswap(req) => s.rpc_map_err(req, chan, target, P2p::fetch_bitswap).await,
-        PushBitswap(req) => s.rpc_map_err(req, chan, target, P2p::push_bitswap).await,
-        GossipsubAddExplicitPeer(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_add_explicit_peer).await,
-        GossipsubAllPeers(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_all_peers).await,
-        GossipsubMeshPeers(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_mesh_peers).await,
-        GossipsubAllMeshPeers(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_all_mesh_peers).await,
-        GossipsubPublish(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_publish).await,
-        GossipsubRemoveExplicitPeer(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_remove_explicit_peer).await,
-        GossipsubSubscribe(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_subscribe).await,
-        GossipsubTopics(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_topics).await,
-        GossipsubUnsubscribe(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_unsubscribe).await,
-        StopSessionBitswap(req) => s.rpc_map_err(req, chan, target, P2p::stop_session_bitswap).await,
-        StartProviding(req) => s.rpc_map_err(req, chan, target, P2p::start_providing).await,
-        StopProviding(req) => s.rpc_map_err(req, chan, target, P2p::stop_providing).await,
-        LocalPeerId(req) => s.rpc_map_err(req, chan, target, P2p::local_peer_id).await,
-        NotifyNewBlocksBitswap(req) => s.rpc_map_err(req, chan, target, P2p::notify_new_blocks_bitswap).await,
-        GetListeningAddrs(req) => s.rpc_map_err(req, chan, target, P2p::get_listening_addrs).await,
-        GetPeers(req) => s.rpc_map_err(req, chan, target, P2p::get_peers).await,
-        PeerConnect(req) => s.rpc_map_err(req, chan, target, P2p::peer_connect).await,
-        PeerDisconnect(req) => s.rpc_map_err(req, chan, target, P2p::peer_disconnect).await,
-        PeerConnectByPeerId(req) => s.rpc_map_err(req, chan, target, P2p::peer_connect_by_peer_id).await,
-        Lookup(req) => s.rpc_map_err(req, chan, target, P2p::lookup).await,
-        LookupLocal(req) => s.rpc_map_err(req, chan, target, P2p::lookup_local).await,
-        ExternalAddrs(req) => s.rpc_map_err(req, chan, target, P2p::external_addrs).await,
-        Listeners(req) => s.rpc_map_err(req, chan, target, P2p::listeners).await,
-        GetRecordDht(req) => s.rpc_map_err(req, chan, target, P2p::get_record).await,
-        FetchProviderDht(req) => s.server_streaming(req, chan, target, P2p::fetch_provider_dht).await,
-        PutRecordDht(req) => s.rpc_map_err(req, chan, target, P2p::put_record).await,
-    }
-}
+// /// dispatch a single request from the server 
+// #[rustfmt::skip]
+// async fn dispatch(s: P2pServer, req: P2pRequest, chan: ServerSocket<P2pService>, target: P2p) -> result::Result<(), ServerError> {
+//     use P2pRequest::*;
+//     match req {
+//         Watch(req) => s.server_streaming(req, chan, target, P2p::watch).await,
+//         Version(req) => s.rpc(req, chan, target, P2p::version).await,
+//         Shutdown(req) => s.rpc_map_err(req, chan, target, P2p::shutdown).await,
+//         FetchBitswap(req) => s.rpc_map_err(req, chan, target, P2p::fetch_bitswap).await,
+//         PushBitswap(req) => s.rpc_map_err(req, chan, target, P2p::push_bitswap).await,
+//         GossipsubAddExplicitPeer(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_add_explicit_peer).await,
+//         GossipsubAllPeers(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_all_peers).await,
+//         GossipsubMeshPeers(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_mesh_peers).await,
+//         GossipsubAllMeshPeers(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_all_mesh_peers).await,
+//         GossipsubPublish(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_publish).await,
+//         GossipsubRemoveExplicitPeer(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_remove_explicit_peer).await,
+//         GossipsubSubscribe(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_subscribe).await,
+//         GossipsubTopics(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_topics).await,
+//         GossipsubUnsubscribe(req) => s.rpc_map_err(req, chan, target, P2p::gossipsub_unsubscribe).await,
+//         StopSessionBitswap(req) => s.rpc_map_err(req, chan, target, P2p::stop_session_bitswap).await,
+//         StartProviding(req) => s.rpc_map_err(req, chan, target, P2p::start_providing).await,
+//         StopProviding(req) => s.rpc_map_err(req, chan, target, P2p::stop_providing).await,
+//         LocalPeerId(req) => s.rpc_map_err(req, chan, target, P2p::local_peer_id).await,
+//         NotifyNewBlocksBitswap(req) => s.rpc_map_err(req, chan, target, P2p::notify_new_blocks_bitswap).await,
+//         GetListeningAddrs(req) => s.rpc_map_err(req, chan, target, P2p::get_listening_addrs).await,
+//         GetPeers(req) => s.rpc_map_err(req, chan, target, P2p::get_peers).await,
+//         PeerConnect(req) => s.rpc_map_err(req, chan, target, P2p::peer_connect).await,
+//         PeerDisconnect(req) => s.rpc_map_err(req, chan, target, P2p::peer_disconnect).await,
+//         PeerConnectByPeerId(req) => s.rpc_map_err(req, chan, target, P2p::peer_connect_by_peer_id).await,
+//         Lookup(req) => s.rpc_map_err(req, chan, target, P2p::lookup).await,
+//         LookupLocal(req) => s.rpc_map_err(req, chan, target, P2p::lookup_local).await,
+//         ExternalAddrs(req) => s.rpc_map_err(req, chan, target, P2p::external_addrs).await,
+//         Listeners(req) => s.rpc_map_err(req, chan, target, P2p::listeners).await,
+//         GetRecordDht(req) => s.rpc_map_err(req, chan, target, P2p::get_record).await,
+//         FetchProviderDht(req) => s.server_streaming(req, chan, target, P2p::fetch_provider_dht).await,
+//         PutRecordDht(req) => s.rpc_map_err(req, chan, target, P2p::put_record).await,
+//     }
+// }
 
-#[tracing::instrument(skip(p2p))]
-pub(crate) async fn new(addr: P2pAddr, p2p: P2p) -> Result<()> {
-    info!("p2p rpc listening on: {}", addr);
-    let server = create_server::<P2pService>(addr).await?;
-    loop {
-        match server.accept_one().await {
-            Ok((req, chan)) => {
-                tokio::spawn(dispatch(server.clone(), req, chan, p2p.clone()));
-            }
-            Err(cause) => {
-                tracing::debug!("p2p rpc accept error: {}", cause);
-            }
-        }
-    }
-}
+// #[tracing::instrument(skip(p2p))]
+// pub(crate) async fn new(addr: P2pAddr, p2p: P2p) -> Result<()> {
+//     info!("p2p rpc listening on: {}", addr);
+//     let server = create_server::<P2pService>(addr).await?;
+//     loop {
+//         match server.accept_one().await {
+//             Ok((req, chan)) => {
+//                 tokio::spawn(dispatch(server.clone(), req, chan, p2p.clone()));
+//             }
+//             Err(cause) => {
+//                 tracing::debug!("p2p rpc accept error: {}", cause);
+//             }
+//         }
+//     }
+// }
 
-fn peer_info_from_identify_info(i: IdentifyInfo) -> LookupResponse {
+pub fn peer_info_from_identify_info(i: IdentifyInfo) -> LookupResponse {
     LookupResponse {
         peer_id: i.public_key.to_peer_id(),
         protocol_version: i.protocol_version,
@@ -671,16 +669,16 @@ fn peer_info_from_identify_info(i: IdentifyInfo) -> LookupResponse {
     }
 }
 
-fn peer_info_from_lookup(l: Lookup) -> LookupResponse {
-    LookupResponse {
-        peer_id: l.peer_id,
-        protocol_version: l.protocol_version,
-        agent_version: l.agent_version,
-        listen_addrs: l.listen_addrs,
-        protocols: l.protocols,
-        observed_addrs: l.observed_addrs,
-    }
-}
+// fn peer_info_from_lookup(l: Lookup) -> LookupResponse {
+//     LookupResponse {
+//         peer_id: l.peer_id,
+//         protocol_version: l.protocol_version,
+//         agent_version: l.agent_version,
+//         listen_addrs: l.listen_addrs,
+//         protocols: l.protocols,
+//         observed_addrs: l.observed_addrs,
+//     }
+// }
 
 #[derive(Debug)]
 pub enum ProviderRequestKey {
@@ -722,6 +720,7 @@ pub enum RpcMessage {
     StopProviding(oneshot::Sender<Result<()>>, Key),
     GetRecord(oneshot::Sender<Result<Option<Record>>>, Key),
     PutRecord(oneshot::Sender<Result<Option<Record>>>, Record),
+    PutRecordTo(oneshot::Sender<Result<Option<Record>>>,Vec<PeerId>, Record),
     NetListeningAddrs(oneshot::Sender<(PeerId, Vec<Multiaddr>)>),
     NetPeers(oneshot::Sender<HashMap<PeerId, Vec<Multiaddr>>>),
     NetConnectByPeerId(oneshot::Sender<Result<()>>, PeerId),
@@ -733,7 +732,7 @@ pub enum RpcMessage {
     ListenForIdentify(oneshot::Sender<Result<IdentifyInfo>>, PeerId),
     CancelListenForIdentify(oneshot::Sender<()>, PeerId),
     AddressesOfPeer(oneshot::Sender<Vec<Multiaddr>>, PeerId),
-    LookupLocalPeerInfo(oneshot::Sender<Lookup>),
+    // LookupLocalPeerInfo(oneshot::Sender<Lookup>),
     Shutdown,
 }
 

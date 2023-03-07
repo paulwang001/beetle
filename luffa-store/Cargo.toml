@@ -20,7 +20,6 @@ futures.workspace = true
 git-version.workspace = true
 rkyv = { workspace = true, features = ["validation"] }
 luffa-util.workspace = true
-luffa-rpc-client.workspace = true
 luffa-rpc-types.workspace = true
 luffa-metrics = { workspace = true, features = ["store"] }
 multihash.workspace = true

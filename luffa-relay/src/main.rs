@@ -2,25 +2,69 @@ use std::{sync::Arc, time::Duration};
 
 #[allow(unused_imports)]
 use anyhow::{anyhow, Result};
+use cid::Cid;
 use clap::Parser;
+use libipld::cbor::DagCborCodec;
 use libp2p::gossipsub::{GossipsubMessage, TopicHash};
 use luffa_node::{GossipsubEvent, NetworkEvent};
 use luffa_relay::{
+    api::P2pClient,
     cli::Args,
     config::{Config, CONFIG_FILE_NAME, ENV_PREFIX},
+    mem_p2p::{self, start_store},
 };
-use luffa_rpc_types::{
-    Addr, {AppStatus, Event},
-};
+use luffa_rpc_types::{AppStatus, ContactsTypes, Event};
+use multihash::MultihashDigest;
+use serde::{Deserialize, Serialize};
 // use luffa_util::lock::ProgramLock;
-use luffa_rpc_client::P2pClient;
+use luffa_rpc_types::Message;
 use luffa_util::{luffa_config_path, make_config};
-use tracing::{debug, info, warn};
+use petgraph::{
+    graph::{NodeIndex, UnGraph},
+    prelude::DiGraph,
+    EdgeType, Graph,
+};
+use tokio::sync::RwLock;
+use tracing::{debug, info, warn, error};
 
 const TOPIC_STATUS: &str = "luffa_status";
 const TOPIC_RELAY: &str = "luffa_relay";
 const TOPIC_CONTACTS: &str = "luffa_contacts";
+const TOPIC_CHAT: &str = "luffa_chat";
 // const TOPIC_CONTACTS_SCAN: &str = "luffa_contacts_scan_answer";
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Node {
+    did: u64,
+    last_time: u64,
+    meta: NodeTypes,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Edge {
+    last_time: u64,
+    meta: EdgeTypes,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+enum NodeTypes {
+    Client,
+    Relay,
+    Group,
+}
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+enum EdgeTypes {
+    Connect,
+    Private,
+    Group,
+}
+
+fn get_now() -> u64 {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
+    now.as_secs()
+}
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
@@ -45,6 +89,10 @@ async fn main() -> Result<()> {
 
     config.metrics = luffa_node::metrics::metrics_config_with_compile_time_info(config.metrics);
     info!("-------");
+    let mut net_graph =
+        DiGraph::<Node, Edge>::with_capacity(10 * 1024 * 1024, 10 * 1024 * 1024 * 128);
+    let mut contacts_graph =
+        DiGraph::<Node, Edge>::with_capacity(10 * 1024 * 1024, 10 * 1024 * 1024 * 128);
 
     let metrics_config = config.metrics.clone();
 
@@ -59,41 +107,27 @@ async fn main() -> Result<()> {
             Err(err) => tracing::error!("Error increasing NOFILE limit: {}", err),
         }
     }
-    info!("-------");
-    let (key, peer, store_rpc, p2p_rpc, mut events) = {
-        let store_recv = Addr::new_mem();
-        let store_sender = store_recv.clone();
-        let p2p_recv = match config.p2p.rpc_client.p2p_addr.as_ref() {
-            Some(addr) => addr.clone(),
-            None => Addr::new_mem(),
-        };
-        // let p2p_recv = Addr::from_str("irpc://0.0.0.0:8887").unwrap();
-        // let p2p_recv = Addr::new_mem();
-        // let p2p_sender = p2p_recv.clone();
-        config.rpc_client.store_addr = Some(store_sender);
-        // config.rpc_client.p2p_addr = Some(p2p_sender);
-        config.synchronize_subconfigs();
 
-        info!("store starting... {:?}",config.store.clone());
-        let store_rpc = luffa_relay::mem_store::start(store_recv, config.store.clone()).await?;
-        info!("p2p starting... {:?}",config.p2p.clone());
-        let (key, peer_id, p2p_rpc, events) =
-            luffa_relay::mem_p2p::start(p2p_recv, config.p2p.clone()).await?;
-        (key,peer_id,store_rpc, p2p_rpc,events)
+    info!("-------");
+    let (key, peer, p2p_rpc, mut events, sender) = {
+        let store = start_store(config.store.clone()).await.unwrap();
+        let (key, peer_id, p2p_rpc, events, sender) =
+            mem_p2p::start(config.p2p.clone(), Arc::new(store)).await?;
+        (key, peer_id, p2p_rpc, events, sender)
     };
 
     let mut digest = crc64fast::Digest::new();
     digest.write(&peer.to_bytes());
     let my_id = digest.sum64();
     info!("started> did:{my_id}");
-
-    let client_addr = match config.rpc_client.p2p_addr.as_ref() {
-        Some(addr) => addr.clone(),
-        None => Addr::new_mem(),
-    };
-
-    let client = Arc::new(P2pClient::new(client_addr).await?);
-
+    let my_idx = net_graph.add_node(Node {
+        did: my_id,
+        last_time: get_now(),
+        meta: NodeTypes::Relay,
+    });
+    let client = Arc::new(luffa_node::rpc::P2p::new(sender));
+    let client = Arc::new(P2pClient::new(client).unwrap());
+    let notice_queue = Arc::new(RwLock::new(std::collections::BTreeMap::<u64,u64>::new()));
     info!("mem rpc client open.");
     let client_t = client.clone();
     let pub_sub = tokio::spawn(async move {
@@ -124,15 +158,14 @@ async fn main() -> Result<()> {
             if let Ok(_) = tokio::time::timeout(Duration::from_secs(5), async {
                 info!("client publicsh relay.");
                 let msg = luffa_rpc_types::Message::RelayNode { did: my_id };
-                let event = luffa_rpc_types::Event::new(0, msg, None,my_id);
+                let event = luffa_rpc_types::Event::new(0, &msg, None, my_id);
                 let event = event.encode().unwrap();
-                if let Err(e) =
-                    client_t
+                if let Err(e) = client_t
                     .gossipsub_publish(TopicHash::from_raw(TOPIC_RELAY), bytes::Bytes::from(event))
                     .await
-                    {
-                        tracing::warn!("{e:?}");
-                    }
+                {
+                    tracing::warn!("{e:?}");
+                }
             })
             .await
             {
@@ -144,14 +177,14 @@ async fn main() -> Result<()> {
         while let Some(evt) = events.recv().await {
             match evt {
                 NetworkEvent::Gossipsub(GossipsubEvent::Subscribed { peer_id, topic }) => {
-                    tracing::warn!("Subscribed>>>> peer_id: {peer_id:?} topic: {topic:?}" );
+                    tracing::warn!("Subscribed>>>> peer_id: {peer_id:?} topic: {topic:?}");
                 }
                 NetworkEvent::Gossipsub(GossipsubEvent::Message { message, from, id }) => {
                     let GossipsubMessage { data, .. } = message;
-                    match Event::decode(data) {
-                        Ok(im)=>{
+                    match Event::decode(&data) {
+                        Ok(im) => {
                             let Event {
-                                did,
+                                to,
                                 event_time,
                                 msg,
                                 nonce,
@@ -165,18 +198,152 @@ async fn main() -> Result<()> {
                                     None,
                                     nonce,
                                 ) {
-                                    tracing::warn!("msg>>>>[{event_time}] from: {from_id} to:{did} msg:{msg:?}");
+                                    tracing::warn!(
+                                        "msg>>>>[{event_time}] from: {from_id} to:{to} msg:{msg:?}"
+                                    );
+                                    match msg {
+                                        Message::ContactsSync { did, contacts } => {
+                                            let from = take_node(
+                                                &mut contacts_graph,
+                                                did,
+                                                NodeTypes::Client,
+                                            );
+
+                                            if let Some(_n) = net_graph.find_edge(my_idx, from) {
+                                                // TODO closest
+                                                let client_t = client.clone();
+                                                tokio::spawn(async move {
+                                                    let topic = TopicHash::from_raw(format!(
+                                                        "{}_{}",
+                                                        TOPIC_CHAT, did
+                                                    ));
+                                                    if let Err(e) = client_t.gossipsub_subscribe(topic).await {
+                                                        error!("{e:?}");
+                                                    }
+                                                });
+                                            }
+                                            for ctt in contacts {
+                                                let (meta, tp) =
+                                                    if ctt.r#type == ContactsTypes::Group {
+                                                        (EdgeTypes::Group, NodeTypes::Group)
+                                                    } else {
+                                                        (EdgeTypes::Private, NodeTypes::Client)
+                                                    };
+                                                let to =
+                                                    take_node(&mut contacts_graph, ctt.did, tp);
+                                                contacts_graph.add_edge(
+                                                    to,
+                                                    from.clone(),
+                                                    Edge {
+                                                        last_time: event_time,
+                                                        meta,
+                                                    },
+                                                );
+                                            }
+                                        }
+                                        Message::RelayNode { did } => {
+                                            let from =
+                                                take_node(&mut net_graph, did, NodeTypes::Relay);
+                                            let w = &mut net_graph[from];
+                                            w.last_time = event_time;
+                                            w.meta = NodeTypes::Relay;
+                                        }
+                                        Message::StatusSync {
+                                            to,
+                                            from_id,
+                                            status,
+                                            ..
+                                        } => {
+                                            let from = take_node(
+                                                &mut net_graph,
+                                                from_id,
+                                                NodeTypes::Client,
+                                            );
+                                            let to = take_node(
+                                                &mut net_graph,
+                                                from_id,
+                                                NodeTypes::Relay,
+                                            );
+                                            match net_graph.find_edge(from.clone(), to.clone()) {
+                                                Some(i) => match status {
+                                                    AppStatus::Active | AppStatus::Connected => {
+                                                        let e =
+                                                            net_graph.edge_weight_mut(i).unwrap();
+                                                        e.last_time = event_time;
+
+                                                        let w = &mut net_graph[from];
+                                                        w.last_time = event_time;
+
+                                                        let w = &mut net_graph[to];
+                                                        w.last_time = event_time;
+                                                    }
+                                                    AppStatus::Disconnected
+                                                    | AppStatus::Deactive => {
+                                                        net_graph.remove_edge(i);
+                                                    }
+                                                    _ => {}
+                                                },
+                                                None => match status {
+                                                    AppStatus::Active | AppStatus::Connected => {
+                                                        net_graph.add_edge(
+                                                            from,
+                                                            to,
+                                                            Edge {
+                                                                last_time: event_time,
+                                                                meta: EdgeTypes::Connect,
+                                                            },
+                                                        );
+                                                    }
+                                                    _ => {}
+                                                },
+                                            }
+                                        }
+                                        Message::Feedback { crc, status }=>{
+
+                                        }
+                                        _ => {}
+                                    }
                                 }
                             } else {
                                 // todo!()
-                                warn!("encrypt msg:{from_id} -> {did}");
+                                warn!("encrypt msg:{from_id} -> {to}");
+                                let from =
+                                    take_node(&mut contacts_graph, from_id, NodeTypes::Client);
+                                if let Some(idx) = contacts_graph.node_indices().find(|n| {
+                                    let w = &contacts_graph[*n];
+                                    w.did == to
+                                }) {
+                                    let w = &contacts_graph[idx];
+                                    match w.meta {
+                                        NodeTypes::Group => {}
+                                        NodeTypes::Client => {
+                                            // target connect to this relay?
+                                            if let Some(n) = net_graph.find_edge(my_idx, idx) {
+
+
+                                            }
+                                            let relay_peers = net_graph.neighbors(idx);
+                                            let relay_peers = relay_peers.into_iter().collect::<Vec<_>>();
+                                            if relay_peers.is_empty() {
+                                                let client_t = client.clone();
+                                                tokio::spawn(async move {
+                                                    let expires = Some(event_time + 24 * 60 * 60);
+
+                                                    let cid = Cid::new_v1(DagCborCodec.into(), multihash::Code::Sha2_256.digest(&data));
+                                                    // client_t.put_record(key, data, None, expires);
+                                                });
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                // let to = take_node(&mut graph, to, NodeTypes::Client);
                             }
                         }
-                        Err(e)=>{
+                        Err(e) => {
                             warn!("{e:?}");
                         }
                     }
-
                 }
                 NetworkEvent::Gossipsub(GossipsubEvent::Unsubscribed { peer_id, topic }) => {}
                 NetworkEvent::PeerConnected(peer_id) => {
@@ -184,44 +351,82 @@ async fn main() -> Result<()> {
                     let mut digest = crc64fast::Digest::new();
                     digest.write(&peer_id.to_bytes());
                     let u_id = digest.sum64();
+                    match net_graph.node_indices().find(|idx| {
+                        let w = &net_graph[*idx];
+                        w.did == u_id
+                    }) {
+                        Some(idx) => {
+                            let edge = Edge {
+                                last_time: get_now(),
+                                meta: EdgeTypes::Connect,
+                            };
+                            net_graph.add_edge(my_idx.clone(), idx.clone(), edge);
+                        }
+                        None => {
+                            let idx = net_graph.add_node(Node {
+                                did: u_id,
+                                last_time: get_now(),
+                                meta: NodeTypes::Client,
+                            });
+                            let edge = Edge {
+                                last_time: get_now(),
+                                meta: EdgeTypes::Connect,
+                            };
+                            net_graph.add_edge(my_idx.clone(), idx, edge);
+                        }
+                    }
                     let msg = luffa_rpc_types::Message::StatusSync {
-                        did: u_id,
-                        relay_id: my_id,
+                        to: u_id,
+                        from_id: my_id,
                         status: AppStatus::Connected,
                     };
-                    let event = luffa_rpc_types::Event::new(0, msg, None,u_id);
+                    let event = luffa_rpc_types::Event::new(0, &msg, None, u_id);
                     let event = event.encode().unwrap();
-                    if let Err(e)= 
-                    client
+                    if let Err(e) = client
                         .gossipsub_publish(
                             TopicHash::from_raw(TOPIC_STATUS),
                             bytes::Bytes::from(event),
                         )
-                        .await{
-                            tracing::warn!("{e:?}");
-                        }
+                        .await
+                    {
+                        tracing::warn!("{e:?}");
+                    }
                 }
                 NetworkEvent::PeerDisconnected(peer_id) => {
                     tracing::info!("---------PeerDisconnected-----------{:?}", peer_id);
                     let mut digest = crc64fast::Digest::new();
                     digest.write(&peer_id.to_bytes());
                     let u_id = digest.sum64();
+                    match net_graph.node_indices().find(|idx| {
+                        let w = &net_graph[*idx];
+                        w.did == u_id
+                    }) {
+                        Some(idx) => {
+                            while let Some(i) = net_graph.find_edge(my_idx.clone(), idx.clone()) {
+                                let e = net_graph.edge_weight(i).unwrap();
+                                if e.meta == EdgeTypes::Connect {
+                                    net_graph.remove_edge(i);
+                                }
+                            }
+                        }
+                        None => {}
+                    }
                     let msg = luffa_rpc_types::Message::StatusSync {
-                        did: u_id,
-                        relay_id: my_id,
+                        to: u_id,
+                        from_id: my_id,
                         status: AppStatus::Disconnected,
                     };
-                    let event = luffa_rpc_types::Event::new(0, msg, None,u_id);
+                    let event = luffa_rpc_types::Event::new(0, &msg, None, u_id);
                     let event = event.encode().unwrap();
-                    if let Err(e)= 
-                    client
+                    if let Err(e) = client
                         .gossipsub_publish(
                             TopicHash::from_raw(TOPIC_STATUS),
                             bytes::Bytes::from(event),
                         )
-                        .await{
-                            tracing::warn!("{e:?}");
-                        }
+                        .await
+                    {
+                        tracing::warn!("{e:?}");
+                    }
                 }
                 NetworkEvent::CancelLookupQuery(peer_id) => {
                     tracing::info!("---------CancelLookupQuery-----------{:?}", peer_id);
@@ -233,9 +438,22 @@ async fn main() -> Result<()> {
     luffa_util::block_until_sigint().await;
     pub_sub.abort();
     process.abort();
-    store_rpc.abort();
     p2p_rpc.abort();
 
     metrics_handle.shutdown();
     Ok(())
+}
+
+fn take_node(g: &mut DiGraph<Node, Edge>, did: u64, node_type: NodeTypes) -> NodeIndex {
+    match g.node_indices().find(|n| {
+        let w = &g[*n];
+        w.did == did
+    }) {
+        Some(i) => i,
+        None => g.add_node(Node {
+            did,
+            last_time: get_now(),
+            meta: node_type,
+        }),
+    }
 }

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -17,12 +18,10 @@ use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{autonat, dcutr};
 use luffa_bitswap::{Bitswap, Block, Config as BitswapConfig, Store};
-use luffa_rpc_client::Client;
 use tracing::{info, warn};
 
 mod event;
 mod peer_manager;
-
 pub(crate) use self::event::Event;
 use self::peer_manager::PeerManager;
 use crate::config::Libp2pConfig;
@@ -48,34 +47,29 @@ pub(crate) struct NodeBehaviour {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct BitswapStore(Client);
+pub(crate) struct BitswapStore(Arc<luffa_store::Store>);
 
 #[async_trait]
 impl Store for BitswapStore {
     async fn get(&self, cid: &Cid) -> Result<Block> {
-        let store = self.0.try_store()?;
-        let cid = *cid;
+        let store = self.0.clone();
         let data = store
-            .get(cid)
-            .await?
+            .get(cid)?
             .ok_or_else(|| anyhow::anyhow!("not found"))?;
-        Ok(Block::new(data, cid))
+        Ok(Block::new(data, *cid))
     }
 
     async fn get_size(&self, cid: &Cid) -> Result<usize> {
-        let store = self.0.try_store()?;
-        let cid = *cid;
+        let store = self.0.clone();
         let size = store
-            .get_size(cid)
-            .await?
+            .get_size(cid)?
             .ok_or_else(|| anyhow::anyhow!("not found"))?;
         Ok(size as usize)
     }
 
     async fn has(&self, cid: &Cid) -> Result<bool> {
-        let store = self.0.try_store()?;
-        let cid = *cid;
-        let res = store.has(cid).await?;
+        let store = self.0.clone();
+        let res = store.has(cid)?;
         Ok(res)
     }
 }
@@ -85,7 +79,7 @@ impl NodeBehaviour {
         local_key: &Keypair,
         config: &Libp2pConfig,
         relay_client: Option<relay::v2::client::Client>,
-        rpc_client: Client,
+        db: Arc<luffa_store::Store>,
     ) -> Result<Self> {
         let peer_manager = PeerManager::default();
         let pub_key = local_key.public();
@@ -99,7 +93,7 @@ impl NodeBehaviour {
                 BitswapConfig::default_client_mode()
             };
             warn!("init bitswap:{bs_config:?}");
-            Some(Bitswap::new(peer_id, BitswapStore(rpc_client), bs_config).await)
+            Some(Bitswap::new(peer_id, BitswapStore(db), bs_config).await)
         } else {
             warn!("disabled bitswap");
             None

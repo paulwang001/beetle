@@ -3,7 +3,7 @@ use clap::Parser;
 use luffa_store::{
     cli::Args,
     config::{config_data_path, Config, ServerConfig, CONFIG_FILE_NAME, ENV_PREFIX},
-    metrics, rpc, Store,
+    metrics, Store,
 };
 use luffa_util::lock::ProgramLock;
 use luffa_util::{block_until_sigint, luffa_config_path, make_config};
@@ -50,27 +50,24 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let config = Config::from(config);
-    tracing::info!("store>>> {config:?}");
-    let rpc_addr = config
-        .rpc_addr()
-        .ok_or_else(|| anyhow!("missing store rpc addr"))?;
+   
 
-    #[cfg(feature = "node")]
-    let store = Store::open(config).await?;
+    // #[cfg(feature = "node")]
+    // let store = Store::create(config).await?;
 
-    #[cfg(feature = "relay")]
-    let store = if config.path.exists() {
-        info!("Opening store at {}", config.path.display());
-        Store::open(config).await?
-    } else {
-        info!("Creating store at {}", config.path.display());
-        Store::create(config).await?
-    };
+    // #[cfg(feature = "relay")]
+    // let store = if config.path.exists() {
+    //     info!("Opening store at {}", config.path.display());
+    //     Store::open(config).await?
+    // } else {
+    //     info!("Creating store at {}", config.path.display());
+    //     Store::create(config).await?
+    // };
 
-    let rpc_task = tokio::spawn(async move { rpc::new(rpc_addr, store).await.unwrap() });
+    // let rpc_task = tokio::spawn(async move { rpc::new(rpc_addr, store).await.unwrap() });
 
     block_until_sigint().await;
-    rpc_task.abort();
+    // rpc_task.abort();
     metrics_handle.shutdown();
 
     Ok(())
