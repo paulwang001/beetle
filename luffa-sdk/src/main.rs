@@ -3,6 +3,7 @@ use anyhow::Result;
 use futures::pending;
 use luffa_rpc_types::Message;
 use luffa_sdk::{Callback, Client};
+use tracing::log::warn;
 use std::future::{Future, IntoFuture};
 use std::sync::RwLock;
 use std::task::Poll;
@@ -86,7 +87,7 @@ fn main() -> Result<()> {
 
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(5));
-        let peer_id = client.get_peer_id();
+        let peer_id = client.get_local_id();
         info!("peer id: {peer_id:?}");
         let peers = client.relay_list();
         // client.send_msg(to, msg)
@@ -102,6 +103,9 @@ fn main() -> Result<()> {
             // }
             // let m = msg.await;
             // info!("----------------{m:?}--------------");
+            // let my_id = client.get_local_id().unwrap();
+            // warn!("myid: {my_id}");
+            
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
         println!(".....");
