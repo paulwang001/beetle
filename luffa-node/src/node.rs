@@ -306,7 +306,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             );
 
             if let Err(e) = self.swarm.dial(dial_opts) {
-                eprintln!("failed to dial: {:?}", e);
+                debug!("failed to dial: {:?}", e);
             }
             self.kad_last_range = Some(range);
         }
@@ -421,7 +421,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 if num_established.get() == 1 {
                     self.emit_network_event(NetworkEvent::PeerConnected(peer_id));
                 }
-                println!("ConnectionEstablished: {:}", peer_id);
+                debug!("ConnectionEstablished: {:}", peer_id);
                 Ok(())
             }
             SwarmEvent::ConnectionClosed {
@@ -433,11 +433,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     self.emit_network_event(NetworkEvent::PeerDisconnected(peer_id));
                 }
 
-                println!("ConnectionClosed: {:}", peer_id);
+                debug!("ConnectionClosed: {:}", peer_id);
                 Ok(())
             }
             SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-                eprintln!("failed to dial: {:?}, {:?}", peer_id, error);
+                debug!("failed to dial: {:?}, {:?}", peer_id, error);
 
                 if let Some(peer_id) = peer_id {
                     if let Some(channels) = self.dial_queries.get_mut(&peer_id) {
@@ -459,13 +459,13 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
     #[tracing::instrument(skip(self))]
     fn emit_network_event(&mut self, ev: NetworkEvent) {
-        println!("emit>>>{ev:?}");
+        debug!("emit>>>{ev:?}");
         for sender in &mut self.network_events {
             let ev = ev.clone();
             let sender = sender.clone();
             tokio::task::spawn(async move {
                 if let Err(e) = sender.send(ev.clone()).await {
-                    eprintln!("failed to send network event: {:?}", e);
+                    warn!("failed to send network event: {:?}", e);
                 }
             });
         }
@@ -478,14 +478,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             Event::Bitswap(e) => {
                 match e {
                     BitswapEvent::Provide { key } => {
-                        println!("bitswap provide {}", key);
+                        debug!("bitswap provide {}", key);
                         if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
                             match kad.start_providing(key.hash().to_bytes().into()) {
                                 Ok(_query_id) => {
                                     // TODO: track query?
                                 }
                                 Err(err) => {
-                                    eprintln!("failed to provide {}: {:?}", key, err);
+                                    warn!("failed to provide {}: {:?}", key, err);
                                 }
                             }
                         }
@@ -495,7 +495,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         response,
                         limit,
                     } => {
-                        info!("bitswap find providers {}", key);
+                        debug!("bitswap find providers {}", key);
                         self.handle_rpc_message(RpcMessage::ProviderRequest {
                             key: ProviderRequestKey::Dht(key.hash().to_bytes().into()),
                             response_channel: response,
@@ -709,7 +709,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             }
             Event::Identify(e) => {
                 libp2p_metrics().record(&*e);
-                println!("tick: identify {:?}", e);
+                debug!("tick: identify {:?}", e);
                 if let IdentifyEvent::Received { peer_id, info } = *e {
                     for protocol in &info.protocols {
                         let p = protocol.as_bytes();
@@ -855,7 +855,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 response_channels,
                 providers,
             } => {
-                tracing::warn!("context:{} bitswap_request", ctx);
+                tracing::debug!("context:{} bitswap_request", ctx);
                 let store = self.store.clone();
                 let (tx,rx) = std::sync::mpsc::channel();
                 tokio::spawn(async move {
@@ -882,7 +882,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 }
             }
             RpcMessage::PushBitswapRequest { data, response_channels } => {
-                tracing::warn!("PushBitswapRequest:--{}---",data.len());
+                tracing::debug!("PushBitswapRequest:--{}---",data.len());
                 let cid = Cid::new_v1(DagCborCodec.into(), multihash::Code::Sha2_256.digest(&data[..]));
 
                 let store = self.store.clone();
