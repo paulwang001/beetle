@@ -186,7 +186,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 swarm_event = self.swarm.next() => {
                     let swarm_event = swarm_event.expect("the swarm will never die");
                     if let Err(err) = self.handle_swarm_event(swarm_event) {
-                        eprintln!("swarm error: {:?}", err);
+                        warn!("swarm error: {:?}", err);
                     }
 
                     if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
@@ -223,15 +223,15 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     }
                 }, if nice_interval.is_some() => {
                     // Print peer count on an interval.
-                    println!("[{}] Peers connected: {:?}",self.local_peer_id(), self.swarm.connected_peers().count());
+                    warn!("[{}] Peers connected: {:?}",self.local_peer_id(), self.swarm.connected_peers().count());
                     // self.dht_nice_tick().await;
                 }
                 _ = bootstrap_interval.tick() => {
                     if let Err(e) = self.swarm.behaviour_mut().kad_bootstrap() {
-                        eprintln!("kad bootstrap failed: {:?}", e);
+                        warn!("kad bootstrap failed: {:?}", e);
                     }
                     else{
-                        println!("kad bootstrap successfully");
+                        warn!("kad bootstrap successfully");
                     }
                 }
                 _ = expiry_interval.tick() => {

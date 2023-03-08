@@ -29,7 +29,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::task;
 use tokio::task::JoinHandle;
-use tracing::{error, info, warn};
+use tracing::{error, info, warn, debug};
 
 use tantivy::collector::TopDocs;
 use tantivy::directory::{ManagedDirectory, MmapDirectory};
@@ -505,7 +505,6 @@ impl Client {
                             .collect::<Vec<_>>();
                     }
                     Err(e) => {
-                        eprintln!("{e:?}");
                         tracing::warn!("{e:?}");
                     }
                 }
@@ -555,10 +554,10 @@ impl Client {
 
         let args: HashMap<String, String> = HashMap::new();
         let dft_path = luffa_config_path(CONFIG_FILE_NAME).unwrap();
-        println!("cfg_path:{cfg_path:?}");
+        debug!("cfg_path:{cfg_path:?}");
         let cfg_path = cfg_path.map(|p| PathBuf::from(p));
         let cfg_path = cfg_path.unwrap_or(dft_path);
-        println!("cfg_path:{cfg_path:?}");
+        debug!("cfg_path:{cfg_path:?}");
 
         let sources = [Some(cfg_path.as_path())];
         let config = make_config(
@@ -573,7 +572,7 @@ impl Client {
         )
         .unwrap();
 
-        warn!("config--->{config:?}");
+        debug!("config--->{config:?}");
         let kc = RUNTIME.block_on(async {
             let mut kc = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone())
                 .await
@@ -596,9 +595,9 @@ impl Client {
             // let cb = Arc::new(cb);
             // let cb_t = cb.clone();
             tokio::spawn(async move {
-                println!("runing...");
+                debug!("runing...");
                 Self::run(db, config, kc, cb, client, rx, idx_writer, schema).await;
-                eprintln!("run exit!....");
+                debug!("run exit!....");
             });
         });
     }
@@ -743,7 +742,7 @@ impl Client {
                 match evt {
                     NetworkEvent::Gossipsub(GossipsubEvent::Subscribed { peer_id, topic }) => {
                         // TODO: a group member or my friend online?
-                        info!("Subscribed> peer_id: {peer_id:?} topic:{topic}");
+                        debug!("Subscribed> peer_id: {peer_id:?} topic:{topic}");
                     }
                     NetworkEvent::Gossipsub(GossipsubEvent::Message { message, from, id }) => {
                         let GossipsubMessage { data, .. } = message;
@@ -757,7 +756,7 @@ impl Client {
                                 event_time,
                                 ..
                             } = im;
-                            info!("Gossipsub> peer_id: {from:?} msg:{}", msg.len());
+                            debug!("Gossipsub> peer_id: {from:?} msg:{}", msg.len());
                             // TODO check did status
                             if nonce.is_none() {
                                 if let Ok(msg) = luffa_rpc_types::Message::decrypt(
@@ -766,7 +765,7 @@ impl Client {
                                     nonce,
                                 ) {
                                     // TODO: did is me or I'm a member any local group
-                                    info!("Gossipsub> on_message peer_id: {from:?} msg:{:?}", msg);
+                                    debug!("Gossipsub> on_message peer_id: {from:?} msg:{:?}", msg);
                                     let data = serde_cbor::to_vec(&msg).unwrap();
                                     let cb = &*cb;
                                     cb.on_message(crc, from_id, to, data);
@@ -1042,7 +1041,7 @@ impl Client {
                         // TODO: a group member or my friend offline?
                     }
                     NetworkEvent::PeerConnected(peer_id) => {
-                        tracing::info!("---------PeerConnected-----------{:?}", peer_id);
+                        tracing::debug!("---------PeerConnected-----------{:?}", peer_id);
                         let mut digest = crc64fast::Digest::new();
                         digest.write(&peer_id.to_bytes());
                         let u_id = digest.sum64();
@@ -1064,7 +1063,7 @@ impl Client {
                         }
                     }
                     NetworkEvent::PeerDisconnected(peer_id) => {
-                        tracing::info!("---------PeerDisconnected-----------{:?}", peer_id);
+                        tracing::debug!("---------PeerDisconnected-----------{:?}", peer_id);
                         let mut digest = crc64fast::Digest::new();
                         digest.write(&peer_id.to_bytes());
                         let u_id = digest.sum64();
@@ -1086,7 +1085,7 @@ impl Client {
                         }
                     }
                     NetworkEvent::CancelLookupQuery(peer_id) => {
-                        tracing::info!("---------CancelLookupQuery-----------{:?}", peer_id);
+                        tracing::debug!("---------CancelLookupQuery-----------{:?}", peer_id);
                     }
                 }
             }
