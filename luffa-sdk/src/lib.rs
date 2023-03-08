@@ -64,6 +64,7 @@ pub struct ChatSession {
     pub did: u64,
     pub last_time: u64,
     pub tag: String,
+    // pub last_content: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -198,29 +199,46 @@ impl Client {
         match multibase::decode(&code) {
             Ok((_, msg)) => {
                 let msg: Message =
-                    serde_cbor::from_slice(&msg).map_err(|_e| ClientError::CodeParser)?;
+                    serde_cbor::from_slice(&msg).map_err(|e| {
+                        eprintln!("{e:?}");
+                        ClientError::CodeParser
+                    })?;
+                eprintln!("{:?}",msg);    
                 match msg {
                     Message::ContactsExchange { exchange } => {
                         match exchange {
                             ContactsEvent::Offer { token } => {
-                                let ContactsToken {
-                                    public_key,
-                                    create_at,
-                                    sign,
-                                    secret_key,
-                                    comment,
-                                    ..
-                                } = token;
-                                let pk = PublicKey::from_protobuf_encoding(&public_key).unwrap();
-                                let mut msg = vec![];
-                                msg.extend_from_slice(&secret_key);
-                                // buf.extend_from_slice(&nonce);
-                                msg.extend_from_slice(&create_at.to_be_bytes());
-                                if pk.verify(&msg, &sign) {
-                                    Ok(comment.unwrap_or_default())
-                                } else {
-                                    Err(ClientError::CodeParser)
+                                match token.validate() {
+                                    Ok(true)=>{
+                                        let ContactsToken {
+                                            public_key,
+                                            create_at,
+                                            sign,
+                                            secret_key,
+                                            comment,
+                                            ..
+                                        } = token;
+                                        Ok(comment.unwrap_or_default())
+                                    }
+                                    Ok(false)=>{
+                                        Err(ClientError::CodeParser)
+                                    }
+                                    Err(e)=>{
+                                        Err(ClientError::CodeParser)
+                                    }
                                 }
+                                
+                                // let pk = PublicKey::from_protobuf_encoding(&public_key).unwrap();
+                                // let mut msg = vec![];
+                                // msg.extend_from_slice(&secret_key);
+                                // // buf.extend_from_slice(&nonce);
+                                // msg.extend_from_slice(&create_at.to_be_bytes());
+                                // if pk.verify(&msg, &sign) {
+                                   
+                                // } else {
+                                //     error!("is invalid");
+                                    
+                                // }
                             }
                             _ => Err(ClientError::CodeParser),
                         }
@@ -228,7 +246,10 @@ impl Client {
                     _ => Err(ClientError::CodeParser),
                 }
             }
-            Err(e) => Err(ClientError::CodeParser),
+            Err(e) => {
+                error!("{e:?}");
+                Err(ClientError::CodeParser)
+            },
         }
     }
 

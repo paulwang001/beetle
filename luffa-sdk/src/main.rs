@@ -1,7 +1,7 @@
 #![feature(poll_ready)]
 use anyhow::Result;
 use futures::pending;
-use luffa_rpc_types::{Message, message_to};
+use luffa_rpc_types::{Message, message_to, ContactsToken};
 use luffa_sdk::{Callback, Client};
 use tracing::log::warn;
 use std::future::{Future, IntoFuture};
@@ -77,6 +77,9 @@ impl Future for Messager {
 
 fn main() -> Result<()> {
     // let (tx, mut rx) = channel(1024);
+
+    
+
     let msg = Messager::new();
     let msg = Box::new(msg);
     let to_id = std::env::args().nth(1).unwrap_or_default();
@@ -88,6 +91,12 @@ fn main() -> Result<()> {
     println!("starting");
     client.start(cfg_path, msg);
     println!("started.");
+
+    let code = client.show_code(Some("hello".to_string()));
+    let name = client.parse_contacts_code(code)?;
+
+    println!("name:{name}");
+
 
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(5));
