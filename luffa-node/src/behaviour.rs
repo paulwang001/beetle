@@ -193,7 +193,10 @@ impl NodeBehaviour {
 
         let gossipsub = if config.gossipsub {
             info!("init gossipsub");
-            let gossipsub_config = gossipsub::GossipsubConfigBuilder::default().validation_mode(gossipsub::ValidationMode::Strict).do_px().build().unwrap();
+            let gossipsub_config = gossipsub::GossipsubConfigBuilder::default()
+            .mesh_n_low(2)
+            .mesh_n(2)
+            .validation_mode(gossipsub::ValidationMode::Strict).do_px().build().unwrap();
             // let gossipsub_config = gossipsub::GossipsubConfig::default();
             
             let message_authenticity = MessageAuthenticity::Signed(local_key.clone());
