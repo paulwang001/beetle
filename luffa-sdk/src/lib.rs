@@ -593,7 +593,8 @@ impl Client {
         RUNTIME.block_on(async {
             let mut sender = self.sender.write().await;
             *sender = Some(tx);
-
+            // let cb = Arc::new(cb);
+            // let cb_t = cb.clone();
             tokio::spawn(async move {
                 println!("runing...");
                 Self::run(db, config, kc, cb, client, rx, idx_writer, schema).await;
@@ -698,6 +699,16 @@ impl Client {
                         }  
                     })
                     .collect::<Vec<_>>();
+                    let mut itr = contacts.iter();
+                    while let Some(ctt) = itr.next() {
+                        if ctt.r#type == ContactsTypes::Private {
+                            continue;
+                        }
+                        let topic = TopicHash::from_raw(format!("{}_{}", TOPIC_CHAT, ctt.did));
+                        if let Err(e) = client_t.gossipsub_subscribe(topic).await {
+                            warn!("{e:?}");
+                        }
+                    }
                     let sync = Message::ContactsSync { did: my_id, contacts };
                     let event = Event::new(0, &sync, None, my_id);
                     let data = event.encode().unwrap();
@@ -736,7 +747,7 @@ impl Client {
                     }
                     NetworkEvent::Gossipsub(GossipsubEvent::Message { message, from, id }) => {
                         let GossipsubMessage { data, .. } = message;
-                        if let Ok(im) = Event::decode(data) {
+                        if let Ok(im) = Event::decode(&data) {
                             let Event {
                                 msg,
                                 nonce,
@@ -757,6 +768,7 @@ impl Client {
                                     // TODO: did is me or I'm a member any local group
                                     info!("Gossipsub> on_message peer_id: {from:?} msg:{:?}", msg);
                                     let data = serde_cbor::to_vec(&msg).unwrap();
+                                    let cb = &*cb;
                                     cb.on_message(crc, from_id, to, data);
                                     // match msg {
                                     //     Message::RelayNode { did }=>{
@@ -793,6 +805,7 @@ impl Client {
                                                 table,
                                                 data.clone(),
                                             );
+                                            let cb = &*cb;
                                             cb.on_message(crc, from_id, to, data);
                                             let msg = luffa_rpc_types::Message::Feedback {
                                                 crc,
@@ -1012,6 +1025,7 @@ impl Client {
                                             ) {
                                                 // TODO: did is me or I'm a member any local group
                                                 let data = serde_cbor::to_vec(&msg).unwrap();
+                                                let cb = &*cb;
                                                 cb.on_message(crc, from_id, to, data);
                                             }
                                         } else {

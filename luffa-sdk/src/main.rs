@@ -1,8 +1,10 @@
+#![feature(poll_ready)]
 use anyhow::Result;
 use futures::pending;
 use luffa_rpc_types::Message;
 use luffa_sdk::{Callback, Client};
 use std::future::{Future, IntoFuture};
+use std::sync::RwLock;
 use std::task::Poll;
 use std::time::Duration;
 use std::{collections::VecDeque, sync::Arc, sync::Mutex};
@@ -17,7 +19,7 @@ struct Messager {
 impl Callback for Messager {
     fn on_message(&self, crc:u64,from_id:u64,to:u64,msg: Vec<u8>) {
         tracing::warn!("on>>>> {}", msg.len());
-        if let Some(msg) = luffa_rpc_types::message_from(msg) {
+        if let Some(msg) = luffa_rpc_types::message_from(msg.clone()) {
            match msg {
               Message::RelayNode { did } =>{
                 
@@ -36,8 +38,8 @@ impl Callback for Messager {
               }
            }
         }
-        // let mut q = self.queue.lock().unwrap();
-        // q.push_back(msg);
+        let mut q = self.queue.lock().unwrap();
+        q.push_back(msg);
         
         // self.sender.send(msg);
     }
@@ -51,31 +53,35 @@ impl Messager {
     }
 }
 
-// impl Future for Messager {
-//     type Output = Vec<u8>;
+impl Future for Messager {
+    type Output = Vec<u8>;
 
-//     fn poll(
-//         self: std::pin::Pin<&mut Self>,
-//         cx: &mut std::task::Context<'_>,
-//     ) -> std::task::Poll<Self::Output> {
-//         loop {
-//             let mut q = self.queue.lock().unwrap();
-//             match q.pop_front() {
-//                 Some(msg) => Poll::ready(msg),
-//                 None => Poll::Pending,
-//             }
-//         }
-//     }
-// }
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        let mut q = self.queue.lock().unwrap();
+        match q.pop_front() {
+            Some(msg) => Poll::Ready(msg),
+            None => {
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            },
+        }
+    }
+}
 
 fn main() -> Result<()> {
     // let (tx, mut rx) = channel(1024);
     let msg = Messager::new();
+    let msg = Box::new(msg);
+    
+    // let msg_t = Arc::new(msg.clone());
     let client = Client::new();
     let cfg_path = std::env::args().nth(1);
     // let msg_t = msg.clone();
     println!("starting");
-    client.start(cfg_path, Box::new(msg));
+    client.start(cfg_path, msg);
     println!("started.");
 
     std::thread::spawn(move || loop {

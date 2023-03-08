@@ -485,7 +485,18 @@ async fn main() -> Result<()> {
                             while let Some(i) = net_graph.find_edge(my_idx.clone(), idx.clone()) {
                                 let e = net_graph.edge_weight(i).unwrap();
                                 if e.meta == EdgeTypes::Connect {
-                                    net_graph.remove_edge(i);
+                                    if let Some(_r)=net_graph.remove_edge(i) {
+                                        let client_t = client.clone();
+                                        tokio::spawn(async move {
+                                            let topic = TopicHash::from_raw(format!(
+                                                "{}_{}",
+                                                TOPIC_CHAT, u_id
+                                            ));
+                                            if let Err(e) = client_t.gossipsub_unsubscribe(topic).await {
+                                                warn!("{e:?}");
+                                            }
+                                        });
+                                    }
                                 }
                             }
                         }
