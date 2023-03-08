@@ -1,7 +1,7 @@
 #![feature(poll_ready)]
 use anyhow::Result;
 use futures::pending;
-use luffa_rpc_types::Message;
+use luffa_rpc_types::{Message, message_to};
 use luffa_sdk::{Callback, Client};
 use tracing::log::warn;
 use std::future::{Future, IntoFuture};
@@ -10,7 +10,7 @@ use std::task::Poll;
 use std::time::Duration;
 use std::{collections::VecDeque, sync::Arc, sync::Mutex};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tracing::info;
+use tracing::{info, error};
 
 #[derive(Debug, Clone)]
 struct Messager {
@@ -76,7 +76,8 @@ fn main() -> Result<()> {
     // let (tx, mut rx) = channel(1024);
     let msg = Messager::new();
     let msg = Box::new(msg);
-    
+    let to_id = std::env::args().nth(1).unwrap_or_default();
+    let to_id:u64 = to_id.parse().unwrap_or_default();
     // let msg_t = Arc::new(msg.clone());
     let client = Client::new();
     let cfg_path = std::env::args().nth(1);
@@ -92,6 +93,18 @@ fn main() -> Result<()> {
         let peers = client.relay_list();
         // client.send_msg(to, msg)
         println!("{:?}", peers);
+        if to_id > 0 {
+            let msg = Message::Feedback { crc: to_id, status: luffa_rpc_types::FeedbackStatus::Read };
+            let msg = message_to(msg).unwrap();
+            match client.send_msg(to_id, msg) {
+                Ok(_)=>{
+                    info!("send seccess");
+                }
+                Err(e)=>{
+                    error!("{e:?}");
+                }
+            }
+        }
     });
 
     let r = tokio::runtime::Runtime::new().unwrap();
