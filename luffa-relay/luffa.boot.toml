@@ -1,11 +1,8 @@
 [store]
-path = "/home/snqu/.local/share/boot/store"
+path = "~/.local/share/boot/store"
 [p2p]
 libp2p = {listening_multiaddrs = ["/ip4/0.0.0.0/udp/8899/quic-v1"],bootstrap_peers=[]}
-key_store_path = "/home/snqu/.local/share/boot"
-rpc_client = {p2p_addr = "irpc://127.0.0.1:30000"}
+key_store_path = "~/share/boot"
 
-[rpc_client]
-p2p_addr = "irpc://127.0.0.1:30000"
 
 
