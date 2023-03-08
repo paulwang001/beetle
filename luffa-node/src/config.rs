@@ -19,7 +19,7 @@ pub const ENV_PREFIX: &str = "LUFFA_";
 pub const DEFAULT_BOOTSTRAP: &[&str] = &[
     "/ip4/206.238.220.40/udp/8899/quic-v1/p2p/12D3KooWLm17MWN8mq1XkiUmt74t12pqk2B3fMAYTww1Fq9Z8j7N",
     // "/ip4/192.168.2.124/udp/8899/quic-v1/p2p/12D3KooWRxHCJhGZMpUvfVHGx2iK6NMtPSCtC3AVrvQ7B8rAnuYL",
-    "/ip4/206.238.123.19/tcp/8666/p2p/12D3KooWJstDDPjAwbUBvBnkmBfaNfzFAAPbtjH5tSVi185ePqxa",
+    "/ip4/206.238.123.19/tcp/8666/p2p/12D3KooWLGbsiDzVZYu21ZM32KQuaivesBRwYvtR1m2KT2WQCFac",
 ];
 // no udp support yet
 
