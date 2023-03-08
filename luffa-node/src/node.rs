@@ -403,7 +403,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             <<<NodeBehaviour as NetworkBehaviour>::ConnectionHandler as IntoConnectionHandler>::Handler as ConnectionHandler>::Error>,
     ) -> Result<()> {
         libp2p_metrics().record(&event);
-        println!("swarm>>>> {event:?}");
+        // println!("swarm>>>> {event:?}");
         match event {
             // outbound events
             SwarmEvent::Behaviour(event) => self.handle_node_event(event),
@@ -473,7 +473,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
     #[tracing::instrument(skip(self))]
     fn handle_node_event(&mut self, event: Event) -> Result<()> {
-        println!("node>>> {event:?}");
+        // println!("node>>> {event:?}");
         match event {
             Event::Bitswap(e) => {
                 match e {

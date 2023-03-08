@@ -34,6 +34,9 @@ impl Callback for Messager {
               Message::Chat { content }=>{
 
               }
+              Message::Feedback { crc, status }=>{
+                error!("Feedback:{crc}  {status:?}");
+              }
               _=>{
                 
               }
