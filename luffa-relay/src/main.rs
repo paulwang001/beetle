@@ -90,9 +90,9 @@ async fn main() -> Result<()> {
     config.metrics = luffa_node::metrics::metrics_config_with_compile_time_info(config.metrics);
     info!("-------");
     let mut net_graph =
-        UnGraph::<Node, Edge>::with_capacity(10 * 1024 * 1024, 10 * 1024 * 1024 * 128);
+        UnGraph::<Node, Edge>::with_capacity(1024, 1024);
     let mut contacts_graph =
-        UnGraph::<Node, Edge>::with_capacity(10 * 1024 * 1024, 10 * 1024 * 1024 * 128);
+        UnGraph::<Node, Edge>::with_capacity(1024, 1024);
 
     let metrics_config = config.metrics.clone();
 
@@ -485,18 +485,7 @@ async fn main() -> Result<()> {
                             while let Some(i) = net_graph.find_edge(my_idx.clone(), idx.clone()) {
                                 let e = net_graph.edge_weight(i).unwrap();
                                 if e.meta == EdgeTypes::Connect {
-                                    if let Some(_r)=net_graph.remove_edge(i) {
-                                        let client_t = client.clone();
-                                        tokio::spawn(async move {
-                                            let topic = TopicHash::from_raw(format!(
-                                                "{}_{}",
-                                                TOPIC_CHAT, u_id
-                                            ));
-                                            if let Err(e) = client_t.gossipsub_unsubscribe(topic).await {
-                                                warn!("{e:?}");
-                                            }
-                                        });
-                                    }
+                                    net_graph.remove_edge(i);
                                 }
                             }
                         }
