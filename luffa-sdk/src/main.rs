@@ -80,7 +80,7 @@ fn main() -> Result<()> {
     let to_id:u64 = to_id.parse().unwrap_or_default();
     // let msg_t = Arc::new(msg.clone());
     let client = Client::new();
-    let cfg_path = std::env::args().nth(1);
+    let cfg_path = std::env::args().nth(2);
     // let msg_t = msg.clone();
     println!("starting");
     client.start(cfg_path, msg);
