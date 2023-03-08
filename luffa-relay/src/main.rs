@@ -13,7 +13,7 @@ use luffa_relay::{
     config::{Config, CONFIG_FILE_NAME, ENV_PREFIX},
     mem_p2p::{self, start_store},
 };
-use luffa_rpc_types::{AppStatus, ContactsTypes, Event};
+use luffa_rpc_types::{AppStatus, ContactsTypes, Event, FeedbackStatus};
 use multihash::MultihashDigest;
 use serde::{Deserialize, Serialize};
 // use luffa_util::lock::ProgramLock;
@@ -25,7 +25,7 @@ use petgraph::{
     EdgeType, Graph,
 };
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
 const TOPIC_STATUS: &str = "luffa_status";
 const TOPIC_RELAY: &str = "luffa_relay";
@@ -90,9 +90,9 @@ async fn main() -> Result<()> {
     config.metrics = luffa_node::metrics::metrics_config_with_compile_time_info(config.metrics);
     info!("-------");
     let mut net_graph =
-        DiGraph::<Node, Edge>::with_capacity(10 * 1024 * 1024, 10 * 1024 * 1024 * 128);
+        UnGraph::<Node, Edge>::with_capacity(10 * 1024 * 1024, 10 * 1024 * 1024 * 128);
     let mut contacts_graph =
-        DiGraph::<Node, Edge>::with_capacity(10 * 1024 * 1024, 10 * 1024 * 1024 * 128);
+        UnGraph::<Node, Edge>::with_capacity(10 * 1024 * 1024, 10 * 1024 * 1024 * 128);
 
     let metrics_config = config.metrics.clone();
 
@@ -127,7 +127,7 @@ async fn main() -> Result<()> {
     });
     let client = Arc::new(luffa_node::rpc::P2p::new(sender));
     let client = Arc::new(P2pClient::new(client).unwrap());
-    let notice_queue = Arc::new(RwLock::new(std::collections::BTreeMap::<u64,u64>::new()));
+    let notice_queue = Arc::new(RwLock::new(std::collections::BTreeMap::<u64, Cid>::new()));
     info!("mem rpc client open.");
     let client_t = client.clone();
     let pub_sub = tokio::spawn(async move {
@@ -189,6 +189,7 @@ async fn main() -> Result<()> {
                                 msg,
                                 nonce,
                                 from_id,
+                                crc,
                                 ..
                             } = im;
                             // TODO check did status
@@ -208,8 +209,9 @@ async fn main() -> Result<()> {
                                                 did,
                                                 NodeTypes::Client,
                                             );
-
+                                            let mut is_connected = false;
                                             if let Some(_n) = net_graph.find_edge(my_idx, from) {
+                                                is_connected = true;
                                                 // TODO closest
                                                 let client_t = client.clone();
                                                 tokio::spawn(async move {
@@ -217,7 +219,9 @@ async fn main() -> Result<()> {
                                                         "{}_{}",
                                                         TOPIC_CHAT, did
                                                     ));
-                                                    if let Err(e) = client_t.gossipsub_subscribe(topic).await {
+                                                    if let Err(e) =
+                                                        client_t.gossipsub_subscribe(topic).await
+                                                    {
                                                         error!("{e:?}");
                                                     }
                                                 });
@@ -229,9 +233,26 @@ async fn main() -> Result<()> {
                                                     } else {
                                                         (EdgeTypes::Private, NodeTypes::Client)
                                                     };
+                                                if is_connected
+                                                    && ctt.r#type == ContactsTypes::Group
+                                                {
+                                                    let client_t = client.clone();
+                                                    tokio::spawn(async move {
+                                                        let topic = TopicHash::from_raw(format!(
+                                                            "{}_{}",
+                                                            TOPIC_CHAT, ctt.did
+                                                        ));
+                                                        if let Err(e) = client_t
+                                                            .gossipsub_subscribe(topic)
+                                                            .await
+                                                        {
+                                                            error!("{e:?}");
+                                                        }
+                                                    });
+                                                }
                                                 let to =
                                                     take_node(&mut contacts_graph, ctt.did, tp);
-                                                contacts_graph.add_edge(
+                                                contacts_graph.update_edge(
                                                     to,
                                                     from.clone(),
                                                     Edge {
@@ -249,10 +270,7 @@ async fn main() -> Result<()> {
                                             w.meta = NodeTypes::Relay;
                                         }
                                         Message::StatusSync {
-                                            to,
-                                            from_id,
-                                            status,
-                                            ..
+                                            from_id, status, ..
                                         } => {
                                             let from = take_node(
                                                 &mut net_graph,
@@ -285,7 +303,7 @@ async fn main() -> Result<()> {
                                                 },
                                                 None => match status {
                                                     AppStatus::Active | AppStatus::Connected => {
-                                                        net_graph.add_edge(
+                                                        net_graph.update_edge(
                                                             from,
                                                             to,
                                                             Edge {
@@ -298,9 +316,15 @@ async fn main() -> Result<()> {
                                                 },
                                             }
                                         }
-                                        Message::Feedback { crc, status }=>{
-
-                                        }
+                                        Message::Feedback { crc, status } => match status {
+                                            FeedbackStatus::Fetch => {}
+                                            FeedbackStatus::Notice => {
+                                                let mut queue = notice_queue.write().await;
+                                                queue.remove(&crc);
+                                            }
+                                            FeedbackStatus::Reach => {}
+                                            FeedbackStatus::Read => {}
+                                        },
                                         _ => {}
                                     }
                                 }
@@ -315,22 +339,78 @@ async fn main() -> Result<()> {
                                 }) {
                                     let w = &contacts_graph[idx];
                                     match w.meta {
-                                        NodeTypes::Group => {}
+                                        NodeTypes::Group => {
+                                            let mut peers = contacts_graph.neighbors(idx).into_iter();
+                                            while let Some(pp) = peers.next() {
+                                                let relay_peers = net_graph.neighbors(pp);
+                                                let relay_peers =
+                                                relay_peers.into_iter().collect::<Vec<_>>();
+                                                if relay_peers.is_empty() {
+                                                    let data = data.clone();
+                                                    let client_t = client.clone();
+                                                    let key = Cid::new_v1(
+                                                        DagCborCodec.into(),
+                                                        multihash::Code::Sha2_256.digest(&data),
+                                                    );
+                                                    let mut queue = notice_queue.write().await;
+                                                    queue.insert(crc, key.clone());
+                                                    tokio::spawn(async move {
+                                                        let expires = Some(event_time + 24 * 60 * 60);
+    
+                                                        if let Err(e) = client_t
+                                                            .put_record(
+                                                                &key,
+                                                                bytes::Bytes::from(data),
+                                                                None,
+                                                                expires,
+                                                            )
+                                                            .await
+                                                        {
+                                                            error!("{e:?}");
+                                                        } else {
+                                                            //TODO notice send
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                        }
                                         NodeTypes::Client => {
                                             // target connect to this relay?
-                                            if let Some(n) = net_graph.find_edge(my_idx, idx) {
 
-
+                                            // user is friend? but exchange msg.
+                                            match contacts_graph.find_edge(from, idx) {
+                                                Some(n) => {}
+                                                None => {
+                                                    warn!("")
+                                                }
                                             }
                                             let relay_peers = net_graph.neighbors(idx);
-                                            let relay_peers = relay_peers.into_iter().collect::<Vec<_>>();
+                                            let relay_peers =
+                                                relay_peers.into_iter().collect::<Vec<_>>();
                                             if relay_peers.is_empty() {
                                                 let client_t = client.clone();
+                                                let key = Cid::new_v1(
+                                                    DagCborCodec.into(),
+                                                    multihash::Code::Sha2_256.digest(&data),
+                                                );
+                                                let mut queue = notice_queue.write().await;
+                                                queue.insert(crc, key.clone());
                                                 tokio::spawn(async move {
                                                     let expires = Some(event_time + 24 * 60 * 60);
 
-                                                    let cid = Cid::new_v1(DagCborCodec.into(), multihash::Code::Sha2_256.digest(&data));
-                                                    // client_t.put_record(key, data, None, expires);
+                                                    if let Err(e) = client_t
+                                                        .put_record(
+                                                            &key,
+                                                            bytes::Bytes::from(data),
+                                                            None,
+                                                            expires,
+                                                        )
+                                                        .await
+                                                    {
+                                                        error!("{e:?}");
+                                                    } else {
+                                                        //TODO notice send
+                                                    }
                                                 });
                                             }
                                         }
@@ -360,7 +440,7 @@ async fn main() -> Result<()> {
                                 last_time: get_now(),
                                 meta: EdgeTypes::Connect,
                             };
-                            net_graph.add_edge(my_idx.clone(), idx.clone(), edge);
+                            net_graph.update_edge(my_idx.clone(), idx.clone(), edge);
                         }
                         None => {
                             let idx = net_graph.add_node(Node {
@@ -372,7 +452,7 @@ async fn main() -> Result<()> {
                                 last_time: get_now(),
                                 meta: EdgeTypes::Connect,
                             };
-                            net_graph.add_edge(my_idx.clone(), idx, edge);
+                            net_graph.update_edge(my_idx.clone(), idx, edge);
                         }
                     }
                     let msg = luffa_rpc_types::Message::StatusSync {
@@ -444,7 +524,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn take_node(g: &mut DiGraph<Node, Edge>, did: u64, node_type: NodeTypes) -> NodeIndex {
+fn take_node(g: &mut UnGraph<Node, Edge>, did: u64, node_type: NodeTypes) -> NodeIndex {
     match g.node_indices().find(|n| {
         let w = &g[*n];
         w.did == did
