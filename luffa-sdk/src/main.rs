@@ -100,7 +100,8 @@ fn main() -> Result<()> {
                             content: luffa_rpc_types::ChatContent::Send { 
                             data: luffa_rpc_types::ContentData::Text { 
                                 source: luffa_rpc_types::DataSource::Text { content:"Ok".to_owned() }, reference: None } } } ;
-                        let msg = message_to(msg).unwrap();        
+                        let msg = message_to(msg).unwrap(); 
+                        warn!("Answer from:{}",from_id);       
                         client_t.send_msg(from_id, msg).unwrap();
                     }
                 }

@@ -1255,8 +1255,14 @@ impl Client {
                                                     Message::ContactsExchange { exchange }=>{
                                                         match exchange{
                                                             ContactsEvent::Answer { token }=>{
-                                                                
-                                                                let pk = PublicKey::from_protobuf_encoding(&token.public_key).unwrap();
+                                                                let ContactsToken {
+                                                                    public_key,
+                                                                    sign,
+                                                                    contacts_type,
+                                                                    comment,
+                                                                    ..
+                                                                } = token;
+                                                                let pk = PublicKey::from_protobuf_encoding(public_key).unwrap();
                                                                 let peer = PeerId::from_public_key(&pk);
                                                                 let mut digest = crc64fast::Digest::new();
                                                                 digest.write(&peer.to_bytes());
@@ -1269,10 +1275,11 @@ impl Client {
                                                                 let event = luffa_rpc_types::Event::new(
                                                                     from_id,
                                                                     &msg,
-                                                                    Some(key),
+                                                                    Some(key.clone()),
                                                                     my_id,
                                                                 );
                                                                 let event = event.encode().unwrap();
+                                                                warn!("pub to :{}",from_id);
                                                                 if let Err(e) = client_t
                                                                     .gossipsub_publish(
                                                                         TopicHash::from_raw(format!(
@@ -1284,6 +1291,19 @@ impl Client {
                                                                     .await
                                                                 {
                                                                     error!("{e:?}");
+                                                                }
+                                                                else{
+                                                                    warn!("pub to :{} Ok!",from_id);
+                                                                    let c_type = if contacts_type == &ContactsTypes::Private {0}  else {1};
+                                                                    Self::save_contacts(
+                                                                        db_t.clone(),
+                                                                        from_id,
+                                                                        key.clone(),
+                                                                        public_key.clone(),
+                                                                        sign.clone(),
+                                                                        c_type,
+                                                                        comment.clone(),
+                                                                    );
                                                                 }
                                                             }
                                                             _=>{
@@ -1370,10 +1390,11 @@ impl Client {
             let msg = serde_cbor::from_slice::<Message>(&msg_data).unwrap();
             let is_exchane = msg.is_contacts_exchange();
             let evt = if msg.need_encrypt() {
-                warn!("----------encrypt------");
+                warn!("----------encrypt------{}",to);
                 match Self::get_aes_key_from_contacts(db.clone(), to) {
                     Some(key) => Some(Event::new(to, &msg, Some(key), from_id)),
                     None => { 
+                        warn!("aes key not found");
                         Some(Event::new(to, &msg, None, from_id))
                     },
                 }
