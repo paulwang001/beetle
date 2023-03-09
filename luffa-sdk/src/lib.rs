@@ -1244,36 +1244,58 @@ impl Client {
                                         if let Some(key) =
                                             Self::get_offer_by_offer_id(db_t.clone(), from_id)
                                         {
-                                            warn!("offer is:{}",from_id);
+                                            warn!("offer is:{}  nonce:{:?} key: {:?}",from_id,nonce,key);
                                             if let Ok(msg) = luffa_rpc_types::Message::decrypt(
                                                 bytes::Bytes::from(msg),
                                                 Some(key.clone()),
                                                 nonce,
                                             ) {
                                                 // TODO: did is me or I'm a member any local group
-                                                let data = serde_cbor::to_vec(&msg).unwrap();
-                                                let cb = &*cb;
-                                                cb.on_message(crc, from_id, to, data);
-                                                let msg = luffa_rpc_types::Message::Chat { content: ChatContent::Feedback { crc,status: luffa_rpc_types::FeedbackStatus::Reach } };
-                                                let event = luffa_rpc_types::Event::new(
-                                                    from_id,
-                                                    &msg,
-                                                    Some(key),
-                                                    my_id,
-                                                );
-                                                let event = event.encode().unwrap();
-                                                if let Err(e) = client_t
-                                                    .gossipsub_publish(
-                                                        TopicHash::from_raw(format!(
-                                                            "{}_{}",
-                                                            TOPIC_CHAT, from_id
-                                                        )),
-                                                        bytes::Bytes::from(event),
-                                                    )
-                                                    .await
-                                                {
-                                                    error!("{e:?}");
+                                                match &msg {
+                                                    Message::ContactsExchange { exchange }=>{
+                                                        match exchange{
+                                                            ContactsEvent::Answer { token }=>{
+                                                                
+                                                                let pk = PublicKey::from_protobuf_encoding(&token.public_key).unwrap();
+                                                                let peer = PeerId::from_public_key(&pk);
+                                                                let mut digest = crc64fast::Digest::new();
+                                                                digest.write(&peer.to_bytes());
+                                                                let from_id = digest.sum64();
+                                                                let data = serde_cbor::to_vec(&msg).unwrap();
+                                                                let cb = &*cb;
+                                                                cb.on_message(crc, from_id, to, data);
+
+                                                                let msg = luffa_rpc_types::Message::Chat { content: ChatContent::Feedback { crc,status: luffa_rpc_types::FeedbackStatus::Reach } };
+                                                                let event = luffa_rpc_types::Event::new(
+                                                                    from_id,
+                                                                    &msg,
+                                                                    Some(key),
+                                                                    my_id,
+                                                                );
+                                                                let event = event.encode().unwrap();
+                                                                if let Err(e) = client_t
+                                                                    .gossipsub_publish(
+                                                                        TopicHash::from_raw(format!(
+                                                                            "{}_{}",
+                                                                            TOPIC_CHAT, from_id
+                                                                        )),
+                                                                        bytes::Bytes::from(event),
+                                                                    )
+                                                                    .await
+                                                                {
+                                                                    error!("{e:?}");
+                                                                }
+                                                            }
+                                                            _=>{
+
+                                                            }
+                                                        }
+                                                    }
+                                                    _=>{
+
+                                                    }
                                                 }
+                                                
                                             }
                                         } else {
                                             tracing::warn!("invalid msg");
