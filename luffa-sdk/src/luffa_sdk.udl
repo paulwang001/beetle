@@ -8,7 +8,7 @@ dictionary ChatSession {
    u64 last_time;
    string tag;
    u64 read_crc;
-   u64 reach_crc;
+   sequence<u64> reach_crc;
    string last_msg;
 };
 

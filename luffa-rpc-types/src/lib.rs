@@ -312,9 +312,10 @@ impl Message {
                     ContactsEvent::Answer { token } =>{
                         Some(token.secret_key.clone())
                     }
-                    _=>{
-                        None
+                    ContactsEvent::Offer { token }=>{
+                        Some(token.secret_key.clone())
                     }
+                    
                 }
             }
             _=>{
