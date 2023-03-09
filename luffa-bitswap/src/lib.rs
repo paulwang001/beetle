@@ -282,7 +282,7 @@ impl<S: Store> Bitswap<S> {
 
     fn peer_connected(&self, peer: PeerId) {
         if let Err(err) = self.peers_connected.try_send(peer) {
-            warn!(
+            tracing::warn!(
                 "failed to process peer connection from {}: {:?}, dropping",
                 peer, err
             );
@@ -291,7 +291,7 @@ impl<S: Store> Bitswap<S> {
 
     fn peer_disconnected(&self, peer: PeerId) {
         if let Err(err) = self.peers_disconnected.try_send(peer) {
-            warn!(
+            tracing::warn!(
                 "failed to process peer disconnection from {}: {:?}, dropping",
                 peer, err
             );
@@ -301,10 +301,10 @@ impl<S: Store> Bitswap<S> {
     fn receive_message(&self, peer: PeerId, message: BitswapMessage) {
         inc!(BitswapMetrics::MessagesReceived);
         record!(BitswapMetrics::MessageBytesIn, message.encoded_len() as u64);
-        info!("receive_message: {peer:?} ->{message:?}");
+        tracing::info!("receive_message: {peer:?} ->{message:?}");
         // TODO: Handle backpressure properly
         if let Err(err) = self.incoming_messages.try_send((peer, message)) {
-            warn!(
+            tracing::warn!(
                 "failed to receive message from {}: {:?}, dropping",
                 peer, err
             );
@@ -474,7 +474,7 @@ impl<S: Store> NetworkBehaviour for Bitswap<S> {
                     if let Some(mut dials) = dials.remove(&peer_id) {
                         while let Some((id, sender)) = dials.pop() {
                             if let Err(err) = sender.send(Ok((connection, Some(protocol)))) {
-                                warn!("dial:{}: failed to send dial response {:?}", id, err)
+                                tracing::warn!("dial:{}: failed to send dial response {:?}", id, err)
                             }
                         }
                     }
@@ -487,7 +487,7 @@ impl<S: Store> NetworkBehaviour for Bitswap<S> {
                 if let Some(mut dials) = dials.remove(&peer_id) {
                     while let Some((id, sender)) = dials.pop() {
                         if let Err(err) = sender.send(Err("protocol not supported".into())) {
-                            warn!("dial:{} failed to send dial response {:?}", id, err)
+                            tracing::warn!("dial:{} failed to send dial response {:?}", id, err)
                         }
                     }
                 }
@@ -522,7 +522,7 @@ impl<S: Store> NetworkBehaviour for Bitswap<S> {
                 Poll::Ready(ev) => match ev {
                     OutEvent::Disconnect(peer_id, response) => {
                         if let Err(err) = response.send(()) {
-                            warn!("failed to send disconnect response {:?}", err)
+                            tracing::warn!("failed to send disconnect response {:?}", err)
                         }
                         return Poll::Ready(NetworkBehaviourAction::CloseConnection {
                             peer_id,

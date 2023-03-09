@@ -109,7 +109,7 @@ impl PeerManager {
 
     async fn send(&self, message: Message) {
         if let Err(err) = self.sender.send(message).await {
-            warn!("failed to send message: {:?}", err);
+            tracing::warn!("failed to send message: {:?}", err);
         }
     }
 
@@ -406,7 +406,7 @@ async fn run(mut actor: PeerManagerActor) {
     }
 
     if let Err(err) = actor.stop().await {
-        warn!("failed to shutdown peer manager: {:?}", err);
+        tracing::warn!("failed to shutdown peer manager: {:?}", err);
     }
 }
 

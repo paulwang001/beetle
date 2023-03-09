@@ -88,7 +88,7 @@ async fn main() -> Result<()> {
     .unwrap();
 
     config.metrics = luffa_node::metrics::metrics_config_with_compile_time_info(config.metrics);
-    info!("-------");
+    tracing::info!("-------");
     let mut net_graph =
         UnGraph::<Node, Edge>::with_capacity(1024, 1024);
     let mut contacts_graph =
@@ -108,7 +108,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    info!("-------");
+    tracing::info!("-------");
     let (key, peer, p2p_rpc, mut events, sender) = {
         let store = start_store(config.store.clone()).await.unwrap();
         let (key, peer_id, p2p_rpc, events, sender) =
@@ -119,7 +119,7 @@ async fn main() -> Result<()> {
     let mut digest = crc64fast::Digest::new();
     digest.write(&peer.to_bytes());
     let my_id = digest.sum64();
-    info!("started> did:{my_id}");
+    tracing::info!("started> did:{my_id}");
     let my_idx = net_graph.add_node(Node {
         did: my_id,
         last_time: get_now(),
@@ -128,14 +128,14 @@ async fn main() -> Result<()> {
     let client = Arc::new(luffa_node::rpc::P2p::new(sender));
     let client = Arc::new(P2pClient::new(client).unwrap());
     let notice_queue = Arc::new(RwLock::new(std::collections::BTreeMap::<u64, Cid>::new()));
-    info!("mem rpc client open.");
+    tracing::info!("mem rpc client open.");
     let client_t = client.clone();
     let pub_sub = tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(5)).await;
             let mut has_err = false;
             if let Ok(_) = tokio::time::timeout(Duration::from_secs(5), async {
-                info!("client subscribe.");
+                tracing::info!("client subscribe.");
                 let topics = vec![TOPIC_RELAY, TOPIC_STATUS];
                 for t in topics.into_iter() {
                     if let Err(e) = client_t.gossipsub_subscribe(TopicHash::from_raw(t)).await {
@@ -148,7 +148,7 @@ async fn main() -> Result<()> {
             .await
             {
                 if !has_err {
-                    info!("pub sub successfully.");
+                    tracing::info!("pub sub successfully.");
                     break;
                 }
             }
@@ -156,7 +156,7 @@ async fn main() -> Result<()> {
         loop {
             tokio::time::sleep(Duration::from_secs(30)).await;
             if let Ok(_) = tokio::time::timeout(Duration::from_secs(5), async {
-                info!("client publicsh relay.");
+                tracing::info!("client publicsh relay.");
                 let msg = luffa_rpc_types::Message::RelayNode { did: my_id };
                 let event = luffa_rpc_types::Event::new(0, &msg, None, my_id);
                 let event = event.encode().unwrap();
@@ -169,7 +169,7 @@ async fn main() -> Result<()> {
             })
             .await
             {
-                info!("relay successfully.");
+                tracing::info!("relay successfully.");
             }
         }
     });
@@ -194,7 +194,7 @@ async fn main() -> Result<()> {
                             } = im;
                             // TODO check did status
                             if nonce.is_none() {
-                                warn!("------- nonce is None");
+                                tracing::warn!("------- nonce is None");
                                 if let Ok(msg) = luffa_rpc_types::Message::decrypt(
                                     bytes::Bytes::from(msg),
                                     None,
@@ -331,7 +331,7 @@ async fn main() -> Result<()> {
                                 }
                             } else {
                                 // todo!()
-                                warn!("encrypt msg:{from_id} -> {to}");
+                                tracing::warn!("encrypt msg:{from_id} -> {to}");
                                 let from =
                                     take_node(&mut contacts_graph, from_id, NodeTypes::Client);
                                 if let Some(idx) = contacts_graph.node_indices().find(|n| {
@@ -382,7 +382,7 @@ async fn main() -> Result<()> {
                                             match contacts_graph.find_edge(from, idx) {
                                                 Some(n) => {}
                                                 None => {
-                                                    warn!("")
+                                                    tracing::warn!("")
                                                 }
                                             }
                                             let relay_peers = net_graph.neighbors(idx);
@@ -422,7 +422,7 @@ async fn main() -> Result<()> {
                             }
                         }
                         Err(e) => {
-                            warn!("{e:?}");
+                            tracing::warn!("{e:?}");
                         }
                     }
                 }
@@ -515,7 +515,7 @@ async fn main() -> Result<()> {
             }
         }
     });
-    info!("ready...");
+    tracing::info!("ready...");
     luffa_util::block_until_sigint().await;
     pub_sub.abort();
     process.abort();

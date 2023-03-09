@@ -81,7 +81,7 @@ pub async fn run_command(p2p: &P2pApi, cmd: &P2p) -> Result<()> {
     match &cmd.command {
         P2pCommands::Connect { addr } => match p2p.connect(&addr.0).await {
             Ok(_) => {
-                println!("Connected to {addr}!");
+                tracing::info!("Connected to {addr}!");
             }
             Err(e) => return Err(e),
         },
@@ -104,22 +104,22 @@ pub async fn run_command(p2p: &P2pApi, cmd: &P2p) -> Result<()> {
         P2pCommands::Mesh { topic } =>{
             let peers = p2p.mesh_peers(topic.clone()).await?;
             for (i,peer) in peers.into_iter().enumerate() {
-                println!("{} [{}] {}",topic,i+1,peer.to_string());
+                tracing::info!("{} [{}] {}",topic,i+1,peer.to_string());
             }
         }
         P2pCommands::Push { data } =>{
             let cid = p2p.push(bytes::Bytes::from(data.as_bytes().to_vec())).await?;
-            println!("cid: {}",cid.to_string());
+            tracing::info!("cid: {}",cid.to_string());
         }
         P2pCommands::Fetch { ctx, cid } => {
             let cid = cid::Cid::from_str(cid)?;
             let data = p2p.fetch(*ctx, cid).await?;
             match data {
                 Some(data)=>{
-                    println!("found: {}",String::from_utf8(data.to_vec()).unwrap());
+                    tracing::info!("found: {}",String::from_utf8(data.to_vec()).unwrap());
                 }
                 None=>{
-                    println!("not found: {cid}");
+                    tracing::info!("not found: {cid}");
                 }
             }
         }
@@ -128,28 +128,28 @@ pub async fn run_command(p2p: &P2pApi, cmd: &P2p) -> Result<()> {
 }
 
 fn display_lookup(l: &Lookup) {
-    println!("{}\n  {}", "Peer ID:".bold().dim(), l.peer_id);
-    println!("{}\n  {}", "Agent Version:".bold().dim(), l.agent_version);
-    println!(
+    tracing::info!("{}\n  {}", "Peer ID:".bold().dim(), l.peer_id);
+    tracing::info!("{}\n  {}", "Agent Version:".bold().dim(), l.agent_version);
+    tracing::info!(
         "{}\n  {}",
         "Protocol Version:".bold().dim(),
         l.protocol_version
     );
-    println!(
+    tracing::info!(
         "{} {}",
         "Observed Addresses".bold().dim(),
         format!("({}):", l.observed_addrs.len()).bold().dim()
     );
     l.observed_addrs
         .iter()
-        .for_each(|addr| println!("  {addr}"));
-    println!(
+        .for_each(|addr| tracing::info!("  {addr}"));
+    tracing::info!(
         "{} {}",
         "Listening Addresses".bold().dim(),
         format!("({}):", l.listen_addrs.len()).bold().dim()
     );
-    l.listen_addrs.iter().for_each(|addr| println!("  {addr}"));
-    println!(
+    l.listen_addrs.iter().for_each(|addr| tracing::info!("  {addr}"));
+    tracing::info!(
         "{} {}\n  {}",
         "Protocols".bold().dim(),
         format!("({}):", l.protocols.len()).bold().dim(),
@@ -159,7 +159,7 @@ fn display_lookup(l: &Lookup) {
 
 fn display_addresses(addresses: Vec<Multiaddr>) {
     for (i, addr) in addresses.into_iter().enumerate() {
-        println!("{}:{}", i + 1, addr.to_string());
+        tracing::info!("{}:{}", i + 1, addr.to_string());
     }
 }
 
@@ -167,7 +167,7 @@ fn display_peers(peers: HashMap<PeerId, Vec<Multiaddr>>) {
     // let mut pid_str: String;
     for (peer_id, addrs) in peers {
         if let Some(addr) = addrs.first() {
-            println!("{addr}/p2p/{peer_id}");
+            tracing::info!("{addr}/p2p/{peer_id}");
         }
     }
 }

@@ -174,8 +174,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
     /// Starts the libp2p service networking stack. This Future resolves when shutdown occurs.
     pub async fn run(&mut self) -> Result<()> {
-        println!("Listen addrs: {:?}", self.listen_addrs());
-        info!("Local Peer ID: {}", self.local_peer_id());
+        tracing::info!("Listen addrs: {:?}", self.listen_addrs());
+        tracing::info!("Local Peer ID: {}", self.local_peer_id());
 
         let mut nice_interval = self.use_dht.then(|| tokio::time::interval(NICE_INTERVAL * 10));
         let mut bootstrap_interval = tokio::time::interval(BOOTSTRAP_INTERVAL);
@@ -188,7 +188,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 swarm_event = self.swarm.next() => {
                     let swarm_event = swarm_event.expect("the swarm will never die");
                     if let Err(err) = self.handle_swarm_event(swarm_event) {
-                        warn!("swarm error: {:?}", err);
+                        tracing::warn!("swarm error: {:?}", err);
                     }
 
                     if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
@@ -207,7 +207,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     continue;
                                 }
                                 Err(err) => {
-                                    warn!("rpc: {:?}", err);
+                                    tracing::warn!("rpc: {:?}", err);
                                 }
                             }
                         }
@@ -225,20 +225,20 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     }
                 }, if nice_interval.is_some() => {
                     // Print peer count on an interval.
-                    warn!("[{}] Peers connected: {:?}",self.local_peer_id(), self.swarm.connected_peers().count());
+                    tracing::warn!("[{}] Peers connected: {:?}",self.local_peer_id(), self.swarm.connected_peers().count());
                     // self.dht_nice_tick().await;
                 }
                 _ = bootstrap_interval.tick() => {
                     if let Err(e) = self.swarm.behaviour_mut().kad_bootstrap() {
-                        warn!("kad bootstrap failed: {:?}", e);
+                        tracing::warn!("kad bootstrap failed: {:?}", e);
                     }
                     else{
-                        warn!("kad bootstrap successfully");
+                        tracing::warn!("kad bootstrap successfully");
                     }
                 }
                 _ = expiry_interval.tick() => {
                     if let Err(err) = self.expiry() {
-                        warn!("expiry error {:?}", err);
+                        tracing::warn!("expiry error {:?}", err);
                     }
                 }
             }
@@ -339,10 +339,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     debug!("all workers stopped for session {}", ctx);
                 }
                 if let Err(err) = client.stop_session(ctx).await {
-                    warn!("failed to stop session {}: {:?}", ctx, err);
+                    tracing::warn!("failed to stop session {}: {:?}", ctx, err);
                 }
                 if let Err(err) = response_channel.send(Ok(())) {
-                    warn!("session {} failed to send stop response: {:?}", ctx, err);
+                    tracing::warn!("session {} failed to send stop response: {:?}", ctx, err);
                 }
                 debug!("session {} stopped", ctx);
             });
@@ -380,7 +380,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     block = client.get_block_with_session_id(ctx, &cid, &providers) => match block {
                         Ok(block) => {
                             if let Err(e) = chan.send(Ok(block)) {
-                                warn!("failed to send block response: {:?}", e);
+                                tracing::warn!("failed to send block response: {:?}", e);
                             }
                         }
                         Err(err) => {
@@ -405,7 +405,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             <<<NodeBehaviour as NetworkBehaviour>::ConnectionHandler as IntoConnectionHandler>::Handler as ConnectionHandler>::Error>,
     ) -> Result<()> {
         libp2p_metrics().record(&event);
-        // println!("swarm>>>> {event:?}");
+        // tracing::info!("swarm>>>> {event:?}");
         match event {
             // outbound events
             SwarmEvent::Behaviour(event) => self.handle_node_event(event),
@@ -467,7 +467,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             let sender = sender.clone();
             tokio::task::spawn(async move {
                 if let Err(e) = sender.send(ev.clone()).await {
-                    warn!("failed to send network event: {:?}", e);
+                    tracing::warn!("failed to send network event: {:?}", e);
                 }
             });
         }
@@ -475,7 +475,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
     #[tracing::instrument(skip(self))]
     fn handle_node_event(&mut self, event: Event) -> Result<()> {
-        // println!("node>>> {event:?}");
+        // tracing::info!("node>>> {event:?}");
         match event {
             Event::Bitswap(e) => {
                 match e {
@@ -487,7 +487,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     // TODO: track query?
                                 }
                                 Err(err) => {
-                                    warn!("failed to provide {}: {:?}", key, err);
+                                    tracing::warn!("failed to provide {}: {:?}", key, err);
                                 }
                             }
                         }
@@ -579,7 +579,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             );
                         }
                         QueryResult::Bootstrap(Err(e)) => {
-                            warn!("kad bootstrap error: {:?}", e);
+                            tracing::warn!("kad bootstrap error: {:?}", e);
                         }
                         QueryResult::GetClosestPeers(Ok(GetClosestPeersOk { key, peers })) => {
                             debug!("GetClosestPeers ok {:?}", key);
@@ -638,7 +638,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 }
                             }
                             GetRecordOk::FinishedWithNoAdditionalRecord { .. } => {
-                                warn!("FinishedWithNoAdditionalRecord");
+                                tracing::warn!("FinishedWithNoAdditionalRecord");
                             }
                         },
                         QueryResult::GetRecord(Err(e)) => {
@@ -823,7 +823,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             let dial_opts =
                                 DialOpts::peer_id(peer_id).addresses(vec![addr]).build();
                             if let Err(e) = Swarm::dial(&mut self.swarm, dial_opts) {
-                                warn!("invalid dial options: {:?}", e);
+                                tracing::warn!("invalid dial options: {:?}", e);
                             }
                         }
                     }
@@ -1121,7 +1121,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         .condition(libp2p::swarm::dial_opts::PeerCondition::Always)
                         .build();
                     if let Err(e) = Swarm::dial(&mut self.swarm, dial_opts) {
-                        warn!("invalid dial options: {:?}", e);
+                        tracing::warn!("invalid dial options: {:?}", e);
                         while let Some(channel) = channels.pop() {
                             channel
                                 .send(Err(anyhow!("error dialing peer {:?}: {}", peer_id, e)))
@@ -1154,7 +1154,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 response_channel.send(addrs).ok();
             }
             RpcMessage::NetDisconnect(response_channel, _peer_id) => {
-                warn!("NetDisconnect API not yet implemented"); // TODO: implement NetDisconnect
+                tracing::warn!("NetDisconnect API not yet implemented"); // TODO: implement NetDisconnect
 
                 response_channel
                     .send(())
@@ -1301,7 +1301,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
 pub async fn load_identity<S: Storage>(kc: &mut Keychain<S>) -> Result<Keypair> {
     if kc.is_empty().await? {
-        info!("no identity found, creating",);
+        tracing::info!("no identity found, creating",);
         kc.create_ed25519_key().await?;
     }
 
@@ -1309,7 +1309,7 @@ pub async fn load_identity<S: Storage>(kc: &mut Keychain<S>) -> Result<Keypair> 
     let first_key = kc.keys().next().await;
     if let Some(keypair) = first_key {
         let keypair: Keypair = keypair?.into();
-        info!("identity loaded: {}", PeerId::from(keypair.public()));
+        tracing::info!("identity loaded: {}", PeerId::from(keypair.public()));
         return Ok(keypair);
     }
 

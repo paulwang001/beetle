@@ -24,7 +24,7 @@ fn main() -> Result<()> {
 
     runtime.block_on(async move {
         let version = option_env!("LUFFA_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
-        println!("Starting luffa-node, version {version}");
+        tracing::info!("Starting luffa-node, version {version}");
 
         let args = Args::parse();
 

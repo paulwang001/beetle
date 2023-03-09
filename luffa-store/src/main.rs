@@ -17,7 +17,7 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     let version = env!("CARGO_PKG_VERSION");
-    println!("Starting luffa-store, version {version}");
+    tracing::info!("Starting luffa-store, version {version}");
 
     let config_path = luffa_config_path(CONFIG_FILE_NAME)?;
     let sources = &[Some(config_path.as_path()), args.cfg.as_deref()];
@@ -57,10 +57,10 @@ async fn main() -> anyhow::Result<()> {
 
     // #[cfg(feature = "relay")]
     // let store = if config.path.exists() {
-    //     info!("Opening store at {}", config.path.display());
+    //     tracing::info!("Opening store at {}", config.path.display());
     //     Store::open(config).await?
     // } else {
-    //     info!("Creating store at {}", config.path.display());
+    //     tracing::info!("Creating store at {}", config.path.display());
     //     Store::create(config).await?
     // };
 

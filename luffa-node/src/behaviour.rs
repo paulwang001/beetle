@@ -37,6 +37,7 @@ pub const AGENT_VERSION: &str = concat!("/", env!("CARGO_PKG_VERSION"));
 #[behaviour(out_event = "Event")]
 pub(crate) struct NodeBehaviour {
     ping: Ping,
+    pub(crate) keep : libp2p::swarm::keep_alive::Behaviour, 
     identify: identify::Behaviour,
     pub(crate) bitswap: Toggle<Bitswap<BitswapStore>>,
     pub(crate) kad: Toggle<Kademlia<MemoryStore>>,
@@ -97,16 +98,16 @@ impl NodeBehaviour {
             } else {
                 BitswapConfig::default_client_mode()
             };
-            warn!("init bitswap:{bs_config:?}");
+            tracing::warn!("init bitswap:{bs_config:?}");
             Some(Bitswap::new(peer_id, BitswapStore(db), bs_config).await)
         } else {
-            warn!("disabled bitswap");
+            tracing::warn!("disabled bitswap");
             None
         }
         .into();
 
         let mdns = if config.mdns {
-            warn!("init mdns");
+            tracing::warn!("init mdns");
             Some(Mdns::new(Default::default())?)
         } else {
             None
@@ -114,7 +115,7 @@ impl NodeBehaviour {
         .into();
 
         let kad = if config.kademlia {
-            info!("init kademlia");
+            tracing::info!("init kademlia");
             // TODO: persist to store
             let mem_store_config = MemoryStoreConfig {
                 max_records: 1024 * 64,
@@ -137,13 +138,13 @@ impl NodeBehaviour {
                     let peer_id = PeerId::from_multihash(mh).unwrap();
                     kademlia.add_address(&peer_id, addr);
                 } else {
-                    warn!("Could not parse bootstrap addr {}", multiaddr);
+                    tracing::warn!("Could not parse bootstrap addr {}", multiaddr);
                 }
             }
 
             // Trigger initial bootstrap
             if let Err(e) = kademlia.bootstrap() {
-                warn!("Kademlia bootstrap failed: {}", e);
+                tracing::warn!("Kademlia bootstrap failed: {}", e);
             }
 
             Some(kademlia)
@@ -153,7 +154,7 @@ impl NodeBehaviour {
         .into();
 
         let autonat = if config.autonat {
-            info!("init autonat");
+            tracing::info!("init autonat");
             let pub_key = local_key.public();
             let config = autonat::Config {
                 use_connected: true,
@@ -170,7 +171,7 @@ impl NodeBehaviour {
         .into();
 
         let relay = if config.relay_server {
-            info!("init relay server");
+            tracing::info!("init relay server");
             let config = relay::v2::relay::Config::default();
             let r = relay::v2::relay::Relay::new(local_key.public().to_peer_id(), config);
             Some(r)
@@ -180,7 +181,7 @@ impl NodeBehaviour {
         .into();
 
         let (dcutr, relay_client) = if config.relay_client {
-            info!("init relay client");
+            tracing::info!("init relay client");
             let relay_client =
                 relay_client.expect("missing relay client even though it was enabled");
             let dcutr = dcutr::behaviour::Behaviour::new();
@@ -197,7 +198,7 @@ impl NodeBehaviour {
         };
 
         let gossipsub = if config.gossipsub {
-            info!("init gossipsub");
+            tracing::info!("init gossipsub");
             let gossipsub_config = gossipsub::GossipsubConfigBuilder::default()
             .validation_mode(gossipsub::ValidationMode::Strict).do_px().build().unwrap();
             // let gossipsub_config = gossipsub::GossipsubConfig::default();
@@ -217,6 +218,7 @@ impl NodeBehaviour {
         let chat = Some(libp2p::request_response::RequestResponse::new(chat::ChatCodec(), protocols, cfg)); 
         Ok(NodeBehaviour {
             ping: Ping::default(),
+            keep: libp2p::swarm::keep_alive::Behaviour::default(),
             identify,
             bitswap,
             mdns,
@@ -236,7 +238,7 @@ impl NodeBehaviour {
             let client = bs.client().clone();
             tokio::task::spawn(async move {
                 if let Err(err) = client.notify_new_blocks(&blocks).await {
-                    warn!("failed to notify bitswap about blocks: {:?}", err);
+                    tracing::warn!("failed to notify bitswap about blocks: {:?}", err);
                 }
             });
         }

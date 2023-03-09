@@ -239,7 +239,7 @@ impl<T: Topic, D: Data, TM: TaskMerger<T, D>> Inner<T, D, TM> {
     async fn call_hook(&self, event: Event) {
         for hook in &self.hooks {
             if let Err(err) = hook.send(event.clone()).await {
-                warn!("failed to call hook for {:?}: {:?}", event, err);
+                tracing::warn!("failed to call hook for {:?}: {:?}", event, err);
             }
         }
     }
@@ -289,7 +289,7 @@ mod tests {
         // add blocks for all letters
         for letter in shuffled_alphabet {
             let i = alphabet.iter().position(|c| *c == letter).unwrap();
-            println!("{letter} - {i}");
+            tracing::info!("{letter} - {i}");
             ptq.push_task(
                 partner,
                 Task {
@@ -348,24 +348,24 @@ mod tests {
             ptq.push_task(d, task).await;
         }
 
-        println!("all four");
+        tracing::info!("all four");
         match_n_tasks(&ptq, 4, &[a, b, c, d][..]).await;
         ptq.remove(&1, b).await;
 
         // b should be frozen
-        println!("frozen b");
+        tracing::info!("frozen b");
         match_n_tasks(&ptq, 3, &[a, c, d][..]).await;
 
         ptq.thaw_round().await;
 
-        println!("unfrozen b");
+        tracing::info!("unfrozen b");
         match_n_tasks(&ptq, 1, &[b][..]).await;
 
         // remove non existent task
         ptq.remove(&9, b).await;
 
         // b should not be frozen
-        println!("all four again");
+        tracing::info!("all four again");
         match_n_tasks(&ptq, 4, &[a, b, c, d][..]).await;
     }
 

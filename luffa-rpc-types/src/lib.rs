@@ -235,9 +235,9 @@ impl Message {
                 match key {
                     Some(k)=> Some(Aes256Gcm::new_from_slice(k.as_ref()).unwrap()),
                     None=>{
-                        eprintln!("----------");
+                        tracing::warn!("----------");
                         self.exchange_key().map(|v| {
-                            eprintln!("----------{:?}",v);
+                            tracing::warn!("----------{:?}",v);
                             
                             match Aes256Gcm::new_from_slice(&v) {
                                 Ok(a)=> a,
@@ -249,10 +249,10 @@ impl Message {
                     }
                 };
                 if cipher.is_none() {
-                    eprintln!("cipher is none");
+                    tracing::warn!("cipher is none");
                     return Err(anyhow::anyhow!("cipher is none"));
                 }
-                eprintln!("00000000000000");
+                tracing::warn!("00000000000000");
                 let cipher = cipher.unwrap();
                 let digest = Code::Sha2_256.digest(&data);
                 let nonce_data = digest.to_bytes();

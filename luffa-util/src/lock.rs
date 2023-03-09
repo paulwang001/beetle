@@ -39,17 +39,17 @@ impl ProgramLock {
         match self.is_locked() {
             Ok(false) => {
                 if let Err(e) = self.acquire() {
-                    eprintln!("error locking {}: {}", self.program_name(), e);
+                    tracing::warn!("error locking {}: {}", self.program_name(), e);
                     process::exit(exitcodes::ERROR);
                 }
                 self
             }
             Ok(true) => {
-                eprintln!("{} is already running", self.program_name());
+                tracing::warn!("{} is already running", self.program_name());
                 process::exit(exitcodes::LOCKED);
             }
             Err(err) => {
-                eprintln!("error checking lock {}: {}", self.program_name(), err);
+                tracing::warn!("error checking lock {}: {}", self.program_name(), err);
                 process::exit(exitcodes::ERROR);
             }
         }
@@ -157,7 +157,7 @@ impl Drop for ProgramLock {
     fn drop(&mut self) {
         if self.lock.is_some() {
             if let Err(err) = std::fs::remove_file(&self.path) {
-                warn!("removing lock: {}", err);
+                tracing::warn!("removing lock: {}", err);
             }
         }
     }

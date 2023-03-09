@@ -34,7 +34,7 @@ pub async fn block_until_sigint() {
     ctrlc::set_handler(move || {
         let prev = running.fetch_add(1, Ordering::SeqCst);
         if prev == 0 {
-            println!("Got interrupt, shutting down...");
+            tracing::info!("Got interrupt, shutting down...");
             // Send sig int in channel to blocking task
             if let Some(ctrlc_send) = ctrlc_send_c.try_borrow_mut().unwrap().take() {
                 ctrlc_send.send(()).expect("Error sending ctrl-c message");
@@ -217,7 +217,7 @@ where
     }
 
     let cfg = builder.build()?;
-    println!("make_config:\n{:#?}\n", cfg);
+    tracing::info!("make_config:\n{:#?}\n", cfg);
     let cfg: T = cfg.try_deserialize()?;
     Ok(cfg)
 }

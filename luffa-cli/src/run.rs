@@ -159,48 +159,48 @@ impl Cli {
                 let data = data.as_bytes();
                 let expires = Some(60);
                 let cid = api.put_record(bytes::Bytes::from(data.to_vec()),expires).await?;
-                println!("Put success, Cid: {}",cid.to_string());
+                tracing::info!("Put success, Cid: {}",cid.to_string());
             }
             Commands::Pub { topic, data, .. } => {
                 let data = data.as_bytes();
                 let data = bytes::Bytes::from(data.to_vec());
                 let msg_id = api.publish(TopicHash::from_raw(topic),data).await?;
-                println!("Pub success, id: {}",msg_id.to_string());
+                tracing::info!("Pub success, id: {}",msg_id.to_string());
             }
             Commands::Get { key, .. } => {
                 match api.get_record(key).await? {
                     Some(data)=>{
-                        println!("Get> {}",String::from_utf8(data.to_vec())?);
+                        tracing::info!("Get> {}",String::from_utf8(data.to_vec())?);
                     }
                     None=>{
-                        println!("Get not found: {}",key);
+                        tracing::info!("Get not found: {}",key);
                     }
                 }
             }
             Commands::Sub { topic, .. } =>{
                 let ret = api.subscribe(TopicHash::from_raw(topic)).await?;
-                println!("Sub topic:{}",ret);
+                tracing::info!("Sub topic:{}",ret);
             }
             Commands::UnSub { topic, .. } =>{
                 let ret = api.unsubscribe(TopicHash::from_raw(topic)).await?;
                 
-                println!("UnSub topic:{}",ret);
+                tracing::info!("UnSub topic:{}",ret);
             }
             Commands::Push { data } =>{
                 let cid = api.put(bytes::Bytes::from(data.as_bytes().to_vec())).await?;
-                println!("Push: {}",cid.to_string());
+                tracing::info!("Push: {}",cid.to_string());
             }
             Commands::Fetch { ctx,cid } =>{
                 let cid = cid::Cid::from_str(&cid)?;
                 match api.fetch_data(*ctx, cid).await {
                     Ok(Some(data))=>{
-                        println!("Fetch> {cid} : {}",String::from_utf8(data.to_vec())?);
+                        tracing::info!("Fetch> {cid} : {}",String::from_utf8(data.to_vec())?);
                     }
                     Ok(None)=>{
-                        println!("Fetch> {cid} not found.");
+                        tracing::info!("Fetch> {cid} not found.");
                     }
                     Err(e)=>{
-                        eprintln!("fetch error:{e:?}");
+                        tracing::warn!("fetch error:{e:?}");
                     }
                 }
             }

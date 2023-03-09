@@ -135,7 +135,7 @@ impl Client {
     pub fn new() -> Self {
         let path = luffa_util::luffa_data_path(KVDB_CONTACTS_FILE).unwrap();
         let idx_path = luffa_util::luffa_data_path(LUFFA_CONTENT).unwrap();
-        println!("open db>>>>{:?}", &path);
+        tracing::info!("open db>>>>{:?}", &path);
         let db = Arc::new(sled::open(path).unwrap());
         let (idx, schema) = content_index(idx_path.as_path());
         let writer = idx.writer_with_num_threads(1, 12 * 1024 * 1024).unwrap();
@@ -161,7 +161,7 @@ impl Client {
         };
 
         let secret_key = key.to_vec();
-        warn!("secret_key::: {}",secret_key.len());
+        tracing::warn!("secret_key::: {}",secret_key.len());
         let token = RUNTIME.block_on(async {
             let key = self.key.read().await;
             let token = key.as_ref().map(|key| {
@@ -192,7 +192,7 @@ impl Client {
             let mut digest = crc64fast::Digest::new();
             digest.write(&secret_key);
             let offer_id = digest.sum64();
-            warn!("gen offer id:{}",offer_id);
+            tracing::warn!("gen offer id:{}",offer_id);
             self.save_contacts_offer(offer_id, secret_key);
         }
         let code = multibase::encode(multibase::Base::Base64, &msg);
@@ -208,10 +208,10 @@ impl Client {
             Ok((_, msg)) => {
                 let msg: Message =
                     serde_cbor::from_slice(&msg).map_err(|e| {
-                        eprintln!("{e:?}");
+                        tracing::warn!("{e:?}");
                         ClientError::CodeParser
                     })?;
-                eprintln!("{:?}",msg);    
+                tracing::warn!("{:?}",msg);    
                 match msg {
                     Message::ContactsExchange { exchange } => {
                         match exchange {
@@ -293,7 +293,7 @@ impl Client {
                                             contacts_type,
                                             ..
                                         } = token;
-                                        warn!("a secret_key::: {}",secret_key.len());
+                                        tracing::warn!("a secret_key::: {}",secret_key.len());
                                         let code =
                                         self.gen_offer_anwser(comment.clone(), Some(secret_key.clone()));
                                         let (_, data) = multibase::decode(&code).unwrap();
@@ -318,7 +318,7 @@ impl Client {
                                         let mut digest = crc64fast::Digest::new();
                                         digest.write(&secret_key);
                                         let offer_id = digest.sum64();
-                                        warn!("answer offer id:{}",offer_id);
+                                        tracing::warn!("answer offer id:{}",offer_id);
                                         self.send_to(to, msg, offer_id).expect("");
                                         Ok(())
                                     }
@@ -422,7 +422,7 @@ impl Client {
                 
                 let crc = self.send_to(to, msg, 0).map_err(|e| {
                     error!("{e:?}");
-                    eprintln!("{e:?}");
+                    tracing::warn!("{e:?}");
                     ClientError::SendFailed
                 })?;
                 Ok(crc)
@@ -663,7 +663,7 @@ impl Client {
             let retrieved_doc = searcher
                 .doc(doc_address)
                 .map_err(|_e| ClientError::SearchError)?;
-            // println!("{}", schema.to_json(&retrieved_doc));
+            // tracing::info!("{}", schema.to_json(&retrieved_doc));
             docs.push(schema.to_json(&retrieved_doc));
         }
         Ok(docs)
@@ -690,7 +690,7 @@ impl Client {
                     .await
                 {
                     Ok(peers) => {
-                        info!("peers:{peers:?}");
+                        tracing::info!("peers:{peers:?}");
                         return peers
                             .into_iter()
                             .map(|p| bs58::encode(p.to_bytes()).into_string())
@@ -701,7 +701,7 @@ impl Client {
                     }
                 }
             }
-            warn!("client is None");
+            tracing::warn!("client is None");
             vec![]
         })
     }
@@ -836,21 +836,21 @@ impl Client {
                     .await
                 {
                     error!("{e:?}");
-                    eprintln!("{e:?}");
+                    tracing::warn!("{e:?}");
                     has_err = true;
                 }
-                // let topics = vec![TOPIC_STATUS];
-                // for t in topics.into_iter() {
-                //     if let Err(e) = client_t.gossipsub_subscribe(TopicHash::from_raw(t)).await {
-                //         error!("{e:?}");
-                //         eprintln!("{e:?}");
-                //         has_err = true;
-                //         break;
-                //     }
-                // }
+                let topics = vec![TOPIC_STATUS];
+                for t in topics.into_iter() {
+                    if let Err(e) = client_t.gossipsub_subscribe(TopicHash::from_raw(t)).await {
+                        error!("{e:?}");
+                        tracing::warn!("{e:?}");
+                        has_err = true;
+                        break;
+                    }
+                }
 
                 if !has_err {
-                    info!("subscribed all as client,status sync");
+                    tracing::info!("subscribed all as client,status sync");
                     let msg = luffa_rpc_types::Message::StatusSync {
                         to: 0,
                         status: AppStatus::Active,
@@ -866,8 +866,8 @@ impl Client {
                         )
                         .await
                     {
-                        warn!("{e:?}");
-                        eprintln!("{e:?}");
+                        tracing::warn!("{e:?}");
+                        tracing::warn!("{e:?}");
                     }
                     let tree = db_t.open_tree(KVDB_CONTACTS_TREE).unwrap();
 
@@ -897,7 +897,7 @@ impl Client {
                         }
                         let topic = TopicHash::from_raw(format!("{}_{}", TOPIC_CHAT, ctt.did));
                         if let Err(e) = client_t.gossipsub_subscribe(topic).await {
-                            warn!("{e:?}");
+                            tracing::warn!("{e:?}");
                         }
                     }
                     let sync = Message::ContactsSync { did: my_id, contacts };
@@ -910,8 +910,8 @@ impl Client {
                         )
                         .await
                     {
-                        warn!("{e:?}");
-                        eprintln!("{e:?}");
+                        tracing::warn!("{e:?}");
+                        tracing::warn!("{e:?}");
                     }
                     // break;
                 }
@@ -951,7 +951,7 @@ impl Client {
                             debug!("Gossipsub> peer_id: {from:?} msg:{}", msg.len());
                             // TODO check did status
                             if nonce.is_none() {
-                                warn!("nonce is None");
+                                tracing::warn!("nonce is None");
                                 if let Ok(msg) = luffa_rpc_types::Message::decrypt(
                                     bytes::Bytes::from(msg),
                                     None,
@@ -1244,7 +1244,7 @@ impl Client {
                                         if let Some(key) =
                                             Self::get_offer_by_offer_id(db_t.clone(), from_id)
                                         {
-                                            warn!("offer is:{}  nonce:{:?} key: {:?}",from_id,nonce,key);
+                                            tracing::warn!("offer is:{}  nonce:{:?} key: {:?}",from_id,nonce,key);
                                             if let Ok(msg) = luffa_rpc_types::Message::decrypt(
                                                 bytes::Bytes::from(msg),
                                                 Some(key.clone()),
@@ -1279,7 +1279,7 @@ impl Client {
                                                                     my_id,
                                                                 );
                                                                 let event = event.encode().unwrap();
-                                                                warn!("pub to :{}",from_id);
+                                                                tracing::warn!("pub to :{}",from_id);
                                                                 if let Err(e) = client_t
                                                                     .gossipsub_publish(
                                                                         TopicHash::from_raw(format!(
@@ -1293,7 +1293,7 @@ impl Client {
                                                                     error!("{e:?}");
                                                                 }
                                                                 else{
-                                                                    warn!("pub to :{} Ok!",from_id);
+                                                                    tracing::warn!("pub to :{} Ok!",from_id);
                                                                     let c_type = if contacts_type == &ContactsTypes::Private {0}  else {1};
                                                                     Self::save_contacts(
                                                                         db_t.clone(),
@@ -1390,11 +1390,11 @@ impl Client {
             let msg = serde_cbor::from_slice::<Message>(&msg_data).unwrap();
             let is_exchane = msg.is_contacts_exchange();
             let evt = if msg.need_encrypt() {
-                warn!("----------encrypt------{}",to);
+                tracing::warn!("----------encrypt------{}",to);
                 match Self::get_aes_key_from_contacts(db.clone(), to) {
                     Some(key) => Some(Event::new(to, &msg, Some(key), from_id)),
                     None => { 
-                        warn!("aes key not found");
+                        tracing::warn!("aes key not found");
                         Some(Event::new(to, &msg, None, from_id))
                     },
                 }
@@ -1408,7 +1408,7 @@ impl Client {
                     let topic_hash = if to == 0 {
                         TopicHash::from_raw(TOPIC_STATUS)
                     } else {
-                        warn!("----------encrypt---send---");
+                        tracing::warn!("----------encrypt---send---");
                         
                         TopicHash::from_raw(format!("{}_{}", TOPIC_CHAT, to))
                     };
@@ -1428,11 +1428,11 @@ impl Client {
                                 }
                                 _=>{
                                     if to > 0 && !is_exchane {
-                                        warn!("unkown {},not in my contacts",to);
+                                        tracing::warn!("unkown {},not in my contacts",to);
                                         continue;
                                     }
                                     else{
-                                        match tree.get(&tag_key_private.as_bytes()) {
+                                        match tree.get(&tag_key_me.as_bytes()) {
                                             Ok(Some(v))=>{
                                                 (String::from_utf8(v.to_vec()).unwrap(),format!("exchange"))
                                             }
@@ -1450,7 +1450,7 @@ impl Client {
                         .await
                     {
                         error!("{e:?}");
-                        eprintln!("{e:?}");
+                        tracing::warn!("{e:?}");
                         channel.send(Err(anyhow::anyhow!("publish failed:{:?}",e))).unwrap();
                     } else if to > 0 {
                         let msg = serde_cbor::from_slice::<Message>(&msg_data).unwrap();
@@ -1462,7 +1462,7 @@ impl Client {
                             ..
                         } = e;
                         if let Err(e) = channel.send(Ok(crc)) {
-                            eprintln!("channel send failed");
+                            tracing::warn!("channel send failed");
                         }
                         let table = if &msg_type == "content_group" {
                             format!("group_{to}")
@@ -1559,7 +1559,7 @@ impl Client {
                     }
                     else{
                         if let Err(e) = channel.send(Ok(0)) {
-                            eprintln!("channel send failed");
+                            tracing::warn!("channel send failed");
                         }
                     }
                 }
@@ -1635,18 +1635,18 @@ pub async fn start_node(
     Receiver<NetworkEvent>,
     Sender<luffa_node::rpc::RpcMessage>,
 )> {
-    println!("node>>>{config:?}");
+    tracing::info!("node>>>{config:?}");
     let (mut p2p, sender) = Node::new(config, keychain, db,Some("Luffa".to_string())).await?;
     let events = p2p.network_events();
     let local_id = p2p.local_peer_id().clone();
     // Start services
     let p2p_task = task::spawn(async move {
-        println!("p2p runnung..");
+        tracing::info!("p2p runnung..");
         if let Err(err) = p2p.run().await {
             error!("{:?}", err);
-            eprintln!("{err:?}");
+            tracing::warn!("{err:?}");
         } else {
-            eprintln!("p2p run exit!")
+            tracing::warn!("p2p run exit!")
         }
     });
     Ok((local_id, p2p_task, events, sender))
@@ -1659,7 +1659,7 @@ pub async fn start_store(config: StoreConfig) -> anyhow::Result<luffa_store::Sto
     // created.
     // let marker = config.path.join("CURRENT");
 
-    info!("Opening store at {}", config.path.display());
+    tracing::info!("Opening store at {}", config.path.display());
     let store = Store::create(config)
         .await
         .context("failed to open existing store")?;

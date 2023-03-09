@@ -82,7 +82,7 @@ impl Session {
         initial_search_delay: Duration,
         periodic_search_delay: Duration,
     ) -> Self {
-        info!("creating session {}", id);
+        tracing::info!("creating session {}", id);
         let (incoming_s, incoming_r) = async_channel::bounded(128);
 
         let session_want_sender = SessionWantSender::new(
@@ -123,7 +123,7 @@ impl Session {
                         break;
                     }
                     oper = incoming_r.recv() => {
-                        info!("session incoming: {oper:?}");
+                        tracing::info!("session incoming: {oper:?}");
                         match oper {
                             Ok(Op::Receive(keys)) => {
                                 loop_state.handle_receive(keys).await;
@@ -150,7 +150,7 @@ impl Session {
                             }
                             Err(err) => {
                                 // incoming channel gone, shutdown/panic
-                                warn!("incoming channel error: {:?}", err);
+                                tracing::warn!("incoming channel error: {:?}", err);
                                 break;
                             }
                         }
@@ -185,7 +185,7 @@ impl Session {
 
     pub async fn stop(self) -> Result<()> {
         let count = Arc::strong_count(&self.inner);
-        info!("stopping session {} ({})", self.inner.id, count,);
+        tracing::info!("stopping session {} ({})", self.inner.id, count,);
         ensure!(
             count == 2,
             "session {}: too many session refs",
@@ -225,7 +225,7 @@ impl Session {
         haves: &[Cid],
         dont_haves: &[Cid],
     ) {
-        warn!(
+        tracing::warn!(
             "session:{}: received updates from: {:?} keys: {:?}\n  haves: {:?}\n  dont_haves: {:?}",
             self.inner.id,
             from.map(|s| s.to_string()),
@@ -259,7 +259,7 @@ impl Session {
                 })
                 .await
             {
-                warn!("failed to send update want sender: {:?}", err);
+                tracing::warn!("failed to send update want sender: {:?}", err);
             }
         }
 
@@ -269,7 +269,7 @@ impl Session {
 
         // Inform the session that blocks have been received.
         if let Err(err) = self.inner.incoming.send(Op::Receive(keys)).await {
-            warn!("failed to send receive: {:?}", err);
+            tracing::warn!("failed to send receive: {:?}", err);
         }
     }
 
@@ -340,7 +340,7 @@ impl Session {
                                 break;
                             }
                             Err(async_broadcast::RecvError::Overflowed(n)) => {
-                                warn!("receiver is overflowing by {}", n);
+                                tracing::warn!("receiver is overflowing by {}", n);
                                 continue;
                             }
                         }
@@ -354,7 +354,7 @@ impl Session {
                     .send(Op::Cancel(remaining.into_iter().collect()))
                     .await
                 {
-                    warn!("failed to send cancel: {:?}", err);
+                    tracing::warn!("failed to send cancel: {:?}", err);
                 }
             }
         });

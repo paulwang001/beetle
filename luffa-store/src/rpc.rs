@@ -53,7 +53,7 @@ impl RpcStore {
             .spawn_blocking(move |x| x.put(cid, req.blob, links))
             .await?;
 
-        info!("store rpc call: put cid {}", cid);
+        tracing::info!("store rpc call: put cid {}", cid);
         Ok(())
     }
 
@@ -139,7 +139,7 @@ async fn dispatch(s: StoreServer, req: StoreRequest, chan: ServerSocket<StoreSer
 
 #[tracing::instrument(skip(store))]
 pub async fn new(addr: StoreAddr, store: Store) -> Result<()> {
-    info!("store rpc listening on: {}", addr);
+    tracing::info!("store rpc listening on: {}", addr);
     let server = create_server::<StoreService>(addr).await?;
     let store = RpcStore(store);
     loop {

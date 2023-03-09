@@ -23,9 +23,6 @@ pub struct Config {
     /// The endpoint of the prometheus push gateway.
     #[serde(alias = "prom_gateway_endpoint")]
     pub prom_gateway_endpoint: String,
-    #[cfg(feature = "tokio-console")]
-    /// Enables tokio console debugging.
-    pub tokio_console: bool,
 }
 
 impl Source for Config {
@@ -52,8 +49,6 @@ impl Source for Config {
             "prom_gateway_endpoint",
             self.prom_gateway_endpoint.clone(),
         );
-        #[cfg(feature = "tokio-console")]
-        insert_into_config_map(&mut map, "tokio_console", self.tokio_console);
         Ok(map)
     }
 }
@@ -85,8 +80,6 @@ impl Default for Config {
             tracing: false,
             collector_endpoint: "http://localhost:4317".to_string(),
             prom_gateway_endpoint: "http://localhost:9091".to_string(),
-            #[cfg(feature = "tokio-console")]
-            tokio_console: false,
         }
     }
 }

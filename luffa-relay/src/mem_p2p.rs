@@ -26,7 +26,7 @@ pub async fn start(
     let (mut p2p,sender) = Node::new(config, kc,store,Some("Relay".to_string())).await?;
     let events = p2p.network_events();
     let local_id = p2p.local_peer_id().clone();
-    info!("peer: {local_id}");
+    tracing::info!("peer: {local_id}");
     // Start services
     let p2p_task = task::spawn(async move {
         if let Err(err) = p2p.run().await {
@@ -44,7 +44,7 @@ pub async fn start_store(config: StoreConfig) -> anyhow::Result<luffa_store::Sto
     // created.
     // let marker = config.path.join("CURRENT");
 
-    info!("Opening store at {}", config.path.display());
+    tracing::info!("Opening store at {}", config.path.display());
     let store = Store::create(config)
         .await
         .context("failed to open existing store")?;

@@ -1,11 +1,11 @@
+use super::chat::{Request, Response};
 use super::peer_manager::PeerManagerEvent;
+use libp2p::request_response::RequestResponseEvent;
 use libp2p::{
     autonat, dcutr, gossipsub::GossipsubEvent, identify::Event as IdentifyEvent,
     kad::KademliaEvent, mdns::Event as MdnsEvent, ping::Event as PingEvent, relay,
 };
 use luffa_bitswap::BitswapEvent;
-use libp2p::request_response::RequestResponseEvent;
-use super::chat::{Request,Response};
 /// Event type which is emitted from the [`NodeBehaviour`].
 ///
 /// [`NodeBehaviour`]: crate::behaviour::NodeBehaviour
@@ -15,7 +15,7 @@ pub enum Event {
     Identify(Box<IdentifyEvent>),
     Kademlia(KademliaEvent),
     Mdns(MdnsEvent),
-    Chat(RequestResponseEvent<Request,Response>),
+    Chat(RequestResponseEvent<Request, Response>),
     Bitswap(BitswapEvent),
     Autonat(autonat::Event),
     Relay(relay::v2::relay::Event),
@@ -89,8 +89,14 @@ impl From<PeerManagerEvent> for Event {
     }
 }
 
-impl From<RequestResponseEvent<Request,Response>> for Event{
-    fn from(event: RequestResponseEvent<Request,Response>) -> Self {
+impl From<RequestResponseEvent<Request, Response>> for Event {
+    fn from(event: RequestResponseEvent<Request, Response>) -> Self {
         Event::Chat(event)
+    }
+}
+
+impl From<void::Void> for Event {
+    fn from(e: void::Void) -> Self {
+        void::unreachable(e)
     }
 }

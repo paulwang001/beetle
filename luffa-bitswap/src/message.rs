@@ -228,11 +228,11 @@ impl BitswapMessage {
                 }
                 Some(false) => {
                     // TODO: maybe blacklist peer?
-                    warn!("invalid block received");
+                    tracing::warn!("invalid block received");
                     false
                 }
                 None => {
-                    warn!("unknown hash function {}", block.cid.hash().code());
+                    tracing::warn!("unknown hash function {}", block.cid.hash().code());
                     false
                 }
             }

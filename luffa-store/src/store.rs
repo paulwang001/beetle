@@ -39,7 +39,7 @@ impl Store {
     pub async fn create(config: Config) -> Result<Self> {
         let path = config.path.clone();
         // sled::Config::new()
-        println!("create db>>:{:?}",&path);
+        tracing::info!("create db>>:{:?}",&path);
         let db = sled::open(path)?;
         let blocks = Arc::new(db.open_tree("BLOCKS")?);
         let block_sizes = Arc::new(db.open_tree("BLOCK_SIZES")?);
@@ -53,7 +53,7 @@ impl Store {
     /// Creates a new database.
     #[tracing::instrument]
     pub async fn open(path: PathBuf) -> Result<Self> {
-        println!("open db>>:{:?}",&path);
+        tracing::info!("open db>>:{:?}",&path);
         let db = sled::open(path)?;
         let blocks = Arc::new(db.open_tree("BLOCKS")?);
         let block_sizes = Arc::new(db.open_tree("BLOCK_SIZES")?);

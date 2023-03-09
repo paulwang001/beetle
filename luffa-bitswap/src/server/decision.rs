@@ -219,7 +219,7 @@ impl<S: Store> Engine<S> {
                                     .await {
                                         Ok(blocks) => blocks,
                                         Err(err) => {
-                                            warn!("failed to load blocks: {:?}", err);
+                                            tracing::warn!("failed to load blocks: {:?}", err);
                                             continue;
                                         }
                                     };
@@ -331,7 +331,7 @@ impl<S: Store> Engine<S> {
     /// request queue (this is later popped off by the workerTasks)
     pub async fn message_received(&self, peer: &PeerId, message: &BitswapMessage) {
         if message.is_empty() {
-            info!("received empty message from {}", peer);
+            tracing::info!("received empty message from {}", peer);
         }
 
         let mut new_work_exists = false;
@@ -352,7 +352,7 @@ impl<S: Store> Engine<S> {
         {
             Ok(s) => s,
             Err(err) => {
-                warn!("failed to fetch block sizes: {:?}", err);
+                tracing::warn!("failed to fetch block sizes: {:?}", err);
                 return;
             }
         };

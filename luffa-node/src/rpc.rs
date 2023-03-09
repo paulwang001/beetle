@@ -112,7 +112,7 @@ impl P2p {
         let ctx = req.ctx;
         let cid = req.cid;
 
-        warn!("context:{}, received fetch_bitswap: {:?}", ctx, cid);
+        tracing::warn!("context:{}, received fetch_bitswap: {:?}", ctx, cid);
         let providers = req.providers.into_iter().collect();
 
         let (s, r) = oneshot::channel();
@@ -644,7 +644,7 @@ impl P2p {
 
 // #[tracing::instrument(skip(p2p))]
 // pub(crate) async fn new(addr: P2pAddr, p2p: P2p) -> Result<()> {
-//     info!("p2p rpc listening on: {}", addr);
+//     tracing::info!("p2p rpc listening on: {}", addr);
 //     let server = create_server::<P2pService>(addr).await?;
 //     loop {
 //         match server.accept_one().await {

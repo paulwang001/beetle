@@ -83,7 +83,7 @@ async fn start_services(api: &Api, services: BTreeSet<&str>) -> Result<()> {
         .collect();
 
     if missing_services.is_empty() {
-        println!(
+        tracing::info!(
             "{}",
             "All luffa daemons are already running. all systems normal.".green()
         );
@@ -108,9 +108,9 @@ async fn start_services(api: &Api, services: BTreeSet<&str>) -> Result<()> {
 
         let is_up = poll_until_status(api, service, StatusType::Serving).await?;
         if is_up {
-            println!("{}", "success".green());
+            tracing::info!("{}", "success".green());
         } else {
-            eprintln!(
+            tracing::warn!(
                 "{}",
                 format!(
                     "error: took more than {}s start.\ncheck log file for details: {}",
@@ -144,40 +144,40 @@ pub async fn stop(api: &Api, services: &Vec<String>) -> Result<()> {
 pub async fn stop_services(api: &Api, services: BTreeSet<&str>) -> Result<()> {
     for service in services {
         let daemon_name = format!("luffa-{service}");
-        info!("checking daemon {} lock", daemon_name);
+        tracing::info!("checking daemon {} lock", daemon_name);
         let mut lock = ProgramLock::new(&daemon_name)?;
         match lock.active_pid() {
             Ok(pid) => {
-                info!("stopping {} pid: {}", daemon_name, pid);
+                tracing::info!("stopping {} pid: {}", daemon_name, pid);
                 print!("stopping {}... ", &daemon_name);
                 match luffa_process::process::stop(pid.as_u32()) {
                     Ok(_) => {
                         let is_down = poll_until_status(api, service, StatusType::Down).await?;
                         if is_down {
-                            println!("{}", "stopped".red());
+                            tracing::info!("{}", "stopped".red());
                         } else {
-                            eprintln!("{}", format!("{service} API is still running, but the lock is removed.\nYou may need to manually stop luffa via your operating system").red());
+                            tracing::warn!("{}", format!("{service} API is still running, but the lock is removed.\nYou may need to manually stop luffa via your operating system").red());
                         }
                     }
                     Err(error) => {
-                        println!("{}: {}", "error".yellow(), error);
+                        tracing::info!("{}: {}", "error".yellow(), error);
                     }
                 }
             }
             Err(e) => match e {
                 LockError::NoLock(_) => {
-                    eprintln!("{}", format!("{daemon_name} is already stopped").white());
+                    tracing::warn!("{}", format!("{daemon_name} is already stopped").white());
                 }
                 LockError::NoSuchProcess(_, _) => {
                     lock.destroy_without_checking().unwrap();
-                    println!(
+                    tracing::info!(
                         "stopping {}:, {}",
                         daemon_name,
                         "removed zombie lockfile".red()
                     );
                 }
                 e => {
-                    eprintln!("{daemon_name} lock error: {e}");
+                    tracing::warn!("{daemon_name} lock error: {e}");
                     continue;
                 }
             },

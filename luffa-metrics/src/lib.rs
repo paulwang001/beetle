@@ -74,7 +74,7 @@ async fn init_metrics(cfg: Config) -> Option<JoinHandle<()>> {
                 let res = match push_client.post(&prom_gateway_uri).body(buff).send().await {
                     Ok(res) => res,
                     Err(e) => {
-                        warn!("failed to push metrics: {}", e);
+                        tracing::warn!("failed to push metrics: {}", e);
                         continue;
                     }
                 };
@@ -83,9 +83,9 @@ async fn init_metrics(cfg: Config) -> Option<JoinHandle<()>> {
                         debug!("pushed metrics to gateway");
                     }
                     _ => {
-                        warn!("failed to push metrics to gateway: {:?}", res);
+                        tracing::warn!("failed to push metrics to gateway: {:?}", res);
                         let body = res.text().await.unwrap();
-                        warn!("error body: {}", body);
+                        tracing::warn!("error body: {}", body);
                     }
                 }
             }
@@ -96,8 +96,6 @@ async fn init_metrics(cfg: Config) -> Option<JoinHandle<()>> {
 
 /// Initialize the tracing subsystem.
 fn init_tracer(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
-    #[cfg(feature = "tokio-console")]
-    let console_subscriber = cfg.tokio_console.then(console_subscriber::spawn);
 
     let log_subscriber = fmt::layer()
         .pretty()
@@ -128,10 +126,7 @@ fn init_tracer(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
     } else {
         None
     };
-
-    #[cfg(feature = "tokio-console")]
-    let registry = tracing_subscriber::registry().with(console_subscriber);
-    #[cfg(not(feature = "tokio-console"))]
+    
     let registry = tracing_subscriber::registry();
     
     #[cfg(target_os = "android")]
@@ -141,6 +136,11 @@ fn init_tracer(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
         .with_thread_names(true)
         .with_filter(EnvFilter::from_default_env());
         let registry = registry.with(android_layer);
+    }
+    #[cfg(target_os = "apple-ios")]
+    {
+        let alayer = tracing_oslog::OsLogger::new("moe.absolucy.test", "default");
+        let registry = registry.with(layer);
     }
    
 

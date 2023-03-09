@@ -253,7 +253,7 @@ impl Storage for DiskStorage {
                             yield Keypair::try_from(&keypair)?;
                         }
                         Err(err) => {
-                            warn!("invalid keyfile at {}: {:?}", path.display(), err);
+                            tracing::warn!("invalid keyfile at {}: {:?}", path.display(), err);
                         }
                     }
                 }

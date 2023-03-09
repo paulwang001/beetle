@@ -185,7 +185,7 @@ impl<S: Store> Server<S> {
                                     Some(key) => {
                                         // TODO: timeout
                                         if let Err(err) = network.provide(key).await {
-                                            warn!("failed to provide: {}: {:?}", key, err);
+                                            tracing::warn!("failed to provide: {}: {:?}", key, err);
                                         }
                                     }
                                     None => {
@@ -282,7 +282,7 @@ impl<S: Store> Server<S> {
         if self.inner.provide_enabled {
             for block in blocks {
                 if let Err(err) = self.inner.new_blocks.send(*block.cid()).await {
-                    warn!("failed to send new blocks: {:?}", err);
+                    tracing::warn!("failed to send new blocks: {:?}", err);
                 }
             }
         }
