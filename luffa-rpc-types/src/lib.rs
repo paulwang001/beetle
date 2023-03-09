@@ -298,6 +298,7 @@ impl Message {
     pub fn is_contacts_exchange(&self) -> bool {
         match self {
             Self::ContactsExchange { .. }=> true,
+            Self::WebRtc { stream_id, action }=> true,
             _ => false,
         }
     }

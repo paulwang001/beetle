@@ -80,7 +80,7 @@ fn main() -> Result<()> {
                     RtcAction::Status { timestamp, code }=>{
                         if let Ok(c) = client_t.parse_contacts_code(code.clone()) {
                             warn!("scan code: {c}");
-                            client_t.answer_contacts_code(c, Some("World".to_owned())).unwrap();
+                            client_t.answer_contacts_code(code.clone(), Some("World".to_owned())).unwrap();
                         }
                     }
                     _=>{
