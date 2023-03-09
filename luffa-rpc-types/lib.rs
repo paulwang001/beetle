@@ -191,11 +191,12 @@ impl Message {
             Self::ContactsExchange { .. } | Self::Chat { .. } => {
                 let data = serde_cbor::to_vec(&self).map_err(|e| anyhow::anyhow!("{e:?}"))?;
                 let key = key.unwrap();
-                let key = GenericArray::clone_from_slice(key.as_ref());
-                let cipher = Aes256Gcm::new(&key);
+                // let key = GenericArray::clone_from_slice(key.as_ref());
+                // Aes256Gcm::new_from_slice(&secret[..]).unwrap()
+                let cipher = Aes256Gcm::new_from_slice(&key[..]).unwrap();
                 let digest = Code::Sha2_256.digest(&data);
                 let nonce_data = digest.to_bytes();
-                let nonce = Nonce::from_slice(&nonce_data);
+                let nonce = Nonce::from_slice(&nonce_data[..12]);
                 Ok((
                     cipher
                         .encrypt(nonce, &data[..])
@@ -216,9 +217,8 @@ impl Message {
     {
         match (key, nonce) {
             (Some(key), Some(nonce_data)) => {
-                let key = GenericArray::clone_from_slice(key.as_ref());
-                let cipher = Aes256Gcm::new(&key);
-                let nonce = Nonce::from_slice(&nonce_data.as_ref());
+                let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
+                let nonce = Nonce::from_slice(&nonce_data[..12]);
                 let data = cipher
                     .decrypt(nonce, &data[..])
                     .map_err(|e| anyhow::anyhow!("{e:?}"))?;

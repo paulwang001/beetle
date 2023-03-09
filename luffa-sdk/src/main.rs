@@ -92,10 +92,6 @@ fn main() -> Result<()> {
     client.start(cfg_path, msg);
     println!("started.");
 
-    let code = client.show_code(Some("hello".to_string()));
-    let name = client.parse_contacts_code(code)?;
-
-    println!("name:{name}");
 
 
     std::thread::spawn(move || loop {
@@ -116,6 +112,15 @@ fn main() -> Result<()> {
                     error!("{e:?}");
                 }
             }
+
+            let code = client.show_code(Some("hello".to_string()));
+            if let Err(e)= client.parse_contacts_code(code.clone()) {
+                eprintln!("{e:?}");
+            }
+            else if let Err(e) = client.answer_contacts_code(code, None) {
+
+                println!("name:{e:?}");
+            }
         }
     });
 
@@ -123,6 +128,9 @@ fn main() -> Result<()> {
     r.block_on(async move {
         println!(".....");
         loop {
+
+            
+
             // if let Some(msg) = rx.recv().await {
             //     println!("msg:{}", msg.len());
             // }
@@ -131,7 +139,7 @@ fn main() -> Result<()> {
             // let my_id = client.get_local_id().unwrap();
             // warn!("myid: {my_id}");
             
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
         }
         println!(".....");
     });

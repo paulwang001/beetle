@@ -194,6 +194,7 @@ async fn main() -> Result<()> {
                             } = im;
                             // TODO check did status
                             if nonce.is_none() {
+                                warn!("------- nonce is None");
                                 if let Ok(msg) = luffa_rpc_types::Message::decrypt(
                                     bytes::Bytes::from(msg),
                                     None,

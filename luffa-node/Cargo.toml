@@ -46,6 +46,7 @@ features = [
   "kad",
   "identify",
   "ping",
+  "request-response",
   "mdns",
   "noise",
   "yamux",

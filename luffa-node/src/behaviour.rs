@@ -1,3 +1,4 @@
+use std::iter;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -14,6 +15,7 @@ use libp2p::mdns::tokio::Behaviour as Mdns;
 use libp2p::multiaddr::Protocol;
 use libp2p::ping::Behaviour as Ping;
 use libp2p::relay;
+use libp2p::request_response::RequestResponse;
 use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{autonat, dcutr};
@@ -22,12 +24,13 @@ use tracing::{info, warn};
 
 mod event;
 mod peer_manager;
+mod chat;
 pub(crate) use self::event::Event;
 use self::peer_manager::PeerManager;
 use crate::config::Libp2pConfig;
 
 pub const PROTOCOL_VERSION: &str = "luffa/0.1.0";
-pub const AGENT_VERSION: &str = concat!("luffa/", env!("CARGO_PKG_VERSION"));
+pub const AGENT_VERSION: &str = concat!("/", env!("CARGO_PKG_VERSION"));
 
 /// Libp2p behaviour for the node.
 #[derive(NetworkBehaviour)]
@@ -38,6 +41,7 @@ pub(crate) struct NodeBehaviour {
     pub(crate) bitswap: Toggle<Bitswap<BitswapStore>>,
     pub(crate) kad: Toggle<Kademlia<MemoryStore>>,
     mdns: Toggle<Mdns>,
+    chat:Toggle<RequestResponse<chat::ChatCodec>>,
     pub(crate) autonat: Toggle<autonat::Behaviour>,
     relay: Toggle<relay::v2::relay::Relay>,
     relay_client: Toggle<relay::v2::client::Client>,
@@ -80,6 +84,7 @@ impl NodeBehaviour {
         config: &Libp2pConfig,
         relay_client: Option<relay::v2::client::Client>,
         db: Arc<luffa_store::Store>,
+        agent_version:Option<String>
     ) -> Result<Self> {
         let peer_manager = PeerManager::default();
         let pub_key = local_key.public();
@@ -112,7 +117,7 @@ impl NodeBehaviour {
             info!("init kademlia");
             // TODO: persist to store
             let mem_store_config = MemoryStoreConfig {
-                max_records: 1024 * 4,
+                max_records: 1024 * 64,
                 max_provided_keys: 1024 * 1024,
                 ..Default::default()
             };
@@ -186,7 +191,7 @@ impl NodeBehaviour {
 
         let identify = {
             let config = identify::Config::new(PROTOCOL_VERSION.into(), local_key.public())
-                .with_agent_version(String::from(AGENT_VERSION))
+                .with_agent_version(format!("{}{}",agent_version.unwrap_or(String::from("luffa")),AGENT_VERSION))
                 .with_cache_size(64 * 1024);
             identify::Behaviour::new(config)
         };
@@ -207,12 +212,15 @@ impl NodeBehaviour {
             None
         }
         .into();
-
+        let cfg = libp2p::request_response::RequestResponseConfig::default();
+        let protocols = iter::once((chat::ChatProtocol(), libp2p::request_response::ProtocolSupport::Full));
+        let chat = Some(libp2p::request_response::RequestResponse::new(chat::ChatCodec(), protocols, cfg)); 
         Ok(NodeBehaviour {
             ping: Ping::default(),
             identify,
             bitswap,
             mdns,
+            chat:chat.into(),
             kad,
             autonat,
             relay,

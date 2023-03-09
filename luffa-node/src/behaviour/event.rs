@@ -4,7 +4,8 @@ use libp2p::{
     kad::KademliaEvent, mdns::Event as MdnsEvent, ping::Event as PingEvent, relay,
 };
 use luffa_bitswap::BitswapEvent;
-
+use libp2p::request_response::RequestResponseEvent;
+use super::chat::{Request,Response};
 /// Event type which is emitted from the [`NodeBehaviour`].
 ///
 /// [`NodeBehaviour`]: crate::behaviour::NodeBehaviour
@@ -14,6 +15,7 @@ pub enum Event {
     Identify(Box<IdentifyEvent>),
     Kademlia(KademliaEvent),
     Mdns(MdnsEvent),
+    Chat(RequestResponseEvent<Request,Response>),
     Bitswap(BitswapEvent),
     Autonat(autonat::Event),
     Relay(relay::v2::relay::Event),
@@ -84,5 +86,11 @@ impl From<dcutr::behaviour::Event> for Event {
 impl From<PeerManagerEvent> for Event {
     fn from(event: PeerManagerEvent) -> Self {
         Event::PeerManager(event)
+    }
+}
+
+impl From<RequestResponseEvent<Request,Response>> for Event{
+    fn from(event: RequestResponseEvent<Request,Response>) -> Self {
+        Event::Chat(event)
     }
 }

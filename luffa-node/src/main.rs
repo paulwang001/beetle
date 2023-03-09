@@ -64,7 +64,7 @@ fn main() -> Result<()> {
         let kc = Keychain::<DiskStorage>::new(network_config.key_store_path.clone()).await?;
         
         
-        let (mut p2p,network_sender_in) = Node::new(network_config, kc,Arc::new(db)).await?;
+        let (mut p2p,network_sender_in) = Node::new(network_config, kc,Arc::new(db),Some("Relay".to_string())).await?;
         let p2p_client = P2p::new(network_sender_in);
         let mut events = p2p.network_events(); 
         task::spawn(async move {

@@ -227,19 +227,41 @@ impl Message {
         T: AsRef<[u8]>,
     {
         match &self {
+            
             Self::ContactsExchange { .. } | Self::Chat { .. } => {
                 let data = serde_cbor::to_vec(&self).map_err(|e| anyhow::anyhow!("{e:?}"))?;
-                let key = key.unwrap();
-                let key = GenericArray::clone_from_slice(key.as_ref());
-                let cipher = Aes256Gcm::new(&key);
+                
+                let cipher = 
+                match key {
+                    Some(k)=> Some(Aes256Gcm::new_from_slice(k.as_ref()).unwrap()),
+                    None=>{
+                        eprintln!("----------");
+                        self.exchange_key().map(|v| {
+                            eprintln!("----------{:?}",v);
+                            
+                            match Aes256Gcm::new_from_slice(&v) {
+                                Ok(a)=> a,
+                                Err(e)=>{
+                                    panic!("{e:?}");
+                                }
+                            }
+                        })
+                    }
+                };
+                if cipher.is_none() {
+                    eprintln!("cipher is none");
+                    return Err(anyhow::anyhow!("cipher is none"));
+                }
+                eprintln!("00000000000000");
+                let cipher = cipher.unwrap();
                 let digest = Code::Sha2_256.digest(&data);
                 let nonce_data = digest.to_bytes();
-                let nonce = Nonce::from_slice(&nonce_data);
+                let nonce = Nonce::from_slice(&nonce_data[0..12]);
                 Ok((
                     cipher
                         .encrypt(nonce, &data[..])
                         .map_err(|e| anyhow::anyhow!("{e:?}"))?,
-                    Some(nonce_data),
+                    Some(nonce.to_vec()),
                 ))
             }
             _ => Ok((
@@ -255,8 +277,7 @@ impl Message {
     {
         match (key, nonce) {
             (Some(key), Some(nonce_data)) => {
-                let key = GenericArray::clone_from_slice(key.as_ref());
-                let cipher = Aes256Gcm::new(&key);
+                let cipher = Aes256Gcm::new_from_slice(key.as_ref()).unwrap();
                 let nonce = Nonce::from_slice(&nonce_data.as_ref());
                 let data = cipher
                     .decrypt(nonce, &data[..])
@@ -273,6 +294,34 @@ impl Message {
             Self::ContactsExchange { .. } | Self::Chat { .. } => true,
             _ => false,
         }
+    }
+    pub fn is_contacts_exchange(&self) -> bool {
+        match self {
+            Self::ContactsExchange { .. }=> true,
+            _ => false,
+        }
+    }
+
+
+
+    pub fn exchange_key(&self) -> Option<Vec<u8>>
+    {
+        match &self {
+            Message::ContactsExchange { exchange }=>{
+                match exchange {
+                    ContactsEvent::Answer { token } =>{
+                        Some(token.secret_key.clone())
+                    }
+                    _=>{
+                        None
+                    }
+                }
+            }
+            _=>{
+                None
+            }
+        }
+
     }
 }
 

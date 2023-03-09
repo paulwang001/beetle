@@ -27,6 +27,7 @@ use libp2p::mdns;
 use libp2p::metrics::Recorder;
 use libp2p::multiaddr::Protocol;
 use libp2p::ping::Result as PingResult;
+use libp2p::request_response::{RequestResponseEvent, RequestResponseMessage};
 use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::{ConnectionHandler, IntoConnectionHandler, NetworkBehaviour, SwarmEvent};
 use libp2p::{PeerId, Swarm};
@@ -127,6 +128,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         config: Config,
         mut keychain: Keychain<KeyStorage>,
         db:Arc<luffa_store::Store>,
+        agent:Option<String>,
     ) -> Result<(Self,Sender<rpc::RpcMessage>)> {
         let (network_sender_in, net_receiver_in) = channel(1024); // TODO: configurable
         let Config {
@@ -135,7 +137,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         } = config;
       
         let keypair = load_identity(&mut keychain).await?;
-        let mut swarm = build_swarm(&libp2p_config, &keypair,db.clone()).await?;
+        let mut swarm = build_swarm(&libp2p_config, &keypair,db.clone(),agent).await?;
         let mut listen_addrs = vec![];
         for addr in &libp2p_config.listening_multiaddrs {
             Swarm::listen_on(&mut swarm, addr.clone())?;
@@ -711,25 +713,37 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 libp2p_metrics().record(&*e);
                 debug!("tick: identify {:?}", e);
                 if let IdentifyEvent::Received { peer_id, info } = *e {
-                    for protocol in &info.protocols {
-                        let p = protocol.as_bytes();
-
-                        if p == kad::protocol::DEFAULT_PROTO_NAME {
-                            for addr in &info.listen_addrs {
-                                if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
-                                    kad.add_address(&peer_id, addr.clone());
+                    if info.agent_version.contains("Relay") {
+                        // TODO: only in my relay white list;
+                        for protocol in &info.protocols {
+                            let p = protocol.as_bytes();
+                            if p == kad::protocol::DEFAULT_PROTO_NAME {
+                                for addr in &info.listen_addrs {
+                                    if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
+                                        kad.add_address(&peer_id, addr.clone());
+                                    }
                                 }
                             }
-                        } else if p == b"/libp2p/autonat/1.0.0" {
-                            // TODO: expose protocol name on `libp2p::autonat`.
-                            // TODO: should we remove them at some point?
-                            for addr in &info.listen_addrs {
-                                if let Some(autonat) = self.swarm.behaviour_mut().autonat.as_mut() {
-                                    autonat.add_server(peer_id, Some(addr.clone()));
+                        }
+                        
+                    }
+                    else{
+                        //TODO only in my contacts
+                        for protocol in &info.protocols {
+                            let p = protocol.as_bytes();
+                            if p == b"/libp2p/autonat/1.0.0" {
+                                // TODO: expose protocol name on `libp2p::autonat`.
+                                // TODO: should we remove them at some point?
+                                for addr in &info.listen_addrs {
+                                    if let Some(autonat) = self.swarm.behaviour_mut().autonat.as_mut() {
+                                        autonat.add_server(peer_id, Some(addr.clone()));
+                                    }
                                 }
                             }
                         }
                     }
+                    
+                    //TODO only in my contacts or my white list of relay
                     if let Some(bitswap) = self.swarm.behaviour().bitswap.as_ref() {
                         bitswap.on_identify(&peer_id, &info.protocols);
                     }
@@ -816,8 +830,31 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 }
                 mdns::Event::Expired(_) => {}
             },
-            Event::Bitswap(e)=>{
+            Event::Bitswap(_e)=>{
                 
+            }
+            Event::Chat(chat)=>{
+                match chat {
+                    RequestResponseEvent::Message { peer, message }=>{
+                        match message {
+                            RequestResponseMessage::Request { request_id, request, channel }=>{
+                                
+                            }
+                            RequestResponseMessage::Response { request_id, response }=>{
+
+                            }
+                        }
+                    }
+                    RequestResponseEvent::ResponseSent { peer, request_id }=>{
+
+                    }
+                    RequestResponseEvent::InboundFailure { peer, request_id, error }=>{
+
+                    }
+                    RequestResponseEvent::OutboundFailure { peer, request_id, error }=>{
+
+                    }
+                }
             }
             _ => {
                 // TODO: check all important events are handled

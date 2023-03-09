@@ -23,7 +23,7 @@ pub async fn start(
 
     let key = load_identity(&mut kc).await?;
     
-    let (mut p2p,sender) = Node::new(config, kc,store).await?;
+    let (mut p2p,sender) = Node::new(config, kc,store,Some("Relay".to_string())).await?;
     let events = p2p.network_events();
     let local_id = p2p.local_peer_id().clone();
     info!("peer: {local_id}");
