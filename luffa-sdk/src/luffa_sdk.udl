@@ -17,6 +17,14 @@ dictionary ContactsView {
   string tag;
 };
 
+dictionary EventMeta {
+    u64 from_id;
+    u64 to_id;
+    string from_tag;
+    string to_tag;
+    u64 event_time;
+};
+
 [Error]
 enum ClientError {
   "CodeParser",
@@ -69,6 +77,8 @@ interface Client {
     sequence<u64> recent_messages(u64 did,u32 top);
 
     string? find_contacts_tag(u64 did);
+
+    EventMeta meta_msg([ByRef] sequence<u8> data);
 
 
 };

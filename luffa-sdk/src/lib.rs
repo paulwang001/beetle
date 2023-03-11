@@ -80,6 +80,15 @@ pub struct ContactsView {
     pub tag: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EventMeta {
+    pub from_id: u64,
+    pub to_id: u64,
+    pub from_tag: String,
+    pub to_tag: String,
+    pub event_time:u64,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
     #[error("Contancts parse error")]
@@ -445,7 +454,9 @@ impl Client {
         let mut msgs = vec![];
         let table = format!("message_{did}");
         let tree = self.db.open_tree(&table).unwrap();
-        while let Ok(Some((k,_))) = tree.last() {
+        let mut itr = tree.into_iter();
+        while let Some(val) = itr.next_back() {
+            let (k,_) = val.unwrap();
             let mut key = [0u8;8];
             key.clone_from_slice(&k[..8]);
             let crc = u64::from_be_bytes(key);
@@ -456,7 +467,20 @@ impl Client {
         }
         msgs        
     }
-    
+    pub fn meta_msg(&self,data:&[u8])-> EventMeta {
+        let evt:Event = serde_cbor::from_slice(data).unwrap();
+        let Event { to, event_time, from_id, .. } = evt;
+        let (to_tag,_) = Self::get_contacts_tag(self.db.clone(), to).unwrap_or_default();
+        let (from_tag,_) = Self::get_contacts_tag(self.db.clone(), from_id).unwrap_or_default();
+
+        EventMeta {
+            from_id,
+            to_id: to,
+            from_tag,
+            to_tag,
+            event_time,
+        }
+    }
     pub fn read_msg(&self,did:u64,crc:u64) -> Option<Vec<u8>> {
         let table = format!("message_{did}");
         
@@ -468,7 +492,7 @@ impl Client {
                     let data = v.to_vec();
                     let evt:Event = serde_cbor::from_slice(&data[..]).unwrap();
                     let Event { to, event_time, crc, from_id, nonce, msg } = evt;
-                    let key = Self::get_aes_key_from_contacts(db_t.clone(), to);
+                    let key = Self::get_aes_key_from_contacts(db_t.clone(), did);
                     if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), key, nonce) {
                         match &msg {
                             Message::Chat { content }=>{
@@ -500,6 +524,7 @@ impl Client {
                         }
                     }
                     else{
+                        eprintln!("decrypt failed>>>");
                         None
                     }
                 }).unwrap_or_default()
@@ -1090,7 +1115,8 @@ impl Client {
                                     // todo!()
                                 }
                             } else {
-                                match Self::get_aes_key_from_contacts(db_t.clone(), from_id) {
+                                let did = if to == my_id {from_id} else {to};
+                                match Self::get_aes_key_from_contacts(db_t.clone(), did) {
                                     Some(key) => {
                                         eprintln!("ase >>> {}  nonce:{:?}",key.len(),nonce);
                                         if let Ok(msg) = luffa_rpc_types::Message::decrypt(
@@ -1100,11 +1126,8 @@ impl Client {
                                         ) {
                                             // TODO: did is me or I'm a member any local group
                                             let msg_data = serde_cbor::to_vec(&msg).unwrap();
-                                            let table = if to == my_id {
-                                                format!("message_{from_id}")
-                                            } else {
-                                                format!("message_{to}")
-                                            };
+                                            let table = 
+                                                format!("message_{did}");
 
                                             Self::save_to_tree(
                                                 db_t.clone(),
@@ -1147,7 +1170,7 @@ impl Client {
                                                             let c_type = contacts_type as u8;
                                                             Self::save_contacts(
                                                                 db_t.clone(),
-                                                                from_id,
+                                                                did,
                                                                 secret_key,
                                                                 public_key.clone(),
                                                                 sign,
@@ -1182,7 +1205,7 @@ impl Client {
                                                             let title = multibase::encode(multibase::Base::Base58Btc, public_key);
                                                             let body = format!(
                                                                 "{}",
-                                                                comment.unwrap_or_default()
+                                                                comment.clone().unwrap_or_default()
                                                             );
                                                             let doc = doc!(
                                                                 fld_crc => crc,
@@ -1216,6 +1239,7 @@ impl Client {
                                                             {
                                                                 error!("{e:?}");
                                                             }
+                                                            Self::update_session(db_t.clone(), did, comment.clone(), None, None, None, event_time);
                                                         }
                                                         _ => {}
                                                     }
@@ -1224,11 +1248,9 @@ impl Client {
                                                     // TODO index content search engine
                                                     match content {
                                                         ChatContent::Burn { crc, expires } => {
-                                                            let table = if to == my_id {
-                                                                format!("message_{from_id}")
-                                                            } else {
-                                                                format!("message_{to}")
-                                                            };
+                                                            let table = 
+                                                                format!("message_{did}")
+                                                            ;
                                                             Self::burn_from_tree(
                                                                 db_t.clone(),
                                                                 crc,
@@ -1424,6 +1446,7 @@ impl Client {
                                                                         c_type,
                                                                         comment.clone(),
                                                                     );
+                                                                    Self::update_session(db_t.clone(), from_id, comment.clone(), None, None, None, event_time);
                                                                 }
                                                             }
                                                             _=>{
