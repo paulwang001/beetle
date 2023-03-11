@@ -846,6 +846,84 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     message,
                 } = e
                 {
+                    match &message {
+                        GossipsubMessage { source, data, sequence_number, topic }=>{
+                            let event =  luffa_rpc_types::Event::decode(data).unwrap();
+                            let luffa_rpc_types::Event {
+                                crc,
+                                from_id,
+                                to,
+                                msg,
+                                nonce,
+                                ..
+                            } = event;
+                            if nonce.is_none() {
+                                if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), None, nonce) {
+                                    match msg {
+                                        Message::ContactsSync { did,mut contacts }=>{
+                                            let p_idx = self.get_node_index(from_id);
+                                            let mut ls_remove = vec![];
+                                            for ctt in contacts.iter_mut() {
+                                                if ctt.r#type == ContactsTypes::Group {
+                                                    let ls_crc = self.load_cache_crc(ctt.did,Some(ctt.have_time));
+                                                    let ls_crc = ls_crc.into_iter().map(|(x,_f)|x).collect::<Vec<_>>();
+                                                    ctt.wants.extend_from_slice(&ls_crc);
+                                                }
+                                                else{
+                                                    let a = self.get_node_index(ctt.did);
+                                                    self.cache.find_edge(a, p_idx);
+                                                    let mut itr = self.cache.edges_connecting(a, p_idx);
+                                                    let mut ls_crc = vec![];
+                                                    while let Some(e_ref) = itr.next() {
+                                                        let (crc,time) = e_ref.weight();
+                                                        if *time > ctt.have_time {
+                                                            ls_crc.push((crc,ctt.did));
+                                                        }
+                                                        else{
+                                                            ls_remove.push(e_ref.id());  
+                                                        } 
+                                                    }
+                                                    
+                                                    let ls_crc = ls_crc.into_iter().map(|(x,_)|*x).collect::<Vec<_>>();
+                                                    ctt.wants.extend_from_slice(&ls_crc);
+                                                }
+
+                                            }
+                                            for rm in ls_remove {
+                                                self.cache.remove_edge(rm);
+                                            }
+                                            contacts.retain(|c| !c.wants.is_empty());
+                                            if !contacts.is_empty() {
+
+                                                let sync_msg = Message::ContactsSync { did, contacts };
+                                                let local_id = self.local_peer_id();
+                                                let mut digest = crc64fast::Digest::new();
+                                                digest.write(&local_id.to_bytes());
+                                                let my_id = digest.sum64();
+                                                if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
+                                                    let topic = TopicHash::from_raw(format!(
+                                                        "luffa_chat",
+                                                    ));
+                                                    let e = luffa_rpc_types::Event::new(from_id, &sync_msg, None, my_id);
+                                                    if let Err(e) = go.publish(topic, e.encode().unwrap()) {
+                                                        tracing::warn!("{e:?}");
+                                                    }
+                                                }
+                                            }
+                                            
+                                        }
+                                        _=>{
+                                        }
+                                    }
+                                }
+                                
+                                
+                            }
+                        },
+                        _=>{
+
+                        }
+                    }
                     self.emit_network_event(NetworkEvent::Gossipsub(GossipsubEvent::Message {
                         from: propagation_source,
                         id: message_id,

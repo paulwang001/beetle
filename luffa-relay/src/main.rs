@@ -533,18 +533,18 @@ async fn main() -> Result<()> {
                     {
                         tracing::warn!("{e:?}");
                     }
-                    // let topic = TopicHash::from_raw(format!(
-                    //     "{}_{}",
-                    //     TOPIC_CHAT, u_id
-                    // ));
-                    // match client.gossipsub_unsubscribe(topic).await {
-                    //     Ok(ret)=>{
-                    //         tracing::warn!("unsub result: {} for {}",ret,u_id);
-                    //     }
-                    //     Err(e)=>{
-                    //         tracing::warn!("unsub error:{:?}",e);
-                    //     }
-                    // }
+                    let topic = TopicHash::from_raw(format!(
+                        "{}_{}",
+                        TOPIC_CHAT, u_id
+                    ));
+                    match client.gossipsub_unsubscribe(topic).await {
+                        Ok(ret)=>{
+                            tracing::warn!("unsub result: {} for {}",ret,u_id);
+                        }
+                        Err(e)=>{
+                            tracing::warn!("unsub error:{:?}",e);
+                        }
+                    }
                 }
                 NetworkEvent::CancelLookupQuery(peer_id) => {
                     tracing::info!("---------CancelLookupQuery-----------{:?}", peer_id);

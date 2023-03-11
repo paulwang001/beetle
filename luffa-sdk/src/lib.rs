@@ -360,11 +360,21 @@ impl Client {
             .unwrap();
         tree.flush().unwrap();
     }
-    fn save_to_tree(db: Arc<Db>, crc: u64, table: String, data: Vec<u8>) {
+    fn save_to_tree(db: Arc<Db>, crc: u64, table: &str, data: Vec<u8>) {
         let tree = db.open_tree(&table).unwrap();
-
+        
         tree.insert(crc.to_be_bytes(), data).unwrap();
         tree.flush().unwrap();
+    }
+    
+    fn have_in_tree(db: Arc<Db>, crc: u64, table: &str)-> bool {
+        let tree = db.open_tree(table).unwrap();
+        if let Ok(r) = tree.contains_key(crc.to_be_bytes()) {
+            r
+        }
+        else{
+            false
+        }
     }
 
     fn burn_from_tree(db: Arc<Db>, crc: u64, table: String) {
@@ -431,12 +441,25 @@ impl Client {
         }
     }
 
-    pub fn read_msg(&self,did:u64,crc:u64,session_type:u8) -> Vec<u8> {
-        let table = if session_type == 0 {
-            format!("private_{did}")
-        } else {
-            format!("group_{did}")
-        };
+    pub fn recent_messages(&self,did:u64,top:u32) ->Vec<u64>{
+        let mut msgs = vec![];
+        let table = format!("message_{did}");
+        let tree = self.db.open_tree(&table).unwrap();
+        while let Ok(Some((k,_))) = tree.last() {
+            let mut key = [0u8;8];
+            key.clone_from_slice(&k[..8]);
+            let crc = u64::from_be_bytes(key);
+            msgs.push(crc);
+            if msgs.len() >= top as usize {
+                break;
+            }
+        }
+        msgs        
+    }
+    
+    pub fn read_msg(&self,did:u64,crc:u64) -> Option<Vec<u8>> {
+        let table = format!("message_{did}");
+        
         let tree = self.db.open_tree(&table).unwrap();
         let db_t = self.db.clone();
         match tree.get(crc.to_be_bytes()) {
@@ -470,20 +493,20 @@ impl Client {
                             }
                         }
                         match message_to(msg) {
-                            Some(d)=> d,
+                            Some(d)=> Some(d),
                             None=>{
-                                vec![]
+                                None
                             }
                         }
                     }
                     else{
-                        vec![]
+                        None
                     }
                 }).unwrap_or_default()
             }
             Err(e)=>{
                 error!("{e:?}");
-                vec![]
+                None
             }
         }
     }
@@ -610,6 +633,47 @@ impl Client {
         let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
         let tag_key = format!("TAG-{}-{}", contact_type ,did);
         tree.insert(tag_key.as_bytes(), tag.as_bytes()).unwrap();
+        tree.flush().unwrap();
+    }
+    fn get_contacts_have_time(db:Arc<Db>,did:u64) -> u64 {
+        let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
+        let tag_key = format!("H-TIME-{}" ,did);
+        if let Ok(Some(x)) = tree.get(tag_key.as_bytes()) {
+            let mut val = [0u8;8];
+            val.clone_from_slice(&x);
+            u64::from_be_bytes(val)
+        }
+        else{
+            0
+        }
+    }
+    fn set_contacts_have_time(db:Arc<Db>,did:u64,now:u64) {
+
+        let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
+        let tag_key = format!("H-TIME-{}" ,did);
+        // let now = std::time::SystemTime::now()
+        // .duration_since(std::time::UNIX_EPOCH)
+        // .unwrap();
+        // let now = now.as_secs();
+        tree.fetch_and_update(tag_key.as_bytes(), |old|{
+            match old {
+                Some(old)=>{
+                    let mut val = [0u8;8];
+                    val.clone_from_slice(&old);
+                    let old = u64::from_be_bytes(val);
+                    if old < now {
+                        Some(now.to_be_bytes().to_vec())
+                    }
+                    else{
+                        Some(old.to_be_bytes().to_vec())
+                    }    
+    
+                }
+                None=>{
+                    Some(now.to_be_bytes().to_vec())
+                }
+            }
+        }).unwrap();
         tree.flush().unwrap();
     }
 
@@ -877,10 +941,11 @@ impl Client {
                         let to: u64 = to.parse().unwrap();
                         let c_type: u8 = c_type.parse().unwrap();
                         let c_type = if c_type == 0 {ContactsTypes::Private}  else { ContactsTypes::Group};
+                        let have_time = Self::get_contacts_have_time(db_t.clone(), to);
                         Contacts {
                             did: to,
                             r#type:c_type,
-                            have_time:0,
+                            have_time,
                             wants:vec![],
                         }  
                     })
@@ -985,13 +1050,29 @@ impl Client {
                                         Message::ContactsSync { did,contacts }=>{
                                             if did == my_id {
                                                 for ctt in contacts {
-                                                    
+                                                    let did = ctt.did;
+                                                    let table = format!("message_{}",ctt.did);
                                                     for crc in ctt.wants {
+                                                        if Self::have_in_tree(db_t.clone(), crc, &table) {
+                                                            continue;
+                                                        }
+                                                        let table = table.clone();
                                                         let clt = client_t.clone();
+                                                        let db_tt = db_t.clone();
+                                                        // add to wants crc of contacts
                                                         tokio::spawn(async move {
                                                             match clt.get_crc_record(crc).await {
                                                                 Ok(res)=>{
                                                                     let data = res.data;
+                                                                    // TODO remove crc from wants and update want_time
+                                                                    Self::update_session(db_tt.clone(),did,None,None,Some(crc),None,event_time);
+                                                                    Self::set_contacts_have_time(db_tt.clone(), did,event_time);
+                                                                    Self::save_to_tree(
+                                                                        db_tt.clone(),
+                                                                        crc,
+                                                                        &table,
+                                                                        data.to_vec(),
+                                                                    );
                                                                 }
                                                                 Err(e)=>{
                                                                     tracing::warn!("get crc record failed:{e:?}");
@@ -1020,15 +1101,15 @@ impl Client {
                                             // TODO: did is me or I'm a member any local group
                                             let msg_data = serde_cbor::to_vec(&msg).unwrap();
                                             let table = if to == my_id {
-                                                format!("private_{from_id}")
+                                                format!("message_{from_id}")
                                             } else {
-                                                format!("group_{to}")
+                                                format!("message_{to}")
                                             };
 
                                             Self::save_to_tree(
                                                 db_t.clone(),
                                                 crc,
-                                                table,
+                                                &table,
                                                 data.clone(),
                                             );
                                             let cb = &*cb;
@@ -1144,9 +1225,9 @@ impl Client {
                                                     match content {
                                                         ChatContent::Burn { crc, expires } => {
                                                             let table = if to == my_id {
-                                                                format!("private_{from_id}")
+                                                                format!("message_{from_id}")
                                                             } else {
-                                                                format!("group_{to}")
+                                                                format!("message_{to}")
                                                             };
                                                             Self::burn_from_tree(
                                                                 db_t.clone(),
@@ -1513,15 +1594,15 @@ impl Client {
                             tracing::warn!("channel send failed");
                         }
                         let table = if &msg_type == "content_group" {
-                            format!("group_{to}")
+                            format!("message_{to}")
                         } else {
-                            format!("private_{from_id}")
+                            format!("message_{from_id}")
                         };
                         tracing::info!("send......");
                         Self::save_to_tree(
                             db_t.clone(),
                             e.crc,
-                            table,
+                            &table,
                             data.clone(),
                         );
                         match msg {
@@ -1529,11 +1610,9 @@ impl Client {
                                 // TODO index content search engine
                                 match content {
                                     ChatContent::Burn { crc, expires } => {
-                                        let p_table = format!("private_{to}");
-                                        let g_table = format!("group_{to}");
+                                        let p_table = format!("message_{to}");
                                         Self::burn_from_tree(db_t.clone(), crc, p_table);
 
-                                        Self::burn_from_tree(db_t.clone(), crc, g_table);
                                         let fld_crc = schema_t.get_field("crc").unwrap();
                                         let mut wr = idx_t.write().await;
                                         let del = Term::from_field_u64(fld_crc, crc);

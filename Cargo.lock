@@ -3409,6 +3409,7 @@ dependencies = [
  "cid",
  "clap 4.1.6",
  "config",
+ "crc64fast",
  "futures",
  "futures-util",
  "git-version",
