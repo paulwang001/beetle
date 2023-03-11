@@ -87,6 +87,7 @@ pub struct EventMeta {
     pub from_tag: String,
     pub to_tag: String,
     pub event_time:u64,
+    pub msg:Vec<u8>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -469,7 +470,7 @@ impl Client {
     }
     pub fn meta_msg(&self,data:&[u8])-> EventMeta {
         let evt:Event = serde_cbor::from_slice(data).unwrap();
-        let Event { to, event_time, from_id, .. } = evt;
+        let Event { to, event_time, from_id,msg, .. } = evt;
         let (to_tag,_) = Self::get_contacts_tag(self.db.clone(), to).unwrap_or_default();
         let (from_tag,_) = Self::get_contacts_tag(self.db.clone(), from_id).unwrap_or_default();
 
@@ -479,8 +480,12 @@ impl Client {
             from_tag,
             to_tag,
             event_time,
+            msg,
         }
     }
+
+    
+
     pub fn read_msg(&self,did:u64,crc:u64) -> Option<Vec<u8>> {
         let table = format!("message_{did}");
         
@@ -518,6 +523,69 @@ impl Client {
                         }
                         match message_to(msg) {
                             Some(d)=> Some(d),
+                            None=>{
+                                None
+                            }
+                        }
+                    }
+                    else{
+                        eprintln!("decrypt failed>>>");
+                        None
+                    }
+                }).unwrap_or_default()
+            }
+            Err(e)=>{
+                error!("{e:?}");
+                None
+            }
+        }
+    }
+    pub fn read_msg_with_meta(&self,did:u64,crc:u64) -> Option<EventMeta> {
+        let table = format!("message_{did}");
+        
+        let tree = self.db.open_tree(&table).unwrap();
+        let db_t = self.db.clone();
+        match tree.get(crc.to_be_bytes()) {
+            Ok(v)=>{
+                v.map(|v| {
+                    let data = v.to_vec();
+                    let evt:Event = serde_cbor::from_slice(&data[..]).unwrap();
+                    let Event { to, event_time, crc, from_id, nonce, msg } = evt;
+                    let key = Self::get_aes_key_from_contacts(db_t.clone(), did);
+                    if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), key, nonce) {
+                        match &msg {
+                            Message::Chat { content }=>{
+                                match content {
+                                    ChatContent::Send { data }=>{
+                                        let (title,body) = Self::extra_content(data);
+                                        if let Some((_tag,tp)) = Self::get_contacts_tag(db_t.clone(), to) {
+                                            let did = if tp == 0 {from_id} else {to};
+                                            let now = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap();
+                                            Self::update_session(db_t.clone(), did, None, Some(crc), None, Some(body), now.as_secs());
+                                        }
+                                    }
+                                    _=>{
+
+                                    }
+                                }
+                            }
+                            _=>{
+
+                            }
+                        }
+                        let (to_tag,_) = Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
+                        let (from_tag,_) = Self::get_contacts_tag(db_t.clone(), from_id).unwrap_or_default();
+                        match message_to(msg) {
+                            Some(msg)=> Some(EventMeta {
+                                from_id,
+                                to_id: to,
+                                from_tag,
+                                to_tag,
+                                event_time,
+                                msg,
+                            }),
                             None=>{
                                 None
                             }
@@ -1367,6 +1435,9 @@ impl Client {
                                                             let mut wr = idx.write().await;
                                                             wr.add_document(doc).unwrap();
                                                             wr.commit().unwrap();
+                                                        }
+                                                        ChatContent::Feedback { crc, status }=>{
+                                                            Self::update_session(db_t.clone(), did, None, None, None, None, event_time);
                                                         }
                                                         _ => {}
                                                     }

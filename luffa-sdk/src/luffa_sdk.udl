@@ -23,6 +23,7 @@ dictionary EventMeta {
     string from_tag;
     string to_tag;
     u64 event_time;
+    sequence<u8> msg;
 };
 
 [Error]
@@ -79,6 +80,7 @@ interface Client {
     string? find_contacts_tag(u64 did);
 
     EventMeta meta_msg([ByRef] sequence<u8> data);
+    EventMeta? read_msg_with_meta(u64 did,u64 crc);
 
 
 };

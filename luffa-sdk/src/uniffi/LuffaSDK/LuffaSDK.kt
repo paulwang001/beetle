@@ -44,7 +44,7 @@ open class RustBuffer : Structure() {
 
     companion object {
         internal fun alloc(size: Int = 0) = rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaSDK_3a84_rustbuffer_alloc(size, status).also {
+            _UniFFILib.INSTANCE.ffi_LuffaSDK_5c03_rustbuffer_alloc(size, status).also {
                 if(it.data == null) {
                    throw RuntimeException("RustBuffer.alloc() returned null data pointer (size=${size})")
                }
@@ -52,7 +52,7 @@ open class RustBuffer : Structure() {
         }
 
         internal fun free(buf: RustBuffer.ByValue) = rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaSDK_3a84_rustbuffer_free(buf, status)
+            _UniFFILib.INSTANCE.ffi_LuffaSDK_5c03_rustbuffer_free(buf, status)
         }
     }
 
@@ -264,87 +264,107 @@ internal interface _UniFFILib : Library {
         }
     }
 
-    fun ffi_LuffaSDK_3a84_Client_object_free(`ptr`: Pointer,
+    fun ffi_LuffaSDK_5c03_Client_object_free(`ptr`: Pointer,
     _uniffi_out_err: RustCallStatus
     ): Unit
 
-    fun LuffaSDK_3a84_Client_new(
+    fun LuffaSDK_5c03_Client_new(
     _uniffi_out_err: RustCallStatus
     ): Pointer
 
-    fun LuffaSDK_3a84_Client_show_code(`ptr`: Pointer,`comment`: RustBuffer.ByValue,
+    fun LuffaSDK_5c03_Client_show_code(`ptr`: Pointer,`comment`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaSDK_3a84_Client_parse_contacts_code(`ptr`: Pointer,`code`: RustBuffer.ByValue,
+    fun LuffaSDK_5c03_Client_parse_contacts_code(`ptr`: Pointer,`code`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaSDK_3a84_Client_answer_contacts_code(`ptr`: Pointer,`code`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,
+    fun LuffaSDK_5c03_Client_answer_contacts_code(`ptr`: Pointer,`code`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): Unit
 
-    fun LuffaSDK_3a84_Client_send_msg(`ptr`: Pointer,`to`: Long,`msg`: RustBuffer.ByValue,
+    fun LuffaSDK_5c03_Client_send_msg(`ptr`: Pointer,`to`: Long,`msg`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
-    ): Unit
+    ): Long
 
-    fun LuffaSDK_3a84_Client_get_local_id(`ptr`: Pointer,
-    _uniffi_out_err: RustCallStatus
-    ): RustBuffer.ByValue
-
-    fun LuffaSDK_3a84_Client_get_peer_id(`ptr`: Pointer,
+    fun LuffaSDK_5c03_Client_get_local_id(`ptr`: Pointer,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaSDK_3a84_Client_relay_list(`ptr`: Pointer,
+    fun LuffaSDK_5c03_Client_get_peer_id(`ptr`: Pointer,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaSDK_3a84_Client_connect(`ptr`: Pointer,`peerId`: RustBuffer.ByValue,
+    fun LuffaSDK_5c03_Client_relay_list(`ptr`: Pointer,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun LuffaSDK_5c03_Client_connect(`ptr`: Pointer,`peerId`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): Byte
 
-    fun LuffaSDK_3a84_Client_start(`ptr`: Pointer,`cfgPath`: RustBuffer.ByValue,`cb`: Long,
+    fun LuffaSDK_5c03_Client_start(`ptr`: Pointer,`cfgPath`: RustBuffer.ByValue,`cb`: Long,
     _uniffi_out_err: RustCallStatus
     ): Unit
 
-    fun LuffaSDK_3a84_Client_stop(`ptr`: Pointer,
+    fun LuffaSDK_5c03_Client_stop(`ptr`: Pointer,
     _uniffi_out_err: RustCallStatus
     ): Unit
 
-    fun LuffaSDK_3a84_Client_save_session(`ptr`: Pointer,`did`: Long,`tag`: RustBuffer.ByValue,
+    fun LuffaSDK_5c03_Client_save_session(`ptr`: Pointer,`did`: Long,`tag`: RustBuffer.ByValue,`read`: RustBuffer.ByValue,`reach`: RustBuffer.ByValue,`msg`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): Unit
 
-    fun LuffaSDK_3a84_Client_session_list(`ptr`: Pointer,`top`: Int,
+    fun LuffaSDK_5c03_Client_session_list(`ptr`: Pointer,`top`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaSDK_3a84_Client_contacts_list(`ptr`: Pointer,`cType`: Byte,
+    fun LuffaSDK_5c03_Client_contacts_list(`ptr`: Pointer,`cType`: Byte,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaSDK_3a84_Client_search(`ptr`: Pointer,`query`: RustBuffer.ByValue,`offet`: Int,`limit`: Int,
+    fun LuffaSDK_5c03_Client_search(`ptr`: Pointer,`query`: RustBuffer.ByValue,`offet`: Int,`limit`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaSDK_3a84_Callback_init_callback(`callbackStub`: ForeignCallback,
+    fun LuffaSDK_5c03_Client_read_msg(`ptr`: Pointer,`did`: Long,`crc`: Long,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun LuffaSDK_5c03_Client_recent_messages(`ptr`: Pointer,`did`: Long,`top`: Int,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun LuffaSDK_5c03_Client_find_contacts_tag(`ptr`: Pointer,`did`: Long,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun LuffaSDK_5c03_Client_meta_msg(`ptr`: Pointer,`data`: RustBuffer.ByValue,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun LuffaSDK_5c03_Client_read_msg_with_meta(`ptr`: Pointer,`did`: Long,`crc`: Long,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun ffi_LuffaSDK_5c03_Callback_init_callback(`callbackStub`: ForeignCallback,
     _uniffi_out_err: RustCallStatus
     ): Unit
 
-    fun ffi_LuffaSDK_3a84_rustbuffer_alloc(`size`: Int,
+    fun ffi_LuffaSDK_5c03_rustbuffer_alloc(`size`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaSDK_3a84_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,
+    fun ffi_LuffaSDK_5c03_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaSDK_3a84_rustbuffer_free(`buf`: RustBuffer.ByValue,
+    fun ffi_LuffaSDK_5c03_rustbuffer_free(`buf`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): Unit
 
-    fun ffi_LuffaSDK_3a84_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,
+    fun ffi_LuffaSDK_5c03_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
@@ -654,7 +674,7 @@ public interface ClientInterface {
     fun `answerContactsCode`(`code`: String, `comment`: String?)
     
     @Throws(ClientException::class)
-    fun `sendMsg`(`to`: ULong, `msg`: List<UByte>)
+    fun `sendMsg`(`to`: ULong, `msg`: List<UByte>): ULong
     
     fun `getLocalId`(): ULong?
     
@@ -668,7 +688,7 @@ public interface ClientInterface {
     
     fun `stop`()
     
-    fun `saveSession`(`did`: ULong, `tag`: String)
+    fun `saveSession`(`did`: ULong, `tag`: String, `read`: ULong?, `reach`: ULong?, `msg`: String?)
     
     fun `sessionList`(`top`: UInt): List<ChatSession>
     
@@ -676,6 +696,16 @@ public interface ClientInterface {
     
     @Throws(ClientException::class)
     fun `search`(`query`: String, `offet`: UInt, `limit`: UInt): List<String>
+    
+    fun `readMsg`(`did`: ULong, `crc`: ULong): List<UByte>?
+    
+    fun `recentMessages`(`did`: ULong, `top`: UInt): List<ULong>
+    
+    fun `findContactsTag`(`did`: ULong): String?
+    
+    fun `metaMsg`(`data`: List<UByte>): EventMeta
+    
+    fun `readMsgWithMeta`(`did`: ULong, `crc`: ULong): EventMeta?
     
 }
 
@@ -685,7 +715,7 @@ class Client(
     constructor() :
         this(
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_3a84_Client_new( _status)
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_new( _status)
 })
 
     /**
@@ -698,14 +728,14 @@ class Client(
      */
     override protected fun freeRustArcPtr() {
         rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaSDK_3a84_Client_object_free(this.pointer, status)
+            _UniFFILib.INSTANCE.ffi_LuffaSDK_5c03_Client_object_free(this.pointer, status)
         }
     }
 
     override fun `showCode`(`comment`: String?): String =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_3a84_Client_show_code(it, FfiConverterOptionalString.lower(`comment`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_show_code(it, FfiConverterOptionalString.lower(`comment`),  _status)
 }
         }.let {
             FfiConverterString.lift(it)
@@ -714,7 +744,7 @@ class Client(
     @Throws(ClientException::class)override fun `parseContactsCode`(`code`: String): String =
         callWithPointer {
     rustCallWithError(ClientException) { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_3a84_Client_parse_contacts_code(it, FfiConverterString.lower(`code`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_parse_contacts_code(it, FfiConverterString.lower(`code`),  _status)
 }
         }.let {
             FfiConverterString.lift(it)
@@ -723,22 +753,23 @@ class Client(
     @Throws(ClientException::class)override fun `answerContactsCode`(`code`: String, `comment`: String?) =
         callWithPointer {
     rustCallWithError(ClientException) { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_3a84_Client_answer_contacts_code(it, FfiConverterString.lower(`code`), FfiConverterOptionalString.lower(`comment`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_answer_contacts_code(it, FfiConverterString.lower(`code`), FfiConverterOptionalString.lower(`comment`),  _status)
 }
         }
     
     
-    @Throws(ClientException::class)override fun `sendMsg`(`to`: ULong, `msg`: List<UByte>) =
+    @Throws(ClientException::class)override fun `sendMsg`(`to`: ULong, `msg`: List<UByte>): ULong =
         callWithPointer {
     rustCallWithError(ClientException) { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_3a84_Client_send_msg(it, FfiConverterULong.lower(`to`), FfiConverterSequenceUByte.lower(`msg`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_send_msg(it, FfiConverterULong.lower(`to`), FfiConverterSequenceUByte.lower(`msg`),  _status)
 }
+        }.let {
+            FfiConverterULong.lift(it)
         }
-    
     override fun `getLocalId`(): ULong? =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_3a84_Client_get_local_id(it,  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_get_local_id(it,  _status)
 }
         }.let {
             FfiConverterOptionalULong.lift(it)
@@ -746,7 +777,7 @@ class Client(
     override fun `getPeerId`(): String? =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_3a84_Client_get_peer_id(it,  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_get_peer_id(it,  _status)
 }
         }.let {
             FfiConverterOptionalString.lift(it)
@@ -754,7 +785,7 @@ class Client(
     override fun `relayList`(): List<String> =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_3a84_Client_relay_list(it,  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_relay_list(it,  _status)
 }
         }.let {
             FfiConverterSequenceString.lift(it)
@@ -762,7 +793,7 @@ class Client(
     override fun `connect`(`peerId`: String): Boolean =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_3a84_Client_connect(it, FfiConverterString.lower(`peerId`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_connect(it, FfiConverterString.lower(`peerId`),  _status)
 }
         }.let {
             FfiConverterBoolean.lift(it)
@@ -770,28 +801,28 @@ class Client(
     override fun `start`(`cfgPath`: String?, `cb`: Callback) =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_3a84_Client_start(it, FfiConverterOptionalString.lower(`cfgPath`), FfiConverterTypeCallback.lower(`cb`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_start(it, FfiConverterOptionalString.lower(`cfgPath`), FfiConverterTypeCallback.lower(`cb`),  _status)
 }
         }
     
     override fun `stop`() =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_3a84_Client_stop(it,  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_stop(it,  _status)
 }
         }
     
-    override fun `saveSession`(`did`: ULong, `tag`: String) =
+    override fun `saveSession`(`did`: ULong, `tag`: String, `read`: ULong?, `reach`: ULong?, `msg`: String?) =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_3a84_Client_save_session(it, FfiConverterULong.lower(`did`), FfiConverterString.lower(`tag`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_save_session(it, FfiConverterULong.lower(`did`), FfiConverterString.lower(`tag`), FfiConverterOptionalULong.lower(`read`), FfiConverterOptionalULong.lower(`reach`), FfiConverterOptionalString.lower(`msg`),  _status)
 }
         }
     
     override fun `sessionList`(`top`: UInt): List<ChatSession> =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_3a84_Client_session_list(it, FfiConverterUInt.lower(`top`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_session_list(it, FfiConverterUInt.lower(`top`),  _status)
 }
         }.let {
             FfiConverterSequenceTypeChatSession.lift(it)
@@ -799,7 +830,7 @@ class Client(
     override fun `contactsList`(`cType`: UByte): List<ContactsView> =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_3a84_Client_contacts_list(it, FfiConverterUByte.lower(`cType`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_contacts_list(it, FfiConverterUByte.lower(`cType`),  _status)
 }
         }.let {
             FfiConverterSequenceTypeContactsView.lift(it)
@@ -808,10 +839,50 @@ class Client(
     @Throws(ClientException::class)override fun `search`(`query`: String, `offet`: UInt, `limit`: UInt): List<String> =
         callWithPointer {
     rustCallWithError(ClientException) { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_3a84_Client_search(it, FfiConverterString.lower(`query`), FfiConverterUInt.lower(`offet`), FfiConverterUInt.lower(`limit`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_search(it, FfiConverterString.lower(`query`), FfiConverterUInt.lower(`offet`), FfiConverterUInt.lower(`limit`),  _status)
 }
         }.let {
             FfiConverterSequenceString.lift(it)
+        }
+    override fun `readMsg`(`did`: ULong, `crc`: ULong): List<UByte>? =
+        callWithPointer {
+    rustCall() { _status ->
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_read_msg(it, FfiConverterULong.lower(`did`), FfiConverterULong.lower(`crc`),  _status)
+}
+        }.let {
+            FfiConverterOptionalSequenceUByte.lift(it)
+        }
+    override fun `recentMessages`(`did`: ULong, `top`: UInt): List<ULong> =
+        callWithPointer {
+    rustCall() { _status ->
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_recent_messages(it, FfiConverterULong.lower(`did`), FfiConverterUInt.lower(`top`),  _status)
+}
+        }.let {
+            FfiConverterSequenceULong.lift(it)
+        }
+    override fun `findContactsTag`(`did`: ULong): String? =
+        callWithPointer {
+    rustCall() { _status ->
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_find_contacts_tag(it, FfiConverterULong.lower(`did`),  _status)
+}
+        }.let {
+            FfiConverterOptionalString.lift(it)
+        }
+    override fun `metaMsg`(`data`: List<UByte>): EventMeta =
+        callWithPointer {
+    rustCall() { _status ->
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_meta_msg(it, FfiConverterSequenceUByte.lower(`data`),  _status)
+}
+        }.let {
+            FfiConverterTypeEventMeta.lift(it)
+        }
+    override fun `readMsgWithMeta`(`did`: ULong, `crc`: ULong): EventMeta? =
+        callWithPointer {
+    rustCall() { _status ->
+    _UniFFILib.INSTANCE.LuffaSDK_5c03_Client_read_msg_with_meta(it, FfiConverterULong.lower(`did`), FfiConverterULong.lower(`crc`),  _status)
+}
+        }.let {
+            FfiConverterOptionalTypeEventMeta.lift(it)
         }
     
 
@@ -845,8 +916,12 @@ public object FfiConverterTypeClient: FfiConverter<Client, Pointer> {
 
 data class ChatSession (
     var `did`: ULong, 
+    var `sessionType`: UByte, 
     var `lastTime`: ULong, 
-    var `tag`: String
+    var `tag`: String, 
+    var `readCrc`: ULong, 
+    var `reachCrc`: List<ULong>, 
+    var `lastMsg`: String
 ) {
     
 }
@@ -855,21 +930,33 @@ public object FfiConverterTypeChatSession: FfiConverterRustBuffer<ChatSession> {
     override fun read(buf: ByteBuffer): ChatSession {
         return ChatSession(
             FfiConverterULong.read(buf),
+            FfiConverterUByte.read(buf),
             FfiConverterULong.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterSequenceULong.read(buf),
             FfiConverterString.read(buf),
         )
     }
 
     override fun allocationSize(value: ChatSession) = (
             FfiConverterULong.allocationSize(value.`did`) +
+            FfiConverterUByte.allocationSize(value.`sessionType`) +
             FfiConverterULong.allocationSize(value.`lastTime`) +
-            FfiConverterString.allocationSize(value.`tag`)
+            FfiConverterString.allocationSize(value.`tag`) +
+            FfiConverterULong.allocationSize(value.`readCrc`) +
+            FfiConverterSequenceULong.allocationSize(value.`reachCrc`) +
+            FfiConverterString.allocationSize(value.`lastMsg`)
     )
 
     override fun write(value: ChatSession, buf: ByteBuffer) {
             FfiConverterULong.write(value.`did`, buf)
+            FfiConverterUByte.write(value.`sessionType`, buf)
             FfiConverterULong.write(value.`lastTime`, buf)
             FfiConverterString.write(value.`tag`, buf)
+            FfiConverterULong.write(value.`readCrc`, buf)
+            FfiConverterSequenceULong.write(value.`reachCrc`, buf)
+            FfiConverterString.write(value.`lastMsg`, buf)
     }
 }
 
@@ -899,6 +986,51 @@ public object FfiConverterTypeContactsView: FfiConverterRustBuffer<ContactsView>
     override fun write(value: ContactsView, buf: ByteBuffer) {
             FfiConverterULong.write(value.`did`, buf)
             FfiConverterString.write(value.`tag`, buf)
+    }
+}
+
+
+
+
+data class EventMeta (
+    var `fromId`: ULong, 
+    var `toId`: ULong, 
+    var `fromTag`: String, 
+    var `toTag`: String, 
+    var `eventTime`: ULong, 
+    var `msg`: List<UByte>
+) {
+    
+}
+
+public object FfiConverterTypeEventMeta: FfiConverterRustBuffer<EventMeta> {
+    override fun read(buf: ByteBuffer): EventMeta {
+        return EventMeta(
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterSequenceUByte.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: EventMeta) = (
+            FfiConverterULong.allocationSize(value.`fromId`) +
+            FfiConverterULong.allocationSize(value.`toId`) +
+            FfiConverterString.allocationSize(value.`fromTag`) +
+            FfiConverterString.allocationSize(value.`toTag`) +
+            FfiConverterULong.allocationSize(value.`eventTime`) +
+            FfiConverterSequenceUByte.allocationSize(value.`msg`)
+    )
+
+    override fun write(value: EventMeta, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`fromId`, buf)
+            FfiConverterULong.write(value.`toId`, buf)
+            FfiConverterString.write(value.`fromTag`, buf)
+            FfiConverterString.write(value.`toTag`, buf)
+            FfiConverterULong.write(value.`eventTime`, buf)
+            FfiConverterSequenceUByte.write(value.`msg`, buf)
     }
 }
 
@@ -1111,7 +1243,7 @@ public object FfiConverterTypeCallback: FfiConverterCallbackInterface<Callback>(
 ) {
     override fun register(lib: _UniFFILib) {
         rustCall() { status ->
-            lib.ffi_LuffaSDK_3a84_Callback_init_callback(this.foreignCallback, status)
+            lib.ffi_LuffaSDK_5c03_Callback_init_callback(this.foreignCallback, status)
         }
     }
 }
@@ -1177,6 +1309,64 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<String?> {
 
 
 
+public object FfiConverterOptionalTypeEventMeta: FfiConverterRustBuffer<EventMeta?> {
+    override fun read(buf: ByteBuffer): EventMeta? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeEventMeta.read(buf)
+    }
+
+    override fun allocationSize(value: EventMeta?): Int {
+        if (value == null) {
+            return 1
+        } else {
+            return 1 + FfiConverterTypeEventMeta.allocationSize(value)
+        }
+    }
+
+    override fun write(value: EventMeta?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeEventMeta.write(value, buf)
+        }
+    }
+}
+
+
+
+
+public object FfiConverterOptionalSequenceUByte: FfiConverterRustBuffer<List<UByte>?> {
+    override fun read(buf: ByteBuffer): List<UByte>? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterSequenceUByte.read(buf)
+    }
+
+    override fun allocationSize(value: List<UByte>?): Int {
+        if (value == null) {
+            return 1
+        } else {
+            return 1 + FfiConverterSequenceUByte.allocationSize(value)
+        }
+    }
+
+    override fun write(value: List<UByte>?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterSequenceUByte.write(value, buf)
+        }
+    }
+}
+
+
+
+
 public object FfiConverterSequenceUByte: FfiConverterRustBuffer<List<UByte>> {
     override fun read(buf: ByteBuffer): List<UByte> {
         val len = buf.getInt()
@@ -1195,6 +1385,31 @@ public object FfiConverterSequenceUByte: FfiConverterRustBuffer<List<UByte>> {
         buf.putInt(value.size)
         value.forEach {
             FfiConverterUByte.write(it, buf)
+        }
+    }
+}
+
+
+
+
+public object FfiConverterSequenceULong: FfiConverterRustBuffer<List<ULong>> {
+    override fun read(buf: ByteBuffer): List<ULong> {
+        val len = buf.getInt()
+        return List<ULong>(len) {
+            FfiConverterULong.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<ULong>): Int {
+        val sizeForLength = 4
+        val sizeForItems = value.map { FfiConverterULong.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<ULong>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.forEach {
+            FfiConverterULong.write(it, buf)
         }
     }
 }
