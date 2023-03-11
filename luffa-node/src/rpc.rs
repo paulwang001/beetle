@@ -15,6 +15,7 @@ use libp2p::kad::record::Key;
 use libp2p::kad::{Quorum, Record};
 use libp2p::Multiaddr;
 use libp2p::PeerId;
+use libp2p::request_response::RequestId;
 use luffa_bitswap::Block;
 
 use luffa_rpc_types::{
@@ -224,8 +225,8 @@ impl P2p {
     ) -> anyhow::Result<BoxStream<'static, anyhow::Result<FetchProvidersDhtResponse>>> {
         let key_bytes: &[u8] = req.key.0.as_ref();
         let key = libp2p::kad::record::Key::new(&key_bytes);
-        let cid: Cid = key_bytes.try_into()?;
-        trace!("received fetch_provider_dht: {}", cid);
+        // let cid: Cid = key_bytes.try_into()?;
+        // trace!("received fetch_provider_dht: {}", cid);
         let (s, r) = channel(64);
 
         let msg = RpcMessage::ProviderRequest {
@@ -601,6 +602,24 @@ impl P2p {
 
         Ok(GossipsubUnsubscribeResponse { was_subscribed })
     }
+    
+    pub async fn chat_request(
+        &self,
+        req:ChatRequest,
+    )->Result<Option<ChatResponse>> {
+        let (s, r) = oneshot::channel();
+        let msg = RpcMessage::Chat(
+            s,
+            req,
+        );
+    
+        self.sender.send(msg).await?;
+        let res = r.await??;
+    
+        Ok(res)
+
+    }
+
 }
 
 // /// dispatch a single request from the server 
@@ -727,12 +746,14 @@ pub enum RpcMessage {
     NetConnect(oneshot::Sender<Result<()>>, PeerId, Vec<Multiaddr>),
     NetDisconnect(oneshot::Sender<()>, PeerId),
     Gossipsub(GossipsubMessage),
+    BackGossipsub(GossipsubMessage),
     FindPeerOnDHT(oneshot::Sender<Result<()>>, PeerId),
     LookupPeerInfo(oneshot::Sender<Option<IdentifyInfo>>, PeerId),
     ListenForIdentify(oneshot::Sender<Result<IdentifyInfo>>, PeerId),
     CancelListenForIdentify(oneshot::Sender<()>, PeerId),
     AddressesOfPeer(oneshot::Sender<Vec<Multiaddr>>, PeerId),
     // LookupLocalPeerInfo(oneshot::Sender<Lookup>),
+    Chat(oneshot::Sender<Result<Option<ChatResponse>>>,ChatRequest),
     Shutdown,
 }
 

@@ -24,7 +24,7 @@ use tracing::{info, warn};
 
 mod event;
 mod peer_manager;
-mod chat;
+pub(crate) mod chat;
 pub(crate) use self::event::Event;
 use self::peer_manager::PeerManager;
 use crate::config::Libp2pConfig;
@@ -42,7 +42,7 @@ pub(crate) struct NodeBehaviour {
     pub(crate) bitswap: Toggle<Bitswap<BitswapStore>>,
     pub(crate) kad: Toggle<Kademlia<MemoryStore>>,
     mdns: Toggle<Mdns>,
-    chat:Toggle<RequestResponse<chat::ChatCodec>>,
+    pub(crate) chat:Toggle<RequestResponse<chat::ChatCodec>>,
     pub(crate) autonat: Toggle<autonat::Behaviour>,
     relay: Toggle<relay::v2::relay::Relay>,
     relay_client: Toggle<relay::v2::client::Client>,
@@ -136,6 +136,7 @@ impl NodeBehaviour {
                 let mut addr = multiaddr.to_owned();
                 if let Some(Protocol::P2p(mh)) = addr.pop() {
                     let peer_id = PeerId::from_multihash(mh).unwrap();
+                    tracing::warn!("add boot>> {:?}  {:?}",peer_id,addr);
                     kademlia.add_address(&peer_id, addr);
                 } else {
                     tracing::warn!("Could not parse bootstrap addr {}", multiaddr);

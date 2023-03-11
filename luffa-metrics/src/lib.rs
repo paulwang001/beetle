@@ -130,18 +130,20 @@ fn init_tracer(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
     let registry = tracing_subscriber::registry();
     
     #[cfg(target_os = "android")]
+    let registry =
     {
         let android_layer = paranoid_android::layer(env!("CARGO_PKG_NAME"))
         .with_span_events(FmtSpan::CLOSE)
         .with_thread_names(true)
         .with_filter(EnvFilter::from_default_env());
-        let registry = registry.with(android_layer);
-    }
-    #[cfg(target_os = "apple-ios")]
+        tracing_subscriber::registry().with(android_layer)
+    };
+    #[cfg(target = "aarch64-apple-ios")]
+    let registry =
     {
-        let alayer = tracing_oslog::OsLogger::new("moe.absolucy.test", "default");
-        let registry = registry.with(layer);
-    }
+        let layer = tracing_oslog::OsLogger::new("moe.absolucy.test", "default");
+        tracing_subscriber::registry().with(layer)
+    };
    
 
     registry

@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use cid::Cid;
 use derive_more::{From, TryInto};
-use libp2p::{Multiaddr, PeerId};
+use libp2p::{Multiaddr, PeerId, request_response::RequestId};
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -237,6 +237,15 @@ pub struct GetRecordResponse {
     pub key: Key,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ChatRequest {
+   pub msg:Vec<u8>,  
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ChatResponse {
+   pub data:Vec<u8>
+}
+
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Lookup {
@@ -282,6 +291,7 @@ pub enum P2pRequest {
     LocalPeerId(LocalPeerIdRequest),
     ExternalAddrs(ExternalAddrsRequest),
     Listeners(ListenersRequest),
+    Chat(ChatRequest),
 }
 
 #[derive(Serialize, Deserialize, Debug, From, TryInto)]
@@ -305,6 +315,7 @@ pub enum P2pResponse {
     Listeners(RpcResult<ListenersResponse>),
     UnitResult(RpcResult<()>),
     GetRecord(RpcResult<GetRecordResponse>),
+    ChatResponse(RpcResult<ChatResponse>)
 }
 
 // #[derive(Debug, Clone)]

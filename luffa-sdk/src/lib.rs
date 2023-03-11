@@ -831,15 +831,7 @@ impl Client {
         tokio::spawn(async move {
             let mut has_err = false;
             loop {
-                if let Err(e) = client_t
-                    .gossipsub_subscribe(TopicHash::from_raw(format!("{}_{}", TOPIC_CHAT, my_id)))
-                    .await
-                {
-                    error!("{e:?}");
-                    tracing::warn!("{e:?}");
-                    has_err = true;
-                }
-                let topics = vec![TOPIC_STATUS];
+                let topics = vec![TOPIC_STATUS,TOPIC_CHAT];
                 for t in topics.into_iter() {
                     if let Err(e) = client_t.gossipsub_subscribe(TopicHash::from_raw(t)).await {
                         error!("{e:?}");
@@ -866,8 +858,7 @@ impl Client {
                         )
                         .await
                     {
-                        tracing::warn!("{e:?}");
-                        tracing::warn!("{e:?}");
+                        tracing::warn!("status sync pub>> {e:?}");
                     }
                     let tree = db_t.open_tree(KVDB_CONTACTS_TREE).unwrap();
 
@@ -887,18 +878,28 @@ impl Client {
                         Contacts {
                             did: to,
                             r#type:c_type,
+                            have_time:0,
+                            wants:vec![],
                         }  
                     })
                     .collect::<Vec<_>>();
                     let mut itr = contacts.iter();
                     while let Some(ctt) = itr.next() {
                         if ctt.r#type == ContactsTypes::Private {
+                            let p_key = format!("P-KEY-0-{}", ctt.did);
+                            if let Ok(Some(k)) = tree.get(&p_key) {
+                                let pk = PublicKey::from_protobuf_encoding(&k).unwrap();
+                                let did_peer = PeerId::from_public_key(&pk);
+                                if let Err(e) = client_t.gossipsub_add_explicit_peer(did_peer).await {
+                                    tracing::warn!("{e:?}");
+                                }
+                            }
                             continue;
                         }
-                        let topic = TopicHash::from_raw(format!("{}_{}", TOPIC_CHAT, ctt.did));
-                        if let Err(e) = client_t.gossipsub_subscribe(topic).await {
-                            tracing::warn!("{e:?}");
-                        }
+                        // let topic = TopicHash::from_raw(format!("{}_{}", TOPIC_CHAT, ctt.did));
+                        // if let Err(e) = client_t.gossipsub_subscribe(topic).await {
+                        //     tracing::warn!("{e:?}");
+                        // }
                     }
                     let sync = Message::ContactsSync { did: my_id, contacts };
                     let event = Event::new(0, &sync, None, my_id);
@@ -910,8 +911,7 @@ impl Client {
                         )
                         .await
                     {
-                        tracing::warn!("{e:?}");
-                        tracing::warn!("{e:?}");
+                        tracing::warn!("pub contacts sync status >>> {e:?}");
                     }
                     // break;
                 }
@@ -932,9 +932,25 @@ impl Client {
         let process = tokio::spawn(async move {
             while let Some(evt) = events.recv().await {
                 match evt {
+                    NetworkEvent::RequestResponse(rsp)=>{
+                        match rsp {
+                            luffa_node::ChatEvent::Response { request_id, data } => {
+
+                            },
+                            luffa_node::ChatEvent::OutboundFailure { peer, request_id, error } => {
+
+                            },
+                            luffa_node::ChatEvent::InboundFailure { peer, request_id, error } => {
+
+                            },
+                            luffa_node::ChatEvent::ResponseSent { peer, request_id } => {
+
+                            },
+                        }
+                    }
                     NetworkEvent::Gossipsub(GossipsubEvent::Subscribed { peer_id, topic }) => {
                         // TODO: a group member or my friend online?
-                        debug!("Subscribed> peer_id: {peer_id:?} topic:{topic}");
+                        tracing::warn!("Subscribed> peer_id: {peer_id:?} topic:{topic}");
                     }
                     NetworkEvent::Gossipsub(GossipsubEvent::Message { message, from, id }) => {
                         let GossipsubMessage { data, .. } = message;
@@ -962,17 +978,32 @@ impl Client {
                                     let msg_data = serde_cbor::to_vec(&msg).unwrap();
                                     let cb = &*cb;
                                     cb.on_message(crc, from_id, to, msg_data);
-                                    // match msg {
-                                    //     Message::RelayNode { did }=>{
+                                    match msg {
+                                        
+                                        Message::ContactsSync { did,contacts }=>{
+                                            if did == my_id {
+                                                for ctt in contacts {
+                                                    
+                                                    for crc in ctt.wants {
+                                                        let clt = client_t.clone();
+                                                        tokio::spawn(async move {
+                                                            match clt.get_crc_record(crc).await {
+                                                                Ok(res)=>{
+                                                                    let data = res.data;
+                                                                }
+                                                                Err(e)=>{
+                                                                    tracing::warn!("get crc record failed:{e:?}");
+                                                                }
+                                                            }
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        _=>{
 
-                                    //     }
-                                    //     Message::StatusSync { to, from_id, status }=>{
-
-                                    //     }
-                                    //     _=>{
-
-                                    //     }
-                                    // }
+                                        }
+                                    }
                                     // todo!()
                                 }
                             } else {
@@ -1014,7 +1045,7 @@ impl Client {
                                                 )
                                                 .await
                                             {
-                                                error!("{e:?}");
+                                                error!("pub reach to all relays>> {e:?}");
                                             }
                                             match msg {
                                                 Message::ContactsExchange { exchange } => {
@@ -1091,8 +1122,8 @@ impl Client {
                                                             if let Err(e) = client_t
                                                                 .gossipsub_publish(
                                                                     TopicHash::from_raw(format!(
-                                                                        "{}_{}",
-                                                                        TOPIC_CHAT, from_id
+                                                                        "{}",
+                                                                        TOPIC_CHAT
                                                                     )),
                                                                     bytes::Bytes::from(event),
                                                                 )
@@ -1139,8 +1170,8 @@ impl Client {
                                                             if let Err(e) = client_t
                                                                 .gossipsub_publish(
                                                                     TopicHash::from_raw(format!(
-                                                                        "{}_{}",
-                                                                        TOPIC_CHAT, from_id
+                                                                        "{}",
+                                                                        TOPIC_CHAT
                                                                     )),
                                                                     bytes::Bytes::from(event),
                                                                 )
@@ -1283,8 +1314,8 @@ impl Client {
                                                                 if let Err(e) = client_t
                                                                     .gossipsub_publish(
                                                                         TopicHash::from_raw(format!(
-                                                                            "{}_{}",
-                                                                            TOPIC_CHAT, from_id
+                                                                            "{}",
+                                                                            TOPIC_CHAT
                                                                         )),
                                                                         bytes::Bytes::from(event),
                                                                     )
@@ -1332,6 +1363,9 @@ impl Client {
                     }
                     NetworkEvent::PeerConnected(peer_id) => {
                         tracing::debug!("---------PeerConnected-----------{:?}", peer_id);
+                        if let Err(e) = client_t.gossipsub_add_explicit_peer(peer_id).await {
+                            tracing::warn!("gossipsub_add_explicit_peer failed");
+                        }
                         let mut digest = crc64fast::Digest::new();
                         digest.write(&peer_id.to_bytes());
                         let u_id = digest.sum64();
@@ -1410,7 +1444,7 @@ impl Client {
                     } else {
                         tracing::warn!("----------encrypt---send---");
                         
-                        TopicHash::from_raw(format!("{}_{}", TOPIC_CHAT, to))
+                        TopicHash::from_raw(format!("{}", TOPIC_CHAT))
                     };
                     let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
                     let tag_key_private = format!("TAG-0-{}", to);
@@ -1445,14 +1479,18 @@ impl Client {
                             }
                         }
                     };
-                    if let Err(e) = client
-                        .gossipsub_publish(topic_hash, bytes::Bytes::from(data.clone()))
-                        .await
-                    {
-                        error!("{e:?}");
-                        tracing::warn!("{e:?}");
-                        channel.send(Err(anyhow::anyhow!("publish failed:{:?}",e))).unwrap();
-                    } else if to > 0 {
+                    if to != my_id {
+                        if let Err(e) = client
+                            .gossipsub_publish(topic_hash, bytes::Bytes::from(data.clone()))
+                            .await
+                        {
+                            error!("{e:?}");
+                            tracing::warn!("{e:?}");
+                            channel.send(Err(anyhow::anyhow!("publish failed:{:?}",e))).unwrap();
+                            continue;
+                        }
+                    }
+                    if to > 0 {
                         let msg = serde_cbor::from_slice::<Message>(&msg_data).unwrap();
                         let Event {
                             to,

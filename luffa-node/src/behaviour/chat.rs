@@ -12,9 +12,16 @@ pub struct ChatProtocol();
 #[derive(Clone)]
 pub struct ChatCodec();
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Request(Vec<u8>);
+pub struct Request(pub Vec<u8>);
+
+impl Request {
+    pub fn data(&self) -> &Vec<u8>{
+        self.0.as_ref()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Response(Vec<u8>);
+pub struct Response(pub Vec<u8>);
 
 impl ProtocolName for ChatProtocol {
     fn protocol_name(&self) -> &[u8] {

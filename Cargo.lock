@@ -3422,6 +3422,7 @@ dependencies = [
  "luffa-store",
  "luffa-util",
  "multihash 0.17.0",
+ "petgraph",
  "rand 0.8.5",
  "serde",
  "smallvec",

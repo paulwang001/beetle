@@ -21,7 +21,7 @@ use luffa_rpc_types::Message;
 use luffa_util::{luffa_config_path, make_config};
 use petgraph::{
     graph::{NodeIndex, UnGraph},
-    prelude::DiGraph,
+    prelude::*,
     EdgeType, Graph,
 };
 use tokio::sync::RwLock;
@@ -71,7 +71,14 @@ async fn main() -> Result<()> {
     // let mut lock = ProgramLock::new("luffa-relay")?;
     // lock.acquire_or_exit();
 
+      
+
     let args = Args::parse();
+    
+    // if args.cfg.is_none() {
+    //     test();
+    //     return Ok(());
+    // }
 
     let cfg_path = luffa_config_path(CONFIG_FILE_NAME)?;
     let sources = [Some(cfg_path.as_path()), args.cfg.as_deref()];
@@ -136,7 +143,7 @@ async fn main() -> Result<()> {
             let mut has_err = false;
             if let Ok(_) = tokio::time::timeout(Duration::from_secs(5), async {
                 tracing::info!("client subscribe.");
-                let topics = vec![TOPIC_RELAY, TOPIC_STATUS];
+                let topics = vec![TOPIC_RELAY, TOPIC_STATUS,TOPIC_CHAT];
                 for t in topics.into_iter() {
                     if let Err(e) = client_t.gossipsub_subscribe(TopicHash::from_raw(t)).await {
                         tracing::warn!("{e:?}");
@@ -176,6 +183,9 @@ async fn main() -> Result<()> {
     let process = tokio::spawn(async move {
         while let Some(evt) = events.recv().await {
             match evt {
+                NetworkEvent::RequestResponse(rsp)=>{
+                    tracing::warn!("request>>> {rsp:?}");
+                }
                 NetworkEvent::Gossipsub(GossipsubEvent::Subscribed { peer_id, topic }) => {
                     tracing::warn!("Subscribed>>>> peer_id: {peer_id:?} topic: {topic:?}");
                 }
@@ -214,18 +224,19 @@ async fn main() -> Result<()> {
                                             if let Some(_n) = net_graph.find_edge(my_idx, from) {
                                                 is_connected = true;
                                                 // TODO closest
-                                                let client_t = client.clone();
-                                                tokio::spawn(async move {
-                                                    let topic = TopicHash::from_raw(format!(
-                                                        "{}_{}",
-                                                        TOPIC_CHAT, did
-                                                    ));
-                                                    if let Err(e) =
-                                                        client_t.gossipsub_subscribe(topic).await
-                                                    {
-                                                        error!("{e:?}");
-                                                    }
-                                                });
+                                                // let client_t = client.clone();
+                                                // tokio::spawn(async move {
+                                                //     tracing::warn!("relay subscribe for did: {}",did);
+                                                //     let topic = TopicHash::from_raw(format!(
+                                                //         "{}_{}",
+                                                //         TOPIC_CHAT, did
+                                                //     ));
+                                                //     if let Err(e) =
+                                                //         client_t.gossipsub_subscribe(topic).await
+                                                //     {
+                                                //         error!("{e:?}");
+                                                //     }
+                                                // });
                                             }
                                             for ctt in contacts {
                                                 let (meta, tp) =
@@ -234,23 +245,23 @@ async fn main() -> Result<()> {
                                                     } else {
                                                         (EdgeTypes::Private, NodeTypes::Client)
                                                     };
-                                                if is_connected
-                                                    && ctt.r#type == ContactsTypes::Group
-                                                {
-                                                    let client_t = client.clone();
-                                                    tokio::spawn(async move {
-                                                        let topic = TopicHash::from_raw(format!(
-                                                            "{}_{}",
-                                                            TOPIC_CHAT, ctt.did
-                                                        ));
-                                                        if let Err(e) = client_t
-                                                            .gossipsub_subscribe(topic)
-                                                            .await
-                                                        {
-                                                            error!("{e:?}");
-                                                        }
-                                                    });
-                                                }
+                                                // if is_connected
+                                                //     && ctt.r#type == ContactsTypes::Group
+                                                // {
+                                                //     let client_t = client.clone();
+                                                //     tokio::spawn(async move {
+                                                //         let topic = TopicHash::from_raw(format!(
+                                                //             "{}_{}",
+                                                //             TOPIC_CHAT, ctt.did
+                                                //         ));
+                                                //         if let Err(e) = client_t
+                                                //             .gossipsub_subscribe(topic)
+                                                //             .await
+                                                //         {
+                                                //             error!("{e:?}");
+                                                //         }
+                                                //     });
+                                                // }
                                                 let to =
                                                     take_node(&mut contacts_graph, ctt.did, tp);
                                                 contacts_graph.update_edge(
@@ -408,9 +419,10 @@ async fn main() -> Result<()> {
                                                         )
                                                         .await
                                                     {
-                                                        error!("{e:?}");
+                                                        error!("notify put record>>> {e:?}");
                                                     } else {
                                                         //TODO notice send
+                                                        tracing::warn!("TODO: offline notify");
                                                     }
                                                 });
                                             }
@@ -432,6 +444,7 @@ async fn main() -> Result<()> {
                     let mut digest = crc64fast::Digest::new();
                     digest.write(&peer_id.to_bytes());
                     let u_id = digest.sum64();
+                    
                     match net_graph.node_indices().find(|idx| {
                         let w = &net_graph[*idx];
                         w.did == u_id
@@ -472,6 +485,18 @@ async fn main() -> Result<()> {
                     {
                         tracing::warn!("{e:?}");
                     }
+                    // let topic = TopicHash::from_raw(format!(
+                    //     "{}_{}",
+                    //     TOPIC_CHAT, u_id
+                    // ));
+                    // match client.gossipsub_subscribe(topic).await {
+                    //     Ok(ret)=>{
+                    //         tracing::warn!("sub result: {} for {}",ret,u_id);
+                    //     }
+                    //     Err(e)=>{
+                    //         tracing::warn!("sub error:{:?}",e);
+                    //     }
+                    // }
                 }
                 NetworkEvent::PeerDisconnected(peer_id) => {
                     tracing::info!("---------PeerDisconnected-----------{:?}", peer_id);
@@ -508,6 +533,18 @@ async fn main() -> Result<()> {
                     {
                         tracing::warn!("{e:?}");
                     }
+                    // let topic = TopicHash::from_raw(format!(
+                    //     "{}_{}",
+                    //     TOPIC_CHAT, u_id
+                    // ));
+                    // match client.gossipsub_unsubscribe(topic).await {
+                    //     Ok(ret)=>{
+                    //         tracing::warn!("unsub result: {} for {}",ret,u_id);
+                    //     }
+                    //     Err(e)=>{
+                    //         tracing::warn!("unsub error:{:?}",e);
+                    //     }
+                    // }
                 }
                 NetworkEvent::CancelLookupQuery(peer_id) => {
                     tracing::info!("---------CancelLookupQuery-----------{:?}", peer_id);
@@ -537,4 +574,68 @@ fn take_node(g: &mut UnGraph<Node, Edge>, did: u64, node_type: NodeTypes) -> Nod
             meta: node_type,
         }),
     }
+}
+
+
+fn test() {
+    let mut g = DiGraph::<u64,u64>::new();
+    
+    let a = g.add_node(1);
+    let b = g.add_node(2);
+    let c = g.add_node(3);
+    let d = g.add_node(4);
+
+    let ab = g.add_edge(a, b, 1);
+    let ac = g.add_edge(a, c, 2);
+    let ad = g.add_edge(a, d, 3);
+    
+    let ba = g.add_edge(b, a, 4);
+    let bc = g.add_edge(b, c, 5);
+    let bd = g.add_edge(b, d, 6);
+    
+    let bc2 = g.add_edge(b, c, 51);
+    
+   
+
+    if let Some(e) = g.first_edge(c, petgraph::Direction::Incoming) {
+        let nn = g.edge_weight(e).unwrap();
+        println!("nn>> {nn}");
+        assert_eq!(e,bc2,"edge not match.");
+        let (ia,ic) = g.edge_endpoints(e).unwrap();
+        assert_eq!(ia,b,"failed");
+        let mut e = e;
+        while let Some(n) = g.next_edge(e, petgraph::Direction::Incoming) {
+            let nn = g.edge_weight(n).unwrap();
+            println!("nn>> {nn}");
+            e = n;
+        }
+    } 
+
+    let ad = g.add_edge(a, d, 6);
+    let ad = g.add_edge(a, d, 7);
+    let ad = g.add_edge(a, d, 8);
+    let ad = g.add_edge(a, d, 9);
+    let ad = g.add_edge(a, d, 10);
+    let eg  = g.edges_connecting(a, d);
+
+    let wts = eg.map(|ef| ef.weight()).collect::<Vec<_>>();
+     println!("{wts:?}");
+     
+     g.remove_edge(ad);
+
+     
+     let eg  = g.edges_connecting(a, d);
+     let mut removes = vec![];
+     for n in eg {
+         let xx = n.id();
+         removes.push(xx);
+     }
+     for rm in removes {
+        g.remove_edge(rm);
+     }   
+     let eg  = g.edges_connecting(a, d);
+     let wts = eg.map(|ef| ef.weight()).collect::<Vec<_>>();
+      println!("{wts:?}");
+    
+
 }

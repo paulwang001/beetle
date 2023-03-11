@@ -25,7 +25,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 [target.'cfg(target_os = "android")'.dependencies]
 paranoid-android = "0.2.1"
 
-[target.'cfg(target_os = "apple-ios")'.dependencies]
+[target.'cfg(target = "aarch64-apple-ios")'.dependencies]
 tracing-oslog = "0.1.2"
 
 [dependencies.libp2p]

@@ -69,8 +69,8 @@ fn default_store_config(
 fn default_p2p_config(
     key_store_path: PathBuf,
 ) -> luffa_node::config::Config {
-    let mut p2p_config = Libp2pConfig::default();
-    p2p_config.bootstrap_peers = vec![];
+    let p2p_config = Libp2pConfig::default();
+    // p2p_config.bootstrap_peers = vec![];
 
     luffa_node::config::Config {
         key_store_path,

@@ -193,6 +193,8 @@ pub enum RtcAction {
 pub struct Contacts {
     pub did: u64,
     pub r#type: ContactsTypes,
+    pub have_time:u64,
+    pub wants:Vec<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy,PartialEq, Eq)]
