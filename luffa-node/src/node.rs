@@ -282,7 +282,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         tracing::warn!("kad bootstrap failed: {:?}", e);
                     }
                     else{
-                        tracing::warn!("kad bootstrap successfully");
+                        tracing::info!("kad bootstrap successfully");
                     }
                 }
                 _ = expiry_interval.tick() => {

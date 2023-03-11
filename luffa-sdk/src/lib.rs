@@ -532,6 +532,7 @@ impl Client {
     pub fn update_session(db:Arc<Db>,did:u64,tag:Option<String>,read:Option<u64>,reach:Option<u64>,msg:Option<String>,event_time:u64) {
         let tree = db.open_tree(KVDB_CHAT_SESSION_TREE).unwrap();
         let n_tag = tag.clone();
+        let old = 
         tree.fetch_and_update(did.to_be_bytes(), |old| {
             match old {
                 Some(val)=>{
@@ -573,6 +574,7 @@ impl Client {
                 }
             }
         }).unwrap();
+        tracing::info!("update session old>>>{:?}",old);
         tree.flush().unwrap();
         
     }
@@ -1009,7 +1011,7 @@ impl Client {
                             } else {
                                 match Self::get_aes_key_from_contacts(db_t.clone(), from_id) {
                                     Some(key) => {
-                                        tracing::warn!("ase >>> {}  nonce:{:?}",key.len(),nonce);
+                                        eprintln!("ase >>> {}  nonce:{:?}",key.len(),nonce);
                                         if let Ok(msg) = luffa_rpc_types::Message::decrypt(
                                             bytes::Bytes::from(msg),
                                             Some(key.clone()),
@@ -1030,14 +1032,14 @@ impl Client {
                                                 data.clone(),
                                             );
                                             let cb = &*cb;
-                                            tracing::warn!("on message>>>>>> {from_id}  to {to}");
                                             cb.on_message(crc, from_id, to, msg_data);
-                                            let msg = luffa_rpc_types::Message::Feedback {
+                                            eprintln!("on message>>>>>> {from_id}  to {to}");
+                                            let feed = luffa_rpc_types::Message::Feedback {
                                                 crc,
                                                 status: luffa_rpc_types::FeedbackStatus::Reach,
                                             };
                                             let event =
-                                                luffa_rpc_types::Event::new(0, &msg, None, my_id);
+                                                luffa_rpc_types::Event::new(0, &feed, None, my_id);
                                             let event = event.encode().unwrap();
                                             if let Err(e) = client_t
                                                 .gossipsub_publish(
@@ -1048,6 +1050,7 @@ impl Client {
                                             {
                                                 error!("pub reach to all relays>> {e:?}");
                                             }
+                                            tracing::warn!("will feedback");
                                             match msg {
                                                 Message::ContactsExchange { exchange } => {
                                                     match exchange {
@@ -1160,14 +1163,14 @@ impl Client {
                                                             wr.commit().unwrap();
                                                         }
                                                         ChatContent::Send { data } => {
-                                                            let msg = luffa_rpc_types::Message::Chat { content: ChatContent::Feedback { crc,status: luffa_rpc_types::FeedbackStatus::Reach } };
+                                                            let feed = luffa_rpc_types::Message::Chat { content: ChatContent::Feedback { crc,status: luffa_rpc_types::FeedbackStatus::Reach } };
                                                             let event = luffa_rpc_types::Event::new(
                                                                 from_id,
-                                                                &msg,
+                                                                &feed,
                                                                 Some(key),
                                                                 my_id,
                                                             );
-                                                            tracing::warn!("send feedback to {from_id}");
+                                                            tracing::info!("send feedback to {from_id}");
                                                             let event = event.encode().unwrap();
                                                             if let Err(e) = client_t
                                                                 .gossipsub_publish(
@@ -1272,7 +1275,7 @@ impl Client {
                                             }
                                         }
                                         else{
-                                            tracing::error!("decrypt failes!!! {:?}",nonce);
+                                            eprintln!("decrypt failes!!! {:?}",nonce);
                                         }
                                     }
                                     None => {
@@ -1354,7 +1357,7 @@ impl Client {
                                                 
                                             }
                                         } else {
-                                            tracing::warn!("invalid msg");
+                                            eprintln!("invalid msg");
                                         }
                                     }
                                 }
@@ -1429,7 +1432,7 @@ impl Client {
             let msg = serde_cbor::from_slice::<Message>(&msg_data).unwrap();
             let is_exchane = msg.is_contacts_exchange();
             let evt = if msg.need_encrypt() {
-                tracing::warn!("----------encrypt------{}",to);
+                tracing::info!("----------encrypt------{}",to);
                 match Self::get_aes_key_from_contacts(db.clone(), to) {
                     Some(key) => Some(Event::new(to, &msg, Some(key), from_id)),
                     None => { 
@@ -1447,7 +1450,7 @@ impl Client {
                     let topic_hash = if to == 0 {
                         TopicHash::from_raw(TOPIC_STATUS)
                     } else {
-                        tracing::warn!("----------encrypt---send---");
+                        tracing::info!("----------encrypt---send---");
                         
                         TopicHash::from_raw(format!("{}", TOPIC_CHAT))
                     };
@@ -1514,7 +1517,7 @@ impl Client {
                         } else {
                             format!("private_{from_id}")
                         };
-                        tracing::warn!("send......");
+                        tracing::info!("send......");
                         Self::save_to_tree(
                             db_t.clone(),
                             e.crc,

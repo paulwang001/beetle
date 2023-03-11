@@ -136,9 +136,9 @@ fn main() -> Result<()> {
             },
             _ => {
                 let list = client_t.contacts_list(0);
-                tracing::info!("contacts>> {:?}", list);
+                tracing::warn!("contacts>> {:?}", list);
                 let list = client_t.session_list(10);
-                tracing::info!(" session>> {:?}", list);
+                tracing::warn!(" session>> {:?}", list);
             }
         }
     }

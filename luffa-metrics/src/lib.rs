@@ -138,7 +138,7 @@ fn init_tracer(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
         .with_filter(EnvFilter::from_default_env());
         tracing_subscriber::registry().with(android_layer)
     };
-    #[cfg(target = "aarch64-apple-ios")]
+    #[cfg(target_os = "apple-ios")]
     let registry =
     {
         let layer = tracing_oslog::OsLogger::new("com.meta.luffa", "default");

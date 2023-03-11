@@ -254,7 +254,7 @@ impl Message {
                     tracing::warn!("cipher is none");
                     return Err(anyhow::anyhow!("cipher is none"));
                 }
-                tracing::warn!("00000000000000");
+                tracing::info!("00000000000000");
                 let cipher = cipher.unwrap();
                 let digest = Code::Sha2_256.digest(&data);
                 let nonce_data = digest.to_bytes();
