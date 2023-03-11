@@ -141,7 +141,7 @@ fn init_tracer(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target = "aarch64-apple-ios")]
     let registry =
     {
-        let layer = tracing_oslog::OsLogger::new("moe.absolucy.test", "default");
+        let layer = tracing_oslog::OsLogger::new("com.meta.luffa", "default");
         tracing_subscriber::registry().with(layer)
     };
    

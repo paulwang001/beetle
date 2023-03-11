@@ -967,7 +967,7 @@ impl Client {
                             debug!("Gossipsub> peer_id: {from:?} msg:{}", msg.len());
                             // TODO check did status
                             if nonce.is_none() {
-                                tracing::warn!("nonce is None");
+                                tracing::info!("nonce is None");
                                 if let Ok(msg) = luffa_rpc_types::Message::decrypt(
                                     bytes::Bytes::from(msg),
                                     None,
@@ -1009,11 +1009,11 @@ impl Client {
                             } else {
                                 match Self::get_aes_key_from_contacts(db_t.clone(), from_id) {
                                     Some(key) => {
-                                        debug!("ase >>> {}",key.len());
+                                        tracing::warn!("ase >>> {}  nonce:{:?}",key.len(),nonce);
                                         if let Ok(msg) = luffa_rpc_types::Message::decrypt(
                                             bytes::Bytes::from(msg),
                                             Some(key.clone()),
-                                            nonce,
+                                            nonce.clone(),
                                         ) {
                                             // TODO: did is me or I'm a member any local group
                                             let msg_data = serde_cbor::to_vec(&msg).unwrap();
@@ -1030,6 +1030,7 @@ impl Client {
                                                 data.clone(),
                                             );
                                             let cb = &*cb;
+                                            tracing::warn!("on message>>>>>> {from_id}  to {to}");
                                             cb.on_message(crc, from_id, to, msg_data);
                                             let msg = luffa_rpc_types::Message::Feedback {
                                                 crc,
@@ -1166,6 +1167,7 @@ impl Client {
                                                                 Some(key),
                                                                 my_id,
                                                             );
+                                                            tracing::warn!("send feedback to {from_id}");
                                                             let event = event.encode().unwrap();
                                                             if let Err(e) = client_t
                                                                 .gossipsub_publish(
@@ -1268,6 +1270,9 @@ impl Client {
                                                 }
                                                 _ => {}
                                             }
+                                        }
+                                        else{
+                                            tracing::error!("decrypt failes!!! {:?}",nonce);
                                         }
                                     }
                                     None => {
@@ -1497,8 +1502,10 @@ impl Client {
                             event_time,
                             crc,
                             from_id,
+                            nonce,
                             ..
                         } = e;
+                        assert!(nonce.is_some(),"nonce is none!!");
                         if let Err(e) = channel.send(Ok(crc)) {
                             tracing::warn!("channel send failed");
                         }
@@ -1507,6 +1514,7 @@ impl Client {
                         } else {
                             format!("private_{from_id}")
                         };
+                        tracing::warn!("send......");
                         Self::save_to_tree(
                             db_t.clone(),
                             e.crc,

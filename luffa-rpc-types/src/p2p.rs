@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use cid::Cid;
 use derive_more::{From, TryInto};
-use libp2p::{Multiaddr, PeerId, request_response::RequestId};
+use libp2p::{Multiaddr, PeerId};
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
