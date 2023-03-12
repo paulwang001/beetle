@@ -859,6 +859,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     ..
                                 } = event;
                                 if nonce.is_none() {
+                                    if to > 0 {
+                                        return Ok(());
+                                    }
                                     if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), None, nonce) {
                                         match msg {
                                             Message::ContactsSync { did,mut contacts }=>{
