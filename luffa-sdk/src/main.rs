@@ -61,16 +61,17 @@ fn main() -> Result<()> {
                     Some(tag) => {
                         x += 1;
                         tracing::warn!("is man");
-                        Message::Chat {
-                            content: ChatContent::Send {
-                                data: luffa_rpc_types::ContentData::Text {
-                                    source: luffa_rpc_types::DataSource::Text {
-                                        content: format!("{tag} Hello - {x}"),
-                                    },
-                                    reference: None,
-                                },
-                            },
-                        }
+                        // Message::Chat {
+                        //     content: ChatContent::Send {
+                        //         data: luffa_rpc_types::ContentData::Text {
+                        //             source: luffa_rpc_types::DataSource::Text {
+                        //                 content: format!("{tag} Hello - {x}"),
+                        //             },
+                        //             reference: None,
+                        //         },
+                        //     },
+                        // }
+                        Message::WebRtc { stream_id: 1000, action: RtcAction::Push { audio_id: 2, video_id: 3 } }
                     }
                     None => {
                         let code = client.show_code(Some("Hello".to_owned()));
