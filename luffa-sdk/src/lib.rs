@@ -562,29 +562,27 @@ impl Client {
                     let evt:Event = serde_cbor::from_slice(&data[..]).unwrap();
                     let Event { to, event_time, crc, from_id, nonce, msg } = evt;
                     let key = Self::get_aes_key_from_contacts(db_t.clone(), did);
+                    let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap();
                     if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), key, nonce) {
                         match &msg {
                             Message::Chat { content }=>{
                                 match content {
                                     ChatContent::Send { data }=>{
-                                        let (title,body) = Self::extra_content(data);
-                                        if let Some((_tag,tp)) = Self::get_contacts_tag(db_t.clone(), to) {
-                                            let did = if tp == 0 {from_id} else {to};
-                                            let now = std::time::SystemTime::now()
-                                            .duration_since(std::time::UNIX_EPOCH)
-                                            .unwrap();
-                                            Self::update_session(db_t.clone(), did, None, Some(crc), None, Some(body), now.as_secs());
-                                        }
+                                        let (_title,body) = Self::extra_content(data);
+                                        Self::update_session(db_t.clone(), did, None, Some(crc), None, Some(body), now.as_secs());
                                     }
                                     _=>{
-
+                                        Self::update_session(db_t.clone(), did, None, Some(crc), None, None, now.as_secs());
                                     }
                                 }
                             }
                             _=>{
-
+                                Self::update_session(db_t.clone(), did, None, Some(crc), None, None, now.as_secs());
                             }
                         }
+                        
                         let (to_tag,_) = Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
                         let (from_tag,_) = Self::get_contacts_tag(db_t.clone(), from_id).unwrap_or_default();
                         match message_to(msg) {
@@ -665,10 +663,15 @@ impl Client {
                     let chat:ChatSession = serde_cbor::from_slice(val).unwrap();
                     let ChatSession { did,session_type, last_time, tag, read_crc, mut reach_crc, last_msg } = chat;
                     if let Some(c) = reach {
-                        reach_crc.push(c);
+                        if !reach_crc.contains(&c) {
+                            reach_crc.push(c);
+                        }
                     }
                     if let Some(c) = read.as_ref() {
-                        reach_crc.retain(|x| x != c)
+                        reach_crc.retain(|x| *x != *c);
+                        // assert!(reach_crc.contains(c),"reach contain :{c}");
+                        // warn!("reach_crc:{reach_crc:?}   {c}");
+
                     }
                     let upd = ChatSession {
                         did,
@@ -700,7 +703,7 @@ impl Client {
                 }
             }
         }).unwrap();
-        tracing::info!("update session old>>>{:?}",old);
+        tracing::debug!("update session old>>>{:?}",old);
         tree.flush().unwrap();
         
     }
@@ -1027,9 +1030,9 @@ impl Client {
                         continue;   
                     }
                 };
-                if peers.len() < 3 && timer.elapsed().as_millis() < 30000 {
+                if peers.len() < 2 && timer.elapsed().as_millis() < 30000 {
                     
-                    tracing::warn!("waiting....{}",3 - peers.len()); 
+                    tracing::warn!("waiting....{}",2 - peers.len()); 
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                     continue;   
                 }
@@ -1499,7 +1502,7 @@ impl Client {
                                         }
                                     }
                                     None => {
-                                        
+                                        warn!("Gossipsub> peer_id: {from:?} nonce:{:?}", nonce);
                                         if let Some(key) =
                                             Self::get_offer_by_offer_id(db_t.clone(), from_id)
                                         {

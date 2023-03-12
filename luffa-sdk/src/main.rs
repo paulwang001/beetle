@@ -1,7 +1,7 @@
 #![feature(poll_ready)]
 use anyhow::Result;
 use futures::pending;
-use luffa_rpc_types::{message_to, ChatContent, ContactsEvent, ContactsToken, Message, RtcAction};
+use luffa_rpc_types::{message_to, ChatContent, ContactsEvent, ContactsToken, Message, RtcAction, message_from};
 use luffa_sdk::{Callback, Client};
 use std::future::{Future, IntoFuture};
 use std::sync::mpsc::sync_channel;
@@ -50,7 +50,7 @@ fn main() -> Result<()> {
     std::thread::spawn(move || {
         let mut x = 0;
         loop {
-            std::thread::sleep(Duration::from_secs(5));
+            std::thread::sleep(Duration::from_secs(10));
             let peer_id = client.get_local_id();
             tracing::info!("peer id: {peer_id:?}");
             let peers = client.relay_list();
@@ -74,6 +74,7 @@ fn main() -> Result<()> {
                     }
                     None => {
                         let code = client.show_code(Some("Hello".to_owned()));
+                        tracing::warn!("show :{}",code);
                         let msg = Message::WebRtc {
                             stream_id: 0,
                             action: luffa_rpc_types::RtcAction::Status { timestamp: 0, code },
@@ -89,6 +90,46 @@ fn main() -> Result<()> {
                     }
                     Err(e) => {
                         error!("{e:?}");
+                    }
+                }
+            }
+            else{
+                let list = client.contacts_list(0);
+                for c in list {
+                    
+                    let ls = client.recent_messages(c.did, 100);
+                    {
+                        let msg_len = ls.len();
+                        tracing::warn!(" contacts>> {:?} msg_len>>{}", c,msg_len);
+
+                        for crc in ls {
+                            if let Some(meta) = client.read_msg_with_meta(c.did, crc) {
+                                let msg = message_from(meta.msg).unwrap();
+                                match &msg {
+                                    Message::Chat { content }=>{
+
+                                    }
+                                    Message::WebRtc { stream_id, action }=>{
+
+                                    }
+                                    _=>{
+//moXBDb250YWN0c0V4Y2hhbmdloWhleGNoYW5nZaFlT2ZmZXKhZXRva2VupmpwdWJsaWNfa2V5mCQIARIYIBjeGJsYmxieGE8YnRghGDkXGFEDGCAYJBhOGDMNEhi7GDoYHxhbGG4YmBgyGI4Y1Rj6FxjMGKAYMwFpY3JlYXRlX2F0GmQNjwNkc2lnbphAGLsYrxjFGHEY0hhCGPwYhhiSGEsYPBjqBBj7DhjOGE0YhBjOGFUYpRiDGDEYlhi5GLcYYxiKGIMYKBhkGCwYlRg6Bhg4GBgYahh8GEURGMcYZAgYeBjjGEQYiBYYtRhOGKwYXxgxGHEYLxjHEhj4GKMOGPcYQAFqc2VjcmV0X2tleZggGGAY3BipGDgYvxiHGEIYMRi8GL0YOxhMGG4YkRhOGJQYNBjUGO8Y2QwYZxglGFYYkhhlGEsYhxjyGM4YoBjSbWNvbnRhY3RzX3R5cGVnUHJpdmF0ZWdjb21tZW50ZUhlbGxv
+                                        tracing::warn!("[{msg_len}] {:?}",msg);
+                                    }
+                                }    
+                            }
+                        }
+                    }
+                }
+                let list = client.session_list(10);
+                tracing::warn!(" session>> {:?}", list);
+
+                for s in list {
+                    let did = s.did;
+                    for crc in s.reach_crc {
+                        if let Some(meta) = client.read_msg_with_meta(did, crc) {
+                            tracing::warn!("{:?}",meta);
+                        }
                     }
                 }
             }
@@ -138,7 +179,17 @@ fn main() -> Result<()> {
                 let list = client_t.contacts_list(0);
                 tracing::warn!("contacts>> {:?}", list);
                 let list = client_t.session_list(10);
+
                 tracing::warn!(" session>> {:?}", list);
+
+                for s in list {
+                    let did = s.did;
+                    for crc in s.reach_crc {
+                        if let Some(meta) = client_t.read_msg_with_meta(did, crc) {
+                            tracing::warn!("{:?}",meta);
+                        }
+                    }
+                }
             }
         }
     }
