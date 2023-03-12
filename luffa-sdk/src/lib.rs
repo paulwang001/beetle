@@ -1017,6 +1017,7 @@ impl Client {
         let db_t = db.clone();
         tokio::spawn(async move {
             let mut has_err = false;
+            let mut timer = std::time::Instant::now();
             loop {
                 let peers =match client_t.get_peers().await {
                     Ok(peers)=>peers,
@@ -1026,12 +1027,13 @@ impl Client {
                         continue;   
                     }
                 };
-                if peers.len() < 3 {
+                if peers.len() < 3 && timer.elapsed().as_millis() < 30000 {
                     
                     tracing::warn!("waiting....{}",3 - peers.len()); 
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                     continue;   
                 }
+                timer = std::time::Instant::now();
                 let topics = vec![TOPIC_STATUS,TOPIC_CHAT];
                 for t in topics.into_iter() {
                     if let Err(e) = client_t.gossipsub_subscribe(TopicHash::from_raw(t)).await {

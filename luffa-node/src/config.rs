@@ -221,7 +221,7 @@ impl Default for Libp2pConfig {
             max_conns_pending_in: 256,
             max_conns_in: 8,
             max_conns_out: 8,
-            max_conns_per_peer: 2,
+            max_conns_per_peer: 4,
             notify_handler_buffer_size: 256,
             connection_event_buffer_size: 256,
             dial_concurrency_factor: 8,
