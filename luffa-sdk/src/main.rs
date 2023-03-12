@@ -55,7 +55,7 @@ fn main() -> Result<()> {
             tracing::info!("peer id: {peer_id:?}");
             let peers = client.relay_list();
             // client.send_msg(to, msg)
-            tracing::info!("{:?}", peers);
+            tracing::debug!("{:?}", peers);
             if to_id > 0 {
                 let msg = match client.find_contacts_tag(to_id) {
                     Some(tag) => {
@@ -177,16 +177,16 @@ fn main() -> Result<()> {
             },
             _ => {
                 let list = client_t.contacts_list(0);
-                tracing::warn!("contacts>> {:?}", list);
+                tracing::debug!("contacts>> {:?}", list);
                 let list = client_t.session_list(10);
 
-                tracing::warn!(" session>> {:?}", list);
+                tracing::debug!(" session>> {:?}", list);
 
                 for s in list {
                     let did = s.did;
                     for crc in s.reach_crc {
                         if let Some(meta) = client_t.read_msg_with_meta(did, crc) {
-                            tracing::warn!("{:?}",meta);
+                            tracing::debug!("{:?}",meta);
                         }
                     }
                 }

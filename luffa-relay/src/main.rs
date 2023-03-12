@@ -63,7 +63,7 @@ fn get_now() -> u64 {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap();
-    now.as_secs()
+    now.as_millis() as u64
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -334,7 +334,10 @@ async fn main() -> Result<()> {
                                                 let mut queue = notice_queue.write().await;
                                                 queue.remove(&crc);
                                             }
-                                            FeedbackStatus::Reach => {}
+                                            FeedbackStatus::Reach => {
+                                                let mut queue = notice_queue.write().await;
+                                                queue.remove(&crc);
+                                            }
                                             FeedbackStatus::Read => {}
                                         },
                                         _ => {}
@@ -367,7 +370,7 @@ async fn main() -> Result<()> {
                                                     let mut queue = notice_queue.write().await;
                                                     queue.insert(crc, key.clone());
                                                     tokio::spawn(async move {
-                                                        let expires = Some(event_time + 24 * 60 * 60);
+                                                        let expires = Some(event_time + 24 * 60 * 60 * 1000);
                                                         if let Err(e) = client_t
                                                             .put_crc_record(
                                                                 crc,
@@ -407,7 +410,7 @@ async fn main() -> Result<()> {
                                                 let mut queue = notice_queue.write().await;
                                                 queue.insert(crc, key.clone());
                                                 tokio::spawn(async move {
-                                                    let expires = Some(event_time + 24 * 60 * 60);
+                                                    let expires = Some(event_time + 24 * 60 * 60 * 1000);
 
                                                     if let Err(e) = client_t
                                                         .put_crc_record(
@@ -532,18 +535,7 @@ async fn main() -> Result<()> {
                     {
                         tracing::warn!("{e:?}");
                     }
-                    let topic = TopicHash::from_raw(format!(
-                        "{}_{}",
-                        TOPIC_CHAT, u_id
-                    ));
-                    match client.gossipsub_unsubscribe(topic).await {
-                        Ok(ret)=>{
-                            tracing::warn!("unsub result: {} for {}",ret,u_id);
-                        }
-                        Err(e)=>{
-                            tracing::warn!("unsub error:{:?}",e);
-                        }
-                    }
+                    
                 }
                 NetworkEvent::CancelLookupQuery(peer_id) => {
                     tracing::info!("---------CancelLookupQuery-----------{:?}", peer_id);

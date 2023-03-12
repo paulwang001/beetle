@@ -282,7 +282,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         tracing::warn!("kad bootstrap failed: {:?}", e);
                     }
                     else{
-                        tracing::info!("kad bootstrap successfully");
+                        tracing::debug!("kad bootstrap successfully");
                     }
                 }
                 _ = expiry_interval.tick() => {
@@ -687,7 +687,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 }
                             }
                             GetRecordOk::FinishedWithNoAdditionalRecord { .. } => {
-                                tracing::warn!("FinishedWithNoAdditionalRecord");
+                                tracing::debug!("FinishedWithNoAdditionalRecord");
                             }
                         },
                         QueryResult::GetRecord(Err(e)) => {

@@ -77,7 +77,7 @@ impl Event {
         let event_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_millis() as u64;
         let (msg, nonce) = msg.encrypt(key).unwrap();
 
         let mut digest = crc64fast::Digest::new();
@@ -101,8 +101,8 @@ impl Event {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs();
-        if self.event_time < now - 60 {
+            .as_millis() as u64;
+        if self.event_time < now - 60 * 1000{
             return Err(anyhow::anyhow!("event time is invalid."));
         }
         let mut digest = crc64fast::Digest::new();
@@ -293,14 +293,13 @@ impl Message {
 
     pub fn need_encrypt(&self) -> bool {
         match self {
-            Self::ContactsExchange { .. } | Self::Chat { .. } => true,
+            Self::ContactsExchange { .. } | Self::Chat { .. } | Self::WebRtc { ..} => true,
             _ => false,
         }
     }
     pub fn is_contacts_exchange(&self) -> bool {
         match self {
             Self::ContactsExchange { .. }=> true,
-            Self::WebRtc { stream_id, action }=> true,
             _ => false,
         }
     }

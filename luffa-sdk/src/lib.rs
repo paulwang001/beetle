@@ -105,7 +105,6 @@ fn create_runtime() -> tokio::runtime::Runtime {
 }
 
 pub trait Callback: Send + Sync + Debug {
-    // fn on_message(&self, msg: Message) -> Result<Option<String>, CallbackError>;
     fn on_message(&self, crc: u64, from_id: u64, to: u64, msg: Vec<u8>);
 }
 
@@ -519,7 +518,7 @@ impl Client {
                                             let now = std::time::SystemTime::now()
                                             .duration_since(std::time::UNIX_EPOCH)
                                             .unwrap();
-                                            Self::update_session(db_t, did, None, Some(crc), None, Some(body), now.as_secs());
+                                            Self::update_session(db_t, did, None, Some(crc), None, Some(body), now.as_millis() as u64);
                                         }
                                     }
                                     _=>{
@@ -539,7 +538,7 @@ impl Client {
                         }
                     }
                     else{
-                        eprintln!("decrypt failed>>>");
+                        eprintln!("c read msg: decrypt failed>>>");
                         None
                     }
                 }).unwrap_or_default()
@@ -571,15 +570,15 @@ impl Client {
                                 match content {
                                     ChatContent::Send { data }=>{
                                         let (_title,body) = Self::extra_content(data);
-                                        Self::update_session(db_t.clone(), did, None, Some(crc), None, Some(body), now.as_secs());
+                                        Self::update_session(db_t.clone(), did, None, Some(crc), None, Some(body), now.as_millis() as u64);
                                     }
                                     _=>{
-                                        Self::update_session(db_t.clone(), did, None, Some(crc), None, None, now.as_secs());
+                                        Self::update_session(db_t.clone(), did, None, Some(crc), None, None, now.as_millis() as u64);
                                     }
                                 }
                             }
                             _=>{
-                                Self::update_session(db_t.clone(), did, None, Some(crc), None, None, now.as_secs());
+                                Self::update_session(db_t.clone(), did, None, Some(crc), None, None, now.as_millis() as u64);
                             }
                         }
                         
@@ -600,7 +599,7 @@ impl Client {
                         }
                     }
                     else{
-                        eprintln!("decrypt failed>>>");
+                        eprintln!("read msg: decrypt failed>>>");
                         None
                     }
                 }).unwrap_or_default()
@@ -651,13 +650,12 @@ impl Client {
         let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap();
-        Self::update_session(self.db.clone(), did, Some(tag), read, reach, msg, now.as_secs());
+        Self::update_session(self.db.clone(), did, Some(tag), read, reach, msg, now.as_millis() as u64);
     }
     pub fn update_session(db:Arc<Db>,did:u64,tag:Option<String>,read:Option<u64>,reach:Option<u64>,msg:Option<String>,event_time:u64) {
         let tree = db.open_tree(KVDB_CHAT_SESSION_TREE).unwrap();
         let n_tag = tag.clone();
-        let old = 
-        tree.fetch_and_update(did.to_be_bytes(), |old| {
+        if let Err(e) = tree.fetch_and_update(did.to_be_bytes(), |old| {
             match old {
                 Some(val)=>{
                     let chat:ChatSession = serde_cbor::from_slice(val).unwrap();
@@ -686,6 +684,9 @@ impl Client {
                 }
                 None=>{
                     let (dft,tp) = Self::get_contacts_tag(db.clone(), did).unwrap_or((format!("{did}"),3));
+                    if tp == 3 {
+                        return None;
+                    }
                     let mut reach_crc = vec![];
                     if let Some(c) = reach {
                         reach_crc.push(c);
@@ -702,8 +703,9 @@ impl Client {
                     Some(serde_cbor::to_vec(&upd).unwrap())
                 }
             }
-        }).unwrap();
-        tracing::debug!("update session old>>>{:?}",old);
+        }){
+            tracing::warn!("{e:?}");
+        }
         tree.flush().unwrap();
         
     }
@@ -880,7 +882,7 @@ impl Client {
                     .await
                 {
                     Ok(peers) => {
-                        tracing::info!("peers:{peers:?}");
+                        tracing::debug!("peers:{peers:?}");
                         return peers
                             .into_iter()
                             .map(|p| bs58::encode(p.to_bytes()).into_string())
@@ -997,6 +999,7 @@ impl Client {
         config.metrics = luffa_node::metrics::metrics_config_with_compile_time_info(config.metrics);
 
         let metrics_config = config.metrics.clone();
+        let cb = Arc::new(cb);
 
         let metrics_handle = luffa_metrics::MetricsHandle::new(metrics_config)
             .await
@@ -1157,7 +1160,7 @@ impl Client {
                     }
                     NetworkEvent::Gossipsub(GossipsubEvent::Subscribed { peer_id, topic }) => {
                         // TODO: a group member or my friend online?
-                        tracing::warn!("Subscribed> peer_id: {peer_id:?} topic:{topic}");
+                        tracing::debug!("Subscribed> peer_id: {peer_id:?} topic:{topic}");
                     }
                     NetworkEvent::Gossipsub(GossipsubEvent::Message { message, from, id }) => {
                         let GossipsubMessage { data, .. } = message;
@@ -1177,7 +1180,7 @@ impl Client {
                                 if to != my_id {
                                     continue;
                                 }
-                                tracing::info!("nonce is None");
+                                tracing::debug!("nonce is None");
                                 if let Ok(msg) = luffa_rpc_types::Message::decrypt(
                                     bytes::Bytes::from(msg),
                                     None,
@@ -1186,7 +1189,7 @@ impl Client {
                                     // TODO: did is me or I'm a member any local group
                                     debug!("Gossipsub> on_message peer_id: {from:?} msg:{:?}", msg);
                                     let msg_data = serde_cbor::to_vec(&msg).unwrap();
-                                    let cb = &*cb;
+                                    // let cb = &*cb;
                                     cb.on_message(crc, from_id, to, msg_data);
                                     match msg {
                                         
@@ -1203,19 +1206,35 @@ impl Client {
                                                         let clt = client_t.clone();
                                                         let db_tt = db_t.clone();
                                                         // add to wants crc of contacts
+                                                        let cb_t = cb.clone();
                                                         tokio::spawn(async move {
                                                             match clt.get_crc_record(crc).await {
                                                                 Ok(res)=>{
                                                                     let data = res.data;
                                                                     // TODO remove crc from wants and update want_time
+                                                                    tracing::warn!("get record: {crc}");
+                                                                    let data = data.to_vec();
+                                                                    if let Ok(im) = Event::decode(&data) {
+                                                                        let Event {
+                                                                            msg,
+                                                                            to,
+                                                                            from_id,
+                                                                            crc,
+                                                                            ..
+                                                                        } = im;
+                                                                        cb_t.on_message(crc, from_id, to, msg);
+
+                                                                    }
+                                                                    
                                                                     Self::update_session(db_tt.clone(),did,None,None,Some(crc),None,event_time);
                                                                     Self::set_contacts_have_time(db_tt.clone(), did,event_time);
                                                                     Self::save_to_tree(
                                                                         db_tt.clone(),
                                                                         crc,
                                                                         &table,
-                                                                        data.to_vec(),
+                                                                        data,
                                                                     );
+
                                                                 }
                                                                 Err(e)=>{
                                                                     tracing::warn!("get crc record failed:{e:?}");
@@ -1253,7 +1272,6 @@ impl Client {
                                                 &table,
                                                 data.clone(),
                                             );
-                                            let cb = &*cb;
                                             cb.on_message(crc, from_id, to, msg_data);
                                             eprintln!("on message>>>>>> {from_id}  to {to}");
                                             let feed = luffa_rpc_types::Message::Feedback {
@@ -1272,7 +1290,7 @@ impl Client {
                                             {
                                                 error!("pub reach to all relays>> {e:?}");
                                             }
-                                            tracing::warn!("will feedback");
+                                            tracing::debug!("will feedback");
                                             match msg {
                                                 Message::ContactsExchange { exchange } => {
                                                     match exchange {
@@ -1502,7 +1520,7 @@ impl Client {
                                         }
                                     }
                                     None => {
-                                        warn!("Gossipsub> peer_id: {from:?} nonce:{:?}", nonce);
+                                        // warn!("Gossipsub> peer_id: {from:?} nonce:{:?}", nonce);
                                         if let Some(key) =
                                             Self::get_offer_by_offer_id(db_t.clone(), from_id)
                                         {
@@ -1530,7 +1548,6 @@ impl Client {
                                                                 digest.write(&peer.to_bytes());
                                                                 let from_id = digest.sum64();
                                                                 let data = serde_cbor::to_vec(&msg).unwrap();
-                                                                let cb = &*cb;
                                                                 cb.on_message(crc, from_id, to, data);
 
                                                                 let msg = luffa_rpc_types::Message::Chat { content: ChatContent::Feedback { crc,status: luffa_rpc_types::FeedbackStatus::Reach } };
@@ -1675,7 +1692,7 @@ impl Client {
                 break;
             }
             let msg = serde_cbor::from_slice::<Message>(&msg_data).unwrap();
-            let is_exchane = msg.is_contacts_exchange();
+            // let is_exchane = msg.is_contacts_exchange();
             
             let evt = if msg.need_encrypt() {
                 tracing::info!("----------encrypt------{}",to);
@@ -1738,6 +1755,9 @@ impl Client {
                             channel.send(Err(anyhow::anyhow!("publish failed:{:?}",e))).unwrap();
                             continue;
                         }
+                    }
+                    else{
+                        tracing::warn!("is to me---->");
                     }
                     if to > 0 {
                         let msg = serde_cbor::from_slice::<Message>(&msg_data).unwrap();
