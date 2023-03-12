@@ -20,7 +20,6 @@ use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{autonat, dcutr};
 use luffa_bitswap::{Bitswap, Block, Config as BitswapConfig, Store};
-use tracing::{info, warn};
 
 mod event;
 mod peer_manager;
@@ -38,7 +37,7 @@ pub const AGENT_VERSION: &str = concat!("/", env!("CARGO_PKG_VERSION"));
 pub(crate) struct NodeBehaviour {
     ping: Ping,
     pub(crate) keep : libp2p::swarm::keep_alive::Behaviour, 
-    identify: identify::Behaviour,
+    pub(crate) identify: identify::Behaviour,
     pub(crate) bitswap: Toggle<Bitswap<BitswapStore>>,
     pub(crate) kad: Toggle<Kademlia<MemoryStore>>,
     mdns: Toggle<Mdns>,

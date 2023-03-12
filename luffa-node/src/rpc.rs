@@ -15,7 +15,6 @@ use libp2p::kad::record::Key;
 use libp2p::kad::{Quorum, Record};
 use libp2p::Multiaddr;
 use libp2p::PeerId;
-use libp2p::request_response::RequestId;
 use luffa_bitswap::Block;
 
 use luffa_rpc_types::{

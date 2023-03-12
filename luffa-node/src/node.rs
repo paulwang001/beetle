@@ -36,14 +36,12 @@ use luffa_metrics::{core::MRecorder, inc, libp2p_metrics, p2p::P2PMetrics};
 use luffa_rpc_types::p2p::ChatResponse;
 use luffa_rpc_types::{Message, ContactsTypes};
 use multihash::MultihashDigest;
-use petgraph::data::DataMap;
 use petgraph::prelude::*;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot::{self, Sender as OneShotSender};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, trace, warn};
 
-use crate::behaviour::chat::Response;
 use crate::behaviour::{Event, NodeBehaviour};
 use crate::config::Config;
 use crate::keys::{Keychain, Storage};
@@ -137,6 +135,7 @@ pub struct Node<KeyStorage: Storage> {
     listen_addrs: Vec<Multiaddr>,
     store:Arc<luffa_store::Store>,
     cache:DiGraph<u64,(u64,u64)>,
+    agent:Option<String>,
 }
 
 impl<T: Storage> fmt::Debug for Node<T> {
@@ -184,7 +183,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         } = config;
       
         let keypair = load_identity(&mut keychain).await?;
-        let mut swarm = build_swarm(&libp2p_config, &keypair,db.clone(),agent).await?;
+        let mut swarm = build_swarm(&libp2p_config, &keypair,db.clone(),agent.clone()).await?;
         let mut listen_addrs = vec![];
         for addr in &libp2p_config.listening_multiaddrs {
             Swarm::listen_on(&mut swarm, addr.clone())?;
@@ -210,6 +209,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             listen_addrs,
             store:db,
             cache,
+            agent,
         },network_sender_in))
     }
 
@@ -846,82 +846,91 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     message,
                 } = e
                 {
-                    match &message {
-                        GossipsubMessage { source, data, sequence_number, topic }=>{
-                            let event =  luffa_rpc_types::Event::decode(data).unwrap();
-                            let luffa_rpc_types::Event {
-                                crc,
-                                from_id,
-                                to,
-                                msg,
-                                nonce,
-                                ..
-                            } = event;
-                            if nonce.is_none() {
-                                if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), None, nonce) {
-                                    match msg {
-                                        Message::ContactsSync { did,mut contacts }=>{
-                                            let p_idx = self.get_node_index(from_id);
-                                            let mut ls_remove = vec![];
-                                            for ctt in contacts.iter_mut() {
-                                                if ctt.r#type == ContactsTypes::Group {
-                                                    let ls_crc = self.load_cache_crc(ctt.did,Some(ctt.have_time));
-                                                    let ls_crc = ls_crc.into_iter().map(|(x,_f)|x).collect::<Vec<_>>();
-                                                    ctt.wants.extend_from_slice(&ls_crc);
-                                                }
-                                                else{
-                                                    let a = self.get_node_index(ctt.did);
-                                                    self.cache.find_edge(a, p_idx);
-                                                    let mut itr = self.cache.edges_connecting(a, p_idx);
-                                                    let mut ls_crc = vec![];
-                                                    while let Some(e_ref) = itr.next() {
-                                                        let (crc,time) = e_ref.weight();
-                                                        if *time > ctt.have_time {
-                                                            ls_crc.push((crc,ctt.did));
+                    if self.agent == Some(format!("Relay")){
+                        match &message {
+                            GossipsubMessage { source, data, sequence_number, topic }=>{
+                                let event =  luffa_rpc_types::Event::decode(data).unwrap();
+                                let luffa_rpc_types::Event {
+                                    crc,
+                                    from_id,
+                                    to,
+                                    msg,
+                                    nonce,
+                                    ..
+                                } = event;
+                                if nonce.is_none() {
+                                    if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), None, nonce) {
+                                        match msg {
+                                            Message::ContactsSync { did,mut contacts }=>{
+                                                let p_idx = self.get_node_index(from_id);
+                                                let mut ls_remove = vec![];
+                                                for ctt in contacts.iter_mut() {
+                                                    if ctt.r#type == ContactsTypes::Group {
+                                                        let ls_crc = self.load_cache_crc(ctt.did,Some(ctt.have_time));
+                                                        let ls_crc = ls_crc.into_iter().map(|(x,_f)|x).collect::<Vec<_>>();
+                                                        ctt.wants.extend_from_slice(&ls_crc);
+                                                    }
+                                                    else{
+                                                        let a = self.get_node_index(ctt.did);
+                                                        self.cache.find_edge(a, p_idx);
+                                                        let mut itr = self.cache.edges_connecting(a, p_idx);
+                                                        let mut ls_crc = vec![];
+                                                        while let Some(e_ref) = itr.next() {
+                                                            let (crc,time) = e_ref.weight();
+                                                            if *time > ctt.have_time {
+                                                                ls_crc.push((crc,ctt.did));
+                                                            }
+                                                            else{
+                                                                ls_remove.push(e_ref.id());  
+                                                            } 
                                                         }
-                                                        else{
-                                                            ls_remove.push(e_ref.id());  
-                                                        } 
+                                                        
+                                                        let ls_crc = ls_crc.into_iter().map(|(x,_)|*x).collect::<Vec<_>>();
+                                                        ctt.wants.extend_from_slice(&ls_crc);
                                                     }
-                                                    
-                                                    let ls_crc = ls_crc.into_iter().map(|(x,_)|*x).collect::<Vec<_>>();
-                                                    ctt.wants.extend_from_slice(&ls_crc);
+
                                                 }
+                                                for rm in ls_remove {
+                                                    self.cache.remove_edge(rm);
+                                                }
+                                                contacts.retain(|c| !c.wants.is_empty());
+                                                if !contacts.is_empty() {
 
-                                            }
-                                            for rm in ls_remove {
-                                                self.cache.remove_edge(rm);
-                                            }
-                                            contacts.retain(|c| !c.wants.is_empty());
-                                            if !contacts.is_empty() {
-
-                                                let sync_msg = Message::ContactsSync { did, contacts };
-                                                let local_id = self.local_peer_id();
-                                                let mut digest = crc64fast::Digest::new();
-                                                digest.write(&local_id.to_bytes());
-                                                let my_id = digest.sum64();
-                                                if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
-                                                    let topic = TopicHash::from_raw(format!(
-                                                        "luffa_chat",
-                                                    ));
-                                                    let e = luffa_rpc_types::Event::new(from_id, &sync_msg, None, my_id);
-                                                    if let Err(e) = go.publish(topic, e.encode().unwrap()) {
-                                                        tracing::warn!("{e:?}");
+                                                    let sync_msg = Message::ContactsSync { did, contacts };
+                                                    let local_id = self.local_peer_id();
+                                                    let mut digest = crc64fast::Digest::new();
+                                                    digest.write(&local_id.to_bytes());
+                                                    let my_id = digest.sum64();
+                                                    if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
+                                                        let topic = TopicHash::from_raw(format!(
+                                                            "luffa_chat",
+                                                        ));
+                                                        let e = luffa_rpc_types::Event::new(from_id, &sync_msg, None, my_id);
+                                                        if let Err(e) = go.publish(topic, e.encode().unwrap()) {
+                                                            tracing::warn!("{e:?}");
+                                                        }
                                                     }
                                                 }
+                                                
                                             }
-                                            
-                                        }
-                                        _=>{
+                                            _=>{
+                                            }
                                         }
                                     }
+                                    
+                                    
                                 }
-                                
-                                
-                            }
-                        },
-                        _=>{
+                                else{
+                                    self.save_cache_crc(crc, from_id, to);
+                                    // put record(crc,data)
+                                    if let Err(e) = self.put_to_dht(crc, data.clone()) {
+                                        tracing::error!("{e:?}");
+                                    }
+                                }
+                            },
+                            _=>{
 
+                            }
                         }
                     }
                     self.emit_network_event(NetworkEvent::Gossipsub(GossipsubEvent::Message {
@@ -1031,7 +1040,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 else{
                                     self.save_cache_crc(crc, from_id, to);
                                     // put record(crc,data)
-                                    self.put_to_dht(crc, request.data().to_vec());
+                                    if let Err(e) = self.put_to_dht(crc, request.data().to_vec()) {
+                                        tracing::error!("{e:?}");
+                                    }
                                     Message::Feedback { crc, status: luffa_rpc_types::FeedbackStatus::Fetch }
                                 }; 
                                 let evnt = luffa_rpc_types::Event::new(from_id,&msg,None,0);

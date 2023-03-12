@@ -204,13 +204,13 @@ async fn main() -> Result<()> {
                             } = im;
                             // TODO check did status
                             if nonce.is_none() {
-                                tracing::warn!("------- nonce is None");
+                                tracing::debug!("------- nonce is None");
                                 if let Ok(msg) = luffa_rpc_types::Message::decrypt(
                                     bytes::Bytes::from(msg),
                                     None,
                                     nonce,
                                 ) {
-                                    tracing::warn!(
+                                    tracing::info!(
                                         "msg>>>>[{event_time}] from: {from_id} to:{to} msg:{msg:?}"
                                     );
                                     match msg {
@@ -368,10 +368,9 @@ async fn main() -> Result<()> {
                                                     queue.insert(crc, key.clone());
                                                     tokio::spawn(async move {
                                                         let expires = Some(event_time + 24 * 60 * 60);
-    
                                                         if let Err(e) = client_t
-                                                            .put_record(
-                                                                &key,
+                                                            .put_crc_record(
+                                                                crc,
                                                                 bytes::Bytes::from(data),
                                                                 None,
                                                                 expires,
@@ -411,8 +410,8 @@ async fn main() -> Result<()> {
                                                     let expires = Some(event_time + 24 * 60 * 60);
 
                                                     if let Err(e) = client_t
-                                                        .put_record(
-                                                            &key,
+                                                        .put_crc_record(
+                                                            crc,
                                                             bytes::Bytes::from(data),
                                                             None,
                                                             expires,

@@ -137,6 +137,26 @@ impl P2pClient {
         self.client.put_record(req).await?;
         Ok(())
     }
+
+
+    #[tracing::instrument(skip(self))]
+    pub async fn put_crc_record(
+        &self,
+        key: u64,
+        data: Bytes,
+        publisher: Option<PeerId>,
+        expires: Option<u64>,
+    ) -> Result<()> {
+        let key = Key(key.to_be_bytes().to_vec().into());
+        let req = PutRecordRequest {
+            key,
+            data,
+            publisher,
+            expires,
+        };
+        self.client.put_record(req).await?;
+        Ok(())
+    }
     #[tracing::instrument(skip(self, data))]
     pub async fn push_data(&self, data: Bytes) -> Result<PushBitswapResponse> {
         let req = PushBitswapRequest { data };
@@ -144,6 +164,15 @@ impl P2pClient {
         Ok(rsp)
     }
 
+
+    #[tracing::instrument(skip(self))]
+    pub async fn get_crc_record(&self, key: u64) -> Result<GetRecordResponse> {
+        let key = Key(key.to_be_bytes().to_vec().into());
+        self.client
+            .get_record(GetRecordRequest { key })
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))
+    }
     #[tracing::instrument(skip(self))]
     pub async fn get_record(&self, key: &Cid) -> Result<GetRecordResponse> {
         let key = Key(key.hash().to_bytes().into());

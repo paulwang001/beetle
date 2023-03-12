@@ -320,8 +320,8 @@ impl Client {
                                             to,
                                             secret_key.clone(),
                                             public_key,
+                                            contacts_type,
                                             sign,
-                                            contacts_type as u8,
                                             comment,
                                         );
                                         // let from_id = self.get_local_id().unwrap_or_default();
@@ -354,18 +354,20 @@ impl Client {
         to: u64,
         secret_key: Vec<u8>,
         public_key: Vec<u8>,
+        c_type:ContactsTypes,
         sign: Vec<u8>,
-        c_type: u8,
         comment: Option<String>,
     ) {
         let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-        let s_key = format!("S-KEY-{c_type}-{}", to);
-        let p_key = format!("P-KEY-{c_type}-{}", to);
-        let sig_key = format!("SIG-{c_type}-{}", to);
-        let tag_key = format!("TAG-{c_type}-{}", to);
+        let s_key = format!("SKEY-{}", to);
+        let p_key = format!("PKEY-{}", to);
+        let sig_key = format!("SIG-{}", to);
+        let tag_key = format!("TAG-{}", to);
+        let type_key = format!("TYPE-{}", to);
         tree.insert(s_key.as_bytes(), secret_key).unwrap();
         tree.insert(p_key.as_bytes(), public_key).unwrap();
         tree.insert(sig_key.as_bytes(), sign).unwrap();
+        tree.insert(type_key.as_bytes(), vec![c_type as u8]).unwrap();
         tree.insert(tag_key.as_bytes(), comment.unwrap_or(format!("{to}")).as_bytes())
             .unwrap();
         tree.flush().unwrap();
@@ -697,21 +699,28 @@ impl Client {
 
     fn get_contacts_tag(db:Arc<Db>,did:u64)->Option<(String,u8)> {
         let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-        let tag_key_private = format!("TAG-0-{}", did);
-        let tag_key_group = format!("TAG-1-{}", did);
-        match tree.get(&tag_key_group) {
+        let tag_key = format!("TAG-{}", did);
+        match tree.get(&tag_key) {
             Ok(Some(v))=>{
-                Some((String::from_utf8(v.to_vec()).unwrap(),1))
+                let tp = Self::get_contacts_type(db, did).unwrap_or(ContactsTypes::Private);
+                Some((String::from_utf8(v.to_vec()).unwrap(),tp as u8))
             }
             _=>{
-                match tree.get(&tag_key_private) {
-                    Ok(Some(v))=>{
-                        Some((String::from_utf8(v.to_vec()).unwrap(),0))
-                    }
-                    _=>{
-                        None
-                    }
-                }
+                None
+            }
+        }
+    }
+    fn get_contacts_type(db:Arc<Db>,did:u64)->Option<ContactsTypes> {
+        let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
+        let type_key = format!("TYPE-{}", did);
+        match tree.get(&type_key) {
+            Ok(Some(v))=>{
+                let tp = v[0];
+                let tp = if tp == 0 {ContactsTypes::Private} else {ContactsTypes::Group};
+                Some(tp)
+            }
+            _=>{
+                None
             }
         }
     }
@@ -772,7 +781,7 @@ impl Client {
 
     pub fn contacts_list(&self, c_type: u8) -> Vec<ContactsView> {
         let tree = self.db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-        let tag_prefix = format!("TAG-{c_type}");
+        let tag_prefix = format!("TAG-");
         let itr = tree.scan_prefix(tag_prefix);
         itr.map(|item| {
             let (k, v) = item.unwrap();
@@ -780,8 +789,19 @@ impl Client {
             let key = String::from_utf8(k.to_vec()).unwrap();
             let to = key.split('-').last().unwrap();
             let to: u64 = to.parse().unwrap();
-
+            
             ContactsView { did: to, tag }
+        })
+        .filter(|x| {
+            if let Some(t) = Self::get_contacts_type(self.db.clone(), x.did) {
+                c_type == t as u8    
+            }
+            else if c_type == 0 {
+                true
+            }
+            else{
+                false
+            }
         })
         .collect::<Vec<_>>()
     }
@@ -1027,12 +1047,12 @@ impl Client {
                         let (k, _v) = item.unwrap();
                         // let tag = String::from_utf8(v.to_vec()).unwrap();
                         let key = String::from_utf8(k.to_vec()).unwrap();
-                        let mut parts = key.split('-');
+                        let parts = key.split('-');
 
-                        let c_type = parts.nth(1).unwrap();
                         let to = parts.last().unwrap();
                         let to: u64 = to.parse().unwrap();
-                        let c_type: u8 = c_type.parse().unwrap();
+                        let c_type = Self::get_contacts_type(db_t.clone(), to).unwrap_or(ContactsTypes::Private);
+                        let c_type: u8 = c_type as u8;
                         let c_type = if c_type == 0 {ContactsTypes::Private}  else { ContactsTypes::Group};
                         let have_time = Self::get_contacts_have_time(db_t.clone(), to);
                         Contacts {
@@ -1046,7 +1066,7 @@ impl Client {
                     let mut itr = contacts.iter();
                     while let Some(ctt) = itr.next() {
                         if ctt.r#type == ContactsTypes::Private {
-                            let p_key = format!("P-KEY-0-{}", ctt.did);
+                            let p_key = format!("PKEY-{}", ctt.did);
                             if let Ok(Some(k)) = tree.get(&p_key) {
                                 let pk = PublicKey::from_protobuf_encoding(&k).unwrap();
                                 let did_peer = PeerId::from_public_key(&pk);
@@ -1127,6 +1147,9 @@ impl Client {
                             debug!("Gossipsub> peer_id: {from:?} msg:{}", msg.len());
                             // TODO check did status
                             if nonce.is_none() {
+                                if to != my_id {
+                                    continue;
+                                }
                                 tracing::info!("nonce is None");
                                 if let Ok(msg) = luffa_rpc_types::Message::decrypt(
                                     bytes::Bytes::from(msg),
@@ -1183,7 +1206,7 @@ impl Client {
                                     // todo!()
                                 }
                             } else {
-                                let did = if to == my_id {from_id} else {to};
+                                let did = if to == my_id { from_id } else { to };
                                 match Self::get_aes_key_from_contacts(db_t.clone(), did) {
                                     Some(key) => {
                                         eprintln!("ase >>> {}  nonce:{:?}",key.len(),nonce);
@@ -1229,20 +1252,19 @@ impl Client {
                                                         ContactsEvent::Answer { token } => {
                                                             let ContactsToken {
                                                                 public_key,
-                                                                create_at,
                                                                 sign,
                                                                 secret_key,
                                                                 contacts_type,
                                                                 comment,
+                                                                ..
                                                             } = token;
-                                                            let c_type = contacts_type as u8;
                                                             Self::save_contacts(
                                                                 db_t.clone(),
                                                                 did,
                                                                 secret_key,
                                                                 public_key.clone(),
+                                                                contacts_type,
                                                                 sign,
-                                                                c_type,
                                                                 comment.clone(),
                                                             );
                                                             let msg_type = match contacts_type {
@@ -1289,7 +1311,7 @@ impl Client {
                                                             wr.commit().unwrap();
                                                             let msg = luffa_rpc_types::Message::Chat { content: ChatContent::Feedback { crc,status: luffa_rpc_types::FeedbackStatus::Reach } };
                                                             let event = luffa_rpc_types::Event::new(
-                                                                from_id,
+                                                                did,
                                                                 &msg,
                                                                 Some(key),
                                                                 my_id,
@@ -1336,7 +1358,7 @@ impl Client {
                                                         ChatContent::Send { data } => {
                                                             let feed = luffa_rpc_types::Message::Chat { content: ChatContent::Feedback { crc,status: luffa_rpc_types::FeedbackStatus::Reach } };
                                                             let event = luffa_rpc_types::Event::new(
-                                                                from_id,
+                                                                did,
                                                                 &feed,
                                                                 Some(key),
                                                                 my_id,
@@ -1507,14 +1529,13 @@ impl Client {
                                                                 }
                                                                 else{
                                                                     tracing::warn!("pub to :{} Ok!",from_id);
-                                                                    let c_type = if contacts_type == &ContactsTypes::Private {0}  else {1};
                                                                     Self::save_contacts(
                                                                         db_t.clone(),
                                                                         from_id,
                                                                         key.clone(),
                                                                         public_key.clone(),
+                                                                        *contacts_type,
                                                                         sign.clone(),
-                                                                        c_type,
                                                                         comment.clone(),
                                                                     );
                                                                     Self::update_session(db_t.clone(), from_id, comment.clone(), None, None, None, event_time);
@@ -1630,36 +1651,31 @@ impl Client {
                         TopicHash::from_raw(format!("{}", TOPIC_CHAT))
                     };
                     let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-                    let tag_key_private = format!("TAG-0-{}", to);
-                    let tag_key_me = format!("TAG-0-{}", my_id);
-                    let tag_key_group = format!("TAG-1-{}", to);
+                    let tag_key = format!("TAG-{}", to);
                     let (tag,msg_type) =
-                    match tree.get(&tag_key_group.as_bytes()) {
+                    match tree.get(&tag_key.as_bytes()) {
                         Ok(Some(v))=>{
-                            (String::from_utf8(v.to_vec()).unwrap(),format!("content_group"))
-                        }
-                        _=>{
-                            match tree.get(&tag_key_private.as_bytes()) {
-                                Ok(Some(v))=>{
-                                    (String::from_utf8(v.to_vec()).unwrap(),format!("content_private"))
-                                }
-                                _=>{
-                                    if to > 0 && !is_exchane {
-                                        tracing::warn!("unkown {},not in my contacts",to);
-                                        continue;
-                                    }
-                                    else{
-                                        match tree.get(&tag_key_me.as_bytes()) {
-                                            Ok(Some(v))=>{
-                                                (String::from_utf8(v.to_vec()).unwrap(),format!("exchange"))
-                                            }
-                                            _=>{
-                                                (format!("{my_id}"),format!("exchange"))
-                                            }
+                            let tp =
+                            match Self::get_contacts_type(db.clone(),to) {
+                                Some(tp)=>{
+                                    match tp {
+                                        ContactsTypes::Private=>{
+                                            format!("content_private")
+                                        }
+                                        _=>{
+                                            format!("content_group")
                                         }
                                     }
                                 }
-                            }
+                                None=>{
+                                    format!("content_private")
+                                }
+                            };
+                            (String::from_utf8(v.to_vec()).unwrap(),tp)
+                        }
+                        _=>{
+                            tracing::warn!("tag not found :{}",to);
+                            continue;
                         }
                     };
                     if to != my_id {
@@ -1687,10 +1703,8 @@ impl Client {
                         if let Err(e) = channel.send(Ok(crc)) {
                             tracing::warn!("channel send failed");
                         }
-                        let table = if &msg_type == "content_group" {
+                        let table =  {
                             format!("message_{to}")
-                        } else {
-                            format!("message_{from_id}")
                         };
                         tracing::info!("send......");
                         Self::save_to_tree(
@@ -1799,17 +1813,11 @@ impl Client {
 
     fn get_aes_key_from_contacts(db: Arc<Db>, did: u64) -> Option<Vec<u8>> {
         let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-        let s_key = format!("S-KEY-0-{}", did);
+        let s_key = format!("SKEY-{}", did);
         match tree.get(&s_key) {
             Ok(Some(d)) => Some(d.to_vec()),
             _ => {
-                let s_key = format!("S-KEY-1-{}", did);
-                match tree.get(&s_key) {
-                    Ok(Some(d)) => Some(d.to_vec()),
-                    _ => {
-                      None       
-                    },
-                }       
+                None   
             },
         }
     }
