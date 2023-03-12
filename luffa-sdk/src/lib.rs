@@ -1018,6 +1018,20 @@ impl Client {
         tokio::spawn(async move {
             let mut has_err = false;
             loop {
+                let peers =match client_t.get_peers().await {
+                    Ok(peers)=>peers,
+                    Err(e)=>{
+                        tracing::warn!("{e:?}"); 
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        continue;   
+                    }
+                };
+                if peers.len() < 3 {
+                    
+                    tracing::warn!("waiting....{}",3 - peers.len()); 
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    continue;   
+                }
                 let topics = vec![TOPIC_STATUS,TOPIC_CHAT];
                 for t in topics.into_iter() {
                     if let Err(e) = client_t.gossipsub_subscribe(TopicHash::from_raw(t)).await {
@@ -1574,50 +1588,72 @@ impl Client {
                         // TODO: a group member or my friend offline?
                     }
                     NetworkEvent::PeerConnected(peer_id) => {
-                        tracing::debug!("---------PeerConnected-----------{:?}", peer_id);
-                        if let Err(e) = client_t.gossipsub_add_explicit_peer(peer_id).await {
-                            tracing::warn!("gossipsub_add_explicit_peer failed");
-                        }
-                        let mut digest = crc64fast::Digest::new();
-                        digest.write(&peer_id.to_bytes());
-                        let u_id = digest.sum64();
-                        let msg = luffa_rpc_types::Message::StatusSync {
-                            to: u_id,
-                            from_id: my_id,
-                            status: AppStatus::Connected,
+                        tracing::warn!("---------PeerConnected-----------{:?}", peer_id);
+                        
+                        let peers =match client_t.get_peers().await {
+                            Ok(peers)=>peers,
+                            Err(e)=>{
+                                tracing::warn!("{e:?}"); 
+                                HashMap::new()
+                            }
                         };
-                        let event = luffa_rpc_types::Event::new(0, &msg, None, u_id);
-                        let event = event.encode().unwrap();
-                        if let Err(e) = client_t
-                            .gossipsub_publish(
-                                TopicHash::from_raw(TOPIC_STATUS),
-                                bytes::Bytes::from(event),
-                            )
-                            .await
-                        {
-                            error!("{e:?}");
+                        if peers.len() > 2 {
+                            
+                            if let Err(e) = client_t.gossipsub_add_explicit_peer(peer_id).await {
+                                tracing::warn!("gossipsub_add_explicit_peer failed");
+                            }
+    
+                            let mut digest = crc64fast::Digest::new();
+                            digest.write(&peer_id.to_bytes());
+                            let u_id = digest.sum64();
+                            let msg = luffa_rpc_types::Message::StatusSync {
+                                to: u_id,
+                                from_id: my_id,
+                                status: AppStatus::Connected,
+                            };
+                            let event = luffa_rpc_types::Event::new(0, &msg, None, u_id);
+                            let event = event.encode().unwrap();
+                            if let Err(e) = client_t
+                                .gossipsub_publish(
+                                    TopicHash::from_raw(TOPIC_STATUS),
+                                    bytes::Bytes::from(event),
+                                )
+                                .await
+                            {
+                                error!("{e:?}");
+                            }
                         }
                     }
                     NetworkEvent::PeerDisconnected(peer_id) => {
                         tracing::debug!("---------PeerDisconnected-----------{:?}", peer_id);
-                        let mut digest = crc64fast::Digest::new();
-                        digest.write(&peer_id.to_bytes());
-                        let u_id = digest.sum64();
-                        let msg = luffa_rpc_types::Message::StatusSync {
-                            to: u_id,
-                            from_id: my_id,
-                            status: AppStatus::Disconnected,
+                        let peers =match client_t.get_peers().await {
+                            Ok(peers)=>peers,
+                            Err(e)=>{
+                                tracing::warn!("{e:?}"); 
+                                HashMap::new()
+                            }
                         };
-                        let event = luffa_rpc_types::Event::new(0, &msg, None, u_id);
-                        let event = event.encode().unwrap();
-                        if let Err(e) = client_t
-                            .gossipsub_publish(
-                                TopicHash::from_raw(TOPIC_STATUS),
-                                bytes::Bytes::from(event),
-                            )
-                            .await
-                        {
-                            error!("{e:?}");
+                        if peers.len() > 1 {
+
+                            let mut digest = crc64fast::Digest::new();
+                            digest.write(&peer_id.to_bytes());
+                            let u_id = digest.sum64();
+                            let msg = luffa_rpc_types::Message::StatusSync {
+                                to: u_id,
+                                from_id: my_id,
+                                status: AppStatus::Disconnected,
+                            };
+                            let event = luffa_rpc_types::Event::new(0, &msg, None, u_id);
+                            let event = event.encode().unwrap();
+                            if let Err(e) = client_t
+                                .gossipsub_publish(
+                                    TopicHash::from_raw(TOPIC_STATUS),
+                                    bytes::Bytes::from(event),
+                                )
+                                .await
+                            {
+                                error!("{e:?}");
+                            }
                         }
                     }
                     NetworkEvent::CancelLookupQuery(peer_id) => {
@@ -1635,6 +1671,7 @@ impl Client {
             }
             let msg = serde_cbor::from_slice::<Message>(&msg_data).unwrap();
             let is_exchane = msg.is_contacts_exchange();
+            
             let evt = if msg.need_encrypt() {
                 tracing::info!("----------encrypt------{}",to);
                 match Self::get_aes_key_from_contacts(db.clone(), to) {
@@ -1704,10 +1741,9 @@ impl Client {
                             event_time,
                             crc,
                             from_id,
-                            nonce,
                             ..
                         } = e;
-                        assert!(nonce.is_some(),"nonce is none!!");
+                        // assert!(nonce.is_some(),"nonce is none!!");
                         if let Err(e) = channel.send(Ok(crc)) {
                             tracing::warn!("channel send failed");
                         }
