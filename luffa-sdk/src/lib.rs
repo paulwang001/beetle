@@ -1682,8 +1682,8 @@ impl Client {
                             (String::from_utf8(v.to_vec()).unwrap(),tp)
                         }
                         _=>{
-                            tracing::warn!("tag not found :{}",to);
-                            continue;
+                            
+                            (String::new(),format!("exchange"))
                         }
                     };
                     if to != my_id {
