@@ -40,7 +40,7 @@ open class RustBuffer : Structure() {
 
     companion object {
         internal fun alloc(size: Int = 0) = rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_d261_rustbuffer_alloc(size, status).also {
+            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_7e1b_rustbuffer_alloc(size, status).also {
                 if(it.data == null) {
                    throw RuntimeException("RustBuffer.alloc() returned null data pointer (size=${size})")
                }
@@ -48,7 +48,7 @@ open class RustBuffer : Structure() {
         }
 
         internal fun free(buf: RustBuffer.ByValue) = rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_d261_rustbuffer_free(buf, status)
+            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_7e1b_rustbuffer_free(buf, status)
         }
     }
 
@@ -257,27 +257,27 @@ internal interface _UniFFILib : Library {
         }
     }
 
-    fun LuffaRpcTypes_d261_message_from(`msg`: RustBuffer.ByValue,
+    fun LuffaRpcTypes_7e1b_message_from(`msg`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaRpcTypes_d261_message_to(`msg`: RustBuffer.ByValue,
+    fun LuffaRpcTypes_7e1b_message_to(`msg`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_d261_rustbuffer_alloc(`size`: Int,
+    fun ffi_LuffaRpcTypes_7e1b_rustbuffer_alloc(`size`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_d261_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,
+    fun ffi_LuffaRpcTypes_7e1b_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_d261_rustbuffer_free(`buf`: RustBuffer.ByValue,
+    fun ffi_LuffaRpcTypes_7e1b_rustbuffer_free(`buf`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): Unit
 
-    fun ffi_LuffaRpcTypes_d261_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,
+    fun ffi_LuffaRpcTypes_7e1b_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
@@ -398,7 +398,9 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
 
 data class Contacts (
     var `did`: ULong, 
-    var `type`: ContactsTypes
+    var `type`: ContactsTypes, 
+    var `haveTime`: ULong, 
+    var `wants`: List<ULong>
 ) {
     
 }
@@ -408,17 +410,23 @@ public object FfiConverterTypeContacts: FfiConverterRustBuffer<Contacts> {
         return Contacts(
             FfiConverterULong.read(buf),
             FfiConverterTypeContactsTypes.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterSequenceULong.read(buf),
         )
     }
 
     override fun allocationSize(value: Contacts) = (
             FfiConverterULong.allocationSize(value.`did`) +
-            FfiConverterTypeContactsTypes.allocationSize(value.`type`)
+            FfiConverterTypeContactsTypes.allocationSize(value.`type`) +
+            FfiConverterULong.allocationSize(value.`haveTime`) +
+            FfiConverterSequenceULong.allocationSize(value.`wants`)
     )
 
     override fun write(value: Contacts, buf: ByteBuffer) {
             FfiConverterULong.write(value.`did`, buf)
             FfiConverterTypeContactsTypes.write(value.`type`, buf)
+            FfiConverterULong.write(value.`haveTime`, buf)
+            FfiConverterSequenceULong.write(value.`wants`, buf)
     }
 }
 
@@ -1377,6 +1385,31 @@ public object FfiConverterSequenceUByte: FfiConverterRustBuffer<List<UByte>> {
 
 
 
+public object FfiConverterSequenceULong: FfiConverterRustBuffer<List<ULong>> {
+    override fun read(buf: ByteBuffer): List<ULong> {
+        val len = buf.getInt()
+        return List<ULong>(len) {
+            FfiConverterULong.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<ULong>): Int {
+        val sizeForLength = 4
+        val sizeForItems = value.map { FfiConverterULong.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<ULong>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.forEach {
+            FfiConverterULong.write(it, buf)
+        }
+    }
+}
+
+
+
+
 public object FfiConverterSequenceTypeContacts: FfiConverterRustBuffer<List<Contacts>> {
     override fun read(buf: ByteBuffer): List<Contacts> {
         val len = buf.getInt()
@@ -1402,7 +1435,7 @@ public object FfiConverterSequenceTypeContacts: FfiConverterRustBuffer<List<Cont
 fun `messageFrom`(`msg`: List<UByte>): Message? {
     return FfiConverterOptionalTypeMessage.lift(
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaRpcTypes_d261_message_from(FfiConverterSequenceUByte.lower(`msg`), _status)
+    _UniFFILib.INSTANCE.LuffaRpcTypes_7e1b_message_from(FfiConverterSequenceUByte.lower(`msg`), _status)
 })
 }
 
@@ -1411,7 +1444,7 @@ fun `messageFrom`(`msg`: List<UByte>): Message? {
 fun `messageTo`(`msg`: Message): List<UByte>? {
     return FfiConverterOptionalSequenceUByte.lift(
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaRpcTypes_d261_message_to(FfiConverterTypeMessage.lower(`msg`), _status)
+    _UniFFILib.INSTANCE.LuffaRpcTypes_7e1b_message_to(FfiConverterTypeMessage.lower(`msg`), _status)
 })
 }
 

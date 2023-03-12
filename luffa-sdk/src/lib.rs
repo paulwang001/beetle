@@ -421,7 +421,15 @@ impl Client {
                 let tx = tx.as_ref().unwrap();
                 let (req,res) = tokio::sync::oneshot::channel();
                 tx.send((to, msg, from_id,req)).await.unwrap();
-                res.await.unwrap()
+                match res.await {
+                    Ok(r)=>{
+                        r
+                    }
+                    Err(e)=>{
+                        tracing::warn!("{e:?}");
+                        Err(anyhow::anyhow!("{e:?}"))
+                    }
+                }
             }).await
             {
                 Ok(Ok(crc))=>{
@@ -1066,14 +1074,14 @@ impl Client {
                     let mut itr = contacts.iter();
                     while let Some(ctt) = itr.next() {
                         if ctt.r#type == ContactsTypes::Private {
-                            let p_key = format!("PKEY-{}", ctt.did);
-                            if let Ok(Some(k)) = tree.get(&p_key) {
-                                let pk = PublicKey::from_protobuf_encoding(&k).unwrap();
-                                let did_peer = PeerId::from_public_key(&pk);
-                                if let Err(e) = client_t.gossipsub_add_explicit_peer(did_peer).await {
-                                    tracing::warn!("{e:?}");
-                                }
-                            }
+                            // let p_key = format!("PKEY-{}", ctt.did);
+                            // if let Ok(Some(k)) = tree.get(&p_key) {
+                            //     let pk = PublicKey::from_protobuf_encoding(&k).unwrap();
+                            //     let did_peer = PeerId::from_public_key(&pk);
+                            //     if let Err(e) = client_t.gossipsub_add_explicit_peer(did_peer).await {
+                            //         tracing::warn!("{e:?}");
+                            //     }
+                            // }
                             continue;
                         }
                         // let topic = TopicHash::from_raw(format!("{}_{}", TOPIC_CHAT, ctt.did));
