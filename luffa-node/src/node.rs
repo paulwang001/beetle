@@ -1560,6 +1560,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     rpc::GossipsubMessage::Publish(response_channel, topic_hash, bytes) => {
                         let res = gossipsub
                             .publish(topic_hash, bytes.to_vec());
+                        // tracing::warn!("rpc >> publish. {}",res.is_ok());
                         response_channel
                             .send(res)
                             .map_err(|_| anyhow!("sender dropped"))?;

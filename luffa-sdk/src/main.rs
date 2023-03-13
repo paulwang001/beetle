@@ -86,8 +86,8 @@ fn main() -> Result<()> {
 
                 let msg = message_to(msg).unwrap();
                 match client.send_msg(to_id, msg) {
-                    Ok(_) => {
-                        tracing::info!("send seccess");
+                    Ok(crc) => {
+                        tracing::info!("send seccess {crc}");
                     }
                     Err(e) => {
                         error!("{e:?}");
