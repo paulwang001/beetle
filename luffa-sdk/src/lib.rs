@@ -1218,7 +1218,7 @@ impl Client {
                                                                     // TODO remove crc from wants and update want_time
                                                                     tracing::warn!("get record: {crc}");
                                                                     let data = data.to_vec();
-                                                                    if let Ok(im) = Event::decode(&data) {
+                                                                    if let Ok(im) = Event::decode_uncheck(&data) {
                                                                         let Event {
                                                                             msg,
                                                                             to,

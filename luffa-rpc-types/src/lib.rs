@@ -127,6 +127,10 @@ impl Event {
         evt.validate()?;
         Ok(evt)
     }
+    pub fn decode_uncheck(data: &Vec<u8>) -> Result<Self> {
+        let evt: Self = serde_cbor::from_slice(data).map_err(|e| anyhow::anyhow!("{e:?}"))?;
+        Ok(evt)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
