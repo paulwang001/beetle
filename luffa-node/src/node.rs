@@ -849,7 +849,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     if self.agent == Some(format!("Relay")){
                         match &message {
                             GossipsubMessage { source, data, sequence_number, topic }=>{
-                                let event =  luffa_rpc_types::Event::decode(data).unwrap();
+                                let event =  luffa_rpc_types::Event::decode(data)?;
                                 let luffa_rpc_types::Event {
                                     crc,
                                     from_id,
