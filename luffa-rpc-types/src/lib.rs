@@ -354,7 +354,7 @@ impl ContactsToken {
         let create_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_millis() as u64;
 
         let public_key = local_key.public().to_protobuf_encoding();
         let mut buf = vec![];

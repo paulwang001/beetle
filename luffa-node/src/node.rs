@@ -1102,7 +1102,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         let from = self.get_node_index(from_id);
         let to = self.get_node_index(to);
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap();
-        self.cache.add_edge(from, to, (crc,now.as_secs()))
+        self.cache.add_edge(from, to, (crc,now.as_millis() as u64))
     }
     fn put_to_dht(&mut self,crc:u64,data:Vec<u8>) -> anyhow::Result<QueryId>{
         if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
@@ -1118,19 +1118,19 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         let to = self.get_node_index(did);
         let mut cached_crc = vec![];
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap();
-        let now = now.as_secs();
+        let now = now.as_millis() as u64;
         let have_time = have_time.unwrap_or(0);
         let mut remove_edges = vec![];
         if let Some(mut e) = self.cache.first_edge(to, Direction::Incoming) {
             let (crc,time) = self.cache.edge_weight(e).unwrap();
-            if now - *time < 24 * 60 * 60  && *time > have_time {
+            if now - *time < 24 * 60 * 60 * 1000  && *time > have_time {
                 if let Some((a,_b)) = self.cache.edge_endpoints(e) {
                     let from_id = self.cache.node_weight(a).unwrap();
                     cached_crc.push((*crc,*from_id));
                     
                     while let Some(n) = self.cache.next_edge(e, Direction::Incoming) {
                         let (crc,time) = self.cache.edge_weight(n).unwrap();
-                        if now - *time > 24 * 60 * 60 {
+                        if now - *time > 24 * 60 * 60 * 1000 {
                             remove_edges.push(n);
                             continue;
                         }

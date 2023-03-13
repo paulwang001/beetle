@@ -150,6 +150,9 @@ fn main() -> Result<()> {
                             .unwrap();
                     }
                 }
+                RtcAction::Push { audio_id, video_id }=>{
+                    tracing::warn!("{}-----push-----{}",stream_id,audio_id);
+                }
                 _ => {}
             },
             Message::ContactsExchange { exchange } => match exchange {

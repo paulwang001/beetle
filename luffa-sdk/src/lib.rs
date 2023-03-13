@@ -371,11 +371,15 @@ impl Client {
             .unwrap();
         tree.flush().unwrap();
     }
-    fn save_to_tree(db: Arc<Db>, crc: u64, table: &str, data: Vec<u8>) {
+    fn save_to_tree(db: Arc<Db>, crc: u64, table: &str, data: Vec<u8>,event_time:u64) {
         let tree = db.open_tree(&table).unwrap();
+        let tree_time = db.open_tree(&format!("{table}_time")).unwrap();
         
         tree.insert(crc.to_be_bytes(), data).unwrap();
+        tree_time.insert(event_time.to_be_bytes(), crc.to_be_bytes().to_vec()).unwrap();
+
         tree.flush().unwrap();
+        tree_time.flush().unwrap();
     }
     
     fn have_in_tree(db: Arc<Db>, crc: u64, table: &str)-> bool {
@@ -462,13 +466,13 @@ impl Client {
 
     pub fn recent_messages(&self,did:u64,top:u32) ->Vec<u64>{
         let mut msgs = vec![];
-        let table = format!("message_{did}");
+        let table = format!("message_{did}_time");
         let tree = self.db.open_tree(&table).unwrap();
         let mut itr = tree.into_iter();
         while let Some(val) = itr.next_back() {
-            let (k,_) = val.unwrap();
+            let (_k,v) = val.unwrap();
             let mut key = [0u8;8];
-            key.clone_from_slice(&k[..8]);
+            key.clone_from_slice(&v[..8]);
             let crc = u64::from_be_bytes(key);
             msgs.push(crc);
             if msgs.len() >= top as usize {
@@ -1233,6 +1237,7 @@ impl Client {
                                                                         crc,
                                                                         &table,
                                                                         data,
+                                                                        event_time,
                                                                     );
 
                                                                 }
@@ -1271,6 +1276,7 @@ impl Client {
                                                 crc,
                                                 &table,
                                                 data.clone(),
+                                                event_time,
                                             );
                                             cb.on_message(crc, from_id, to, msg_data);
                                             eprintln!("on message>>>>>> {from_id}  to {to}");
@@ -1781,6 +1787,7 @@ impl Client {
                             e.crc,
                             &table,
                             data.clone(),
+                            event_time,
                         );
                         match msg {
                             Message::Chat { content } => {
