@@ -920,8 +920,6 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                             }
                                         }
                                     }
-                                    
-                                    
                                 }
                                 else{
                                     self.save_cache_crc(crc, from_id, to);

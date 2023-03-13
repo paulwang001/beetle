@@ -28,6 +28,8 @@ pub struct Config {
     pub p2p: luffa_node::config::Config,
     /// metrics configuration
     pub metrics: MetricsConfig,
+
+    pub push_api:Option<String>
 }
 
 impl Config {
@@ -39,6 +41,7 @@ impl Config {
             store,
             p2p,
             metrics: MetricsConfig::default(),
+            push_api:None,
         }
     }
 
@@ -53,6 +56,7 @@ impl Default for Config {
             metrics: metrics_config,
             store: store_config,
             p2p: default_p2p_config( key_store_path),
+            push_api:None,
         }
     }
 }
@@ -89,6 +93,9 @@ impl Source for Config {
         insert_into_config_map(&mut map, "store", self.store.collect()?);
         insert_into_config_map(&mut map, "p2p", self.p2p.collect()?);
         insert_into_config_map(&mut map, "metrics", self.metrics.collect()?);
+        if let Some(_api) = self.push_api.as_ref() {
+            insert_into_config_map(&mut map, "push_api", self.push_api.clone());
+        }
         Ok(map)
     }
 }

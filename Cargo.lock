@@ -3466,6 +3466,7 @@ dependencies = [
  "luffa-util",
  "multihash 0.17.0",
  "petgraph",
+ "reqwest",
  "serde",
  "tokio",
  "tracing",

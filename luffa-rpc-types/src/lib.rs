@@ -218,7 +218,7 @@ pub enum AppStatus {
     Bye,
 }
 
-#[derive(Debug,Serialize,Deserialize)]
+#[derive(Debug,Serialize,Deserialize,Clone, Copy)]
 #[repr(u8)]
 pub enum FeedbackStatus {
     Reach,
@@ -234,7 +234,7 @@ impl Message {
     {
         match &self {
             
-            Self::ContactsExchange { .. } | Self::Chat { .. } => {
+            Self::ContactsExchange { .. } | Self::Chat { .. } | Self::WebRtc { .. }=> {
                 let data = serde_cbor::to_vec(&self).map_err(|e| anyhow::anyhow!("{e:?}"))?;
                 
                 let cipher = 
@@ -305,6 +305,28 @@ impl Message {
         match self {
             Self::ContactsExchange { .. }=> true,
             _ => false,
+        }
+    }
+    pub fn chat_content(&self) -> Option<&ContentData> {
+        match self {
+            Self::Chat { content }=> {
+                match content {
+                    ChatContent::Send { data }=> Some(data),
+                    _=> None
+                }
+            },
+            _ => None,
+        }
+    }
+    pub fn chat_feedback(&self) -> Option<(u64,FeedbackStatus)> {
+        match self {
+            Self::Chat { content }=> {
+                match content {
+                    ChatContent::Feedback { crc,status }=> Some((*crc,*status)),
+                    _=> None
+                }
+            },
+            _ => None,
         }
     }
 

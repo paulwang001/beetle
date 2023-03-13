@@ -177,6 +177,9 @@ async fn main() -> Result<()> {
             .await
             {
                 tracing::info!("relay successfully.");
+                if let Ok(peers) = client_t.gossipsub_mesh_peers(TopicHash::from_raw(TOPIC_RELAY)).await {
+                    tracing::warn!("mesh peers:{:?}",peers);
+                }
             }
         }
     });
@@ -410,7 +413,8 @@ async fn main() -> Result<()> {
                                                 let mut queue = notice_queue.write().await;
                                                 queue.insert(crc, key.clone());
                                                 tokio::spawn(async move {
-                                                    let expires = Some(event_time + 24 * 60 * 60 * 1000);
+                                                    let time = event_time / 1000;
+                                                    let expires = Some(time + 24 * 60 * 60);
 
                                                     if let Err(e) = client_t
                                                         .put_crc_record(

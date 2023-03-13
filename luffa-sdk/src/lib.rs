@@ -14,7 +14,7 @@ use libp2p::{gossipsub::TopicHash, identity::Keypair};
 use luffa_node::{
     load_identity, DiskStorage, GossipsubEvent, Keychain, NetworkEvent, Node, ENV_PREFIX,
 };
-use luffa_rpc_types::{message_from, ChatContent, ContactsTypes, Contacts, message_to, ContentData};
+use luffa_rpc_types::{message_from, ChatContent, ContactsTypes, Contacts, message_to, ContentData, FeedbackStatus};
 use luffa_rpc_types::{AppStatus, ContactsEvent, ContactsToken, Event, Message};
 use luffa_store::{Config as StoreConfig, Store};
 use luffa_util::{luffa_config_path, make_config};
@@ -373,13 +373,19 @@ impl Client {
     }
     fn save_to_tree(db: Arc<Db>, crc: u64, table: &str, data: Vec<u8>,event_time:u64) {
         let tree = db.open_tree(&table).unwrap();
-        let tree_time = db.open_tree(&format!("{table}_time")).unwrap();
         
-        tree.insert(crc.to_be_bytes(), data).unwrap();
-        tree_time.insert(event_time.to_be_bytes(), crc.to_be_bytes().to_vec()).unwrap();
+        match tree.insert(crc.to_be_bytes(), data) {
+            Ok(None)=>{
+                let tree_time = db.open_tree(&format!("{table}_time")).unwrap();
+                tree_time.insert(event_time.to_be_bytes(), crc.to_be_bytes().to_vec()).unwrap();
+                tree_time.flush().unwrap();
+            }
+            _=>{
+
+            }
+        }
 
         tree.flush().unwrap();
-        tree_time.flush().unwrap();
     }
     
     fn have_in_tree(db: Arc<Db>, crc: u64, table: &str)-> bool {
@@ -574,7 +580,16 @@ impl Client {
                                 match content {
                                     ChatContent::Send { data }=>{
                                         let (_title,body) = Self::extra_content(data);
-                                        Self::update_session(db_t.clone(), did, None, Some(crc), None, Some(body), now.as_millis() as u64);
+                                        if Self::update_session(db_t.clone(), did, None, Some(crc), None, Some(body), now.as_millis() as u64) {
+                                            let msg = Message::Chat { content: ChatContent::Feedback { crc, status: luffa_rpc_types::FeedbackStatus::Read } };
+                                            if let Some(msg) = message_to(msg) {
+
+                                                if let Err(e) = self.send_msg(did, msg) {
+                                                    tracing::warn!("send read feedback failed:{e:?}");
+                                                }
+                                            }
+                                        }
+                                        
                                     }
                                     _=>{
                                         Self::update_session(db_t.clone(), did, None, Some(crc), None, None, now.as_millis() as u64);
@@ -656,8 +671,9 @@ impl Client {
         .unwrap();
         Self::update_session(self.db.clone(), did, Some(tag), read, reach, msg, now.as_millis() as u64);
     }
-    pub fn update_session(db:Arc<Db>,did:u64,tag:Option<String>,read:Option<u64>,reach:Option<u64>,msg:Option<String>,event_time:u64) {
+    pub fn update_session(db:Arc<Db>,did:u64,tag:Option<String>,read:Option<u64>,reach:Option<u64>,msg:Option<String>,event_time:u64) -> bool{
         let tree = db.open_tree(KVDB_CHAT_SESSION_TREE).unwrap();
+        let mut first_read = false;
         let n_tag = tag.clone();
         if let Err(e) = tree.fetch_and_update(did.to_be_bytes(), |old| {
             match old {
@@ -670,6 +686,7 @@ impl Client {
                         }
                     }
                     if let Some(c) = read.as_ref() {
+                        first_read = reach_crc.contains(c);
                         reach_crc.retain(|x| *x != *c);
                         // assert!(reach_crc.contains(c),"reach contain :{c}");
                         // warn!("reach_crc:{reach_crc:?}   {c}");
@@ -711,6 +728,7 @@ impl Client {
             tracing::warn!("{e:?}");
         }
         tree.flush().unwrap();
+        first_read
         
     }
 
@@ -880,16 +898,33 @@ impl Client {
 
         RUNTIME.block_on(async {
             let c = client.read().await;
+            // if let Some(cc) = c.as_ref() {
+            //     match cc
+            //         .gossipsub_mesh_peers(TopicHash::from_raw(TOPIC_RELAY))
+            //         .await
+            //     {
+            //         Ok(peers) => {
+            //             tracing::debug!("peers:{peers:?}");
+            //             return peers
+            //                 .into_iter()
+            //                 .map(|p| bs58::encode(p.to_bytes()).into_string())
+            //                 .collect::<Vec<_>>();
+            //         }
+            //         Err(e) => {
+            //             tracing::warn!("{e:?}");
+            //         }
+            //     }
+            // }
             if let Some(cc) = c.as_ref() {
                 match cc
-                    .gossipsub_mesh_peers(TopicHash::from_raw(TOPIC_RELAY))
+                    .get_peers()
                     .await
                 {
                     Ok(peers) => {
                         tracing::debug!("peers:{peers:?}");
                         return peers
                             .into_iter()
-                            .map(|p| bs58::encode(p.to_bytes()).into_string())
+                            .map(|(p,_)| bs58::encode(p.to_bytes()).into_string())
                             .collect::<Vec<_>>();
                     }
                     Err(e) => {
@@ -1128,8 +1163,8 @@ impl Client {
                         tracing::warn!("pub contacts sync status >>> {e:?}");
                     }
                     // break;
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                 }
-                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
             }
         });
 
@@ -1218,28 +1253,52 @@ impl Client {
                                                                     // TODO remove crc from wants and update want_time
                                                                     tracing::warn!("get record: {crc}");
                                                                     let data = data.to_vec();
+                                                                    let mut feedback = None;
                                                                     if let Ok(im) = Event::decode_uncheck(&data) {
                                                                         let Event {
                                                                             msg,
                                                                             to,
                                                                             from_id,
                                                                             crc,
+                                                                            nonce,
                                                                             ..
                                                                         } = im;
-                                                                        cb_t.on_message(crc, from_id, to, msg);
+                                                                        if let Some(key) = Self::get_aes_key_from_contacts(db_tt.clone(), did) {
+                                                                            if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), Some(key), nonce) {
+                                                                                feedback = msg.chat_feedback();
+                                                                                let msg = message_to(msg).unwrap();
+                                                                                cb_t.on_message(crc, from_id, to, msg);
+                                                                                match feedback {
+                                                                                    Some((crc,status))=>{
+                                                                                        match status {
+                                                                                            FeedbackStatus::Read=>{
+                                                                                                
+                                                                                                // Self::update_session(db_tt.clone(),did,None,Some(crc),Some(crc),None,event_time);
+                                                                                            }
+                                                                                            FeedbackStatus::Reach=>{
+
+                                                                                            }
+                                                                                            _=>{
+
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                                    None=>{
+                                                                                        Self::update_session(db_tt.clone(),did,None,None,Some(crc),None,event_time);
+                                                                                        Self::set_contacts_have_time(db_tt.clone(), did,event_time);
+                                                                                        Self::save_to_tree(
+                                                                                            db_tt.clone(),
+                                                                                            crc,
+                                                                                            &table,
+                                                                                            data,
+                                                                                            event_time,
+                                                                                        );
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
 
                                                                     }
-                                                                    
-                                                                    Self::update_session(db_tt.clone(),did,None,None,Some(crc),None,event_time);
-                                                                    Self::set_contacts_have_time(db_tt.clone(), did,event_time);
-                                                                    Self::save_to_tree(
-                                                                        db_tt.clone(),
-                                                                        crc,
-                                                                        &table,
-                                                                        data,
-                                                                        event_time,
-                                                                    );
-
                                                                 }
                                                                 Err(e)=>{
                                                                     tracing::warn!("get crc record failed:{e:?}");
@@ -1782,13 +1841,15 @@ impl Client {
                             format!("message_{to}")
                         };
                         tracing::info!("send......");
-                        Self::save_to_tree(
-                            db_t.clone(),
-                            e.crc,
-                            &table,
-                            data.clone(),
-                            event_time,
-                        );
+                        if to != my_id {
+                            Self::save_to_tree(
+                                db_t.clone(),
+                                e.crc,
+                                &table,
+                                data.clone(),
+                                event_time,
+                            );
+                        }
                         match msg {
                             Message::Chat { content } => {
                                 // TODO index content search engine

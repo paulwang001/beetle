@@ -25,7 +25,7 @@ luffa-node.workspace = true
 luffa-rpc-types.workspace = true
 luffa-store = {workspace = true}
 luffa-util.workspace = true
-# reqwest = { workspace = true, features = ["rustls-tls"] }
+reqwest = { workspace = true, features = ["rustls-tls"] }
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process"] }
 tracing.workspace = true
