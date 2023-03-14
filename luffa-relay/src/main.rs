@@ -59,6 +59,16 @@ enum EdgeTypes {
     Group,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct NoticeBody {
+    #[serde(rename = "ID")]
+    id:String,
+    title:String,
+    body:String,
+    #[serde(rename = "currentKey")]
+    current_key:String,
+}
+
 fn get_now() -> u64 {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -114,7 +124,7 @@ async fn main() -> Result<()> {
             Err(err) => tracing::error!("Error increasing NOFILE limit: {}", err),
         }
     }
-
+    
     tracing::info!("-------");
     let (key, peer, p2p_rpc, mut events, sender) = {
         let store = start_store(config.store.clone()).await.unwrap();
@@ -134,9 +144,14 @@ async fn main() -> Result<()> {
     });
     let client = Arc::new(luffa_node::rpc::P2p::new(sender));
     let client = Arc::new(P2pClient::new(client).unwrap());
-    let notice_queue = Arc::new(RwLock::new(std::collections::BTreeMap::<u64, Cid>::new()));
+    let notice_queue = Arc::new(RwLock::new(std::collections::BTreeMap::<u64, (u64,u64,u8)>::new()));
+    let post = reqwest::ClientBuilder::default()
+    .connect_timeout(Duration::from_millis(5000))
+    .timeout(Duration::from_millis(5000)).build().unwrap();
+    let push_api = config.push_api;//.unwrap_or(format!("https://luffa.putdev.com/post/sendMessage")); 
     tracing::info!("mem rpc client open.");
     let client_t = client.clone();
+    let notice_queue_t = notice_queue.clone();
     let pub_sub = tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(5)).await;
@@ -180,6 +195,27 @@ async fn main() -> Result<()> {
                 if let Ok(peers) = client_t.gossipsub_mesh_peers(TopicHash::from_raw(TOPIC_RELAY)).await {
                     tracing::warn!("mesh peers:{:?}",peers);
                 }
+                let tasks = {
+                    let notice = notice_queue_t.read().await;
+                    notice.iter().filter(|(_k,(t,f,c))| *t + 30000 < get_now()).map(|(k,_)| *k).collect::<Vec<_>>()
+                };
+                let mut notice = notice_queue_t.write().await;
+                for task in tasks {
+                    if let Some((t,f,c)) = notice.remove(&task) {
+                        if let Some(api) = push_api.as_ref() {
+                            let nb = NoticeBody {
+                                id:format!("{task}"),
+                                title:format!("luffa://open/chat?id={f}&type={c}"),
+                                body:format!("{}",t),
+                                current_key:format!("AIzaSyCG7wT4KYvbSf_HYU6xAmn7g5bgKOdGb0s")
+                            };
+                            if let Err(e) = post.post(api).json(&nb).send().await {
+                                tracing::warn!("{e:?}");
+                            }                        
+                        }
+                    }
+                }
+                
             }
         }
     });
@@ -370,8 +406,8 @@ async fn main() -> Result<()> {
                                                         DagCborCodec.into(),
                                                         multihash::Code::Sha2_256.digest(&data),
                                                     );
-                                                    let mut queue = notice_queue.write().await;
-                                                    queue.insert(crc, key.clone());
+                                                    // let mut queue = notice_queue.write().await;
+                                                    // queue.insert(crc, key.clone());
                                                     tokio::spawn(async move {
                                                         let expires = Some(event_time + 24 * 60 * 60 * 1000);
                                                         if let Err(e) = client_t
@@ -406,28 +442,30 @@ async fn main() -> Result<()> {
                                                 relay_peers.into_iter().collect::<Vec<_>>();
                                             if relay_peers.is_empty() {
                                                 let client_t = client.clone();
-                                                let key = Cid::new_v1(
-                                                    DagCborCodec.into(),
-                                                    multihash::Code::Sha2_256.digest(&data),
-                                                );
-                                                let mut queue = notice_queue.write().await;
-                                                queue.insert(crc, key.clone());
+                                                // let key = Cid::new_v1(
+                                                //     DagCborCodec.into(),
+                                                //     multihash::Code::Sha2_256.digest(&data),
+                                                // );
+                                                let notice = notice_queue.clone();
                                                 tokio::spawn(async move {
                                                     let time = event_time / 1000;
                                                     let expires = Some(time + 24 * 60 * 60);
-
+                                                    
                                                     if let Err(e) = client_t
-                                                        .put_crc_record(
-                                                            crc,
-                                                            bytes::Bytes::from(data),
-                                                            None,
-                                                            expires,
-                                                        )
-                                                        .await
+                                                    .put_crc_record(
+                                                        crc,
+                                                        bytes::Bytes::from(data),
+                                                        None,
+                                                        expires,
+                                                    )
+                                                    .await
                                                     {
                                                         error!("notify put record>>> {e:?}");
                                                     } else {
                                                         //TODO notice send
+                                                        let mut queue = notice.write().await;
+                                                        let (time,count,_) = queue.entry(to).or_insert((get_now(),from_id,0));
+                                                        *time = get_now();
                                                         tracing::warn!("TODO: offline notify");
                                                     }
                                                 });
@@ -450,6 +488,10 @@ async fn main() -> Result<()> {
                     let mut digest = crc64fast::Digest::new();
                     digest.write(&peer_id.to_bytes());
                     let u_id = digest.sum64();
+                    {
+                        let mut queue = notice_queue.write().await;
+                        queue.remove(&u_id);
+                    }
                     
                     match net_graph.node_indices().find(|idx| {
                         let w = &net_graph[*idx];
