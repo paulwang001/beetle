@@ -1,7 +1,7 @@
 #![feature(poll_ready)]
 use anyhow::Result;
 use futures::pending;
-use luffa_rpc_types::{message_to, ChatContent, ContactsEvent, ContactsToken, Message, RtcAction, message_from};
+use luffa_rpc_types::{message_to, ChatContent, ContactsEvent, ContactsToken, Message, RtcAction, message_from, AppStatus};
 use luffa_sdk::{Callback, Client};
 use std::future::{Future, IntoFuture};
 use std::sync::mpsc::sync_channel;
@@ -74,12 +74,13 @@ fn main() -> Result<()> {
                         Message::WebRtc { stream_id: 1000, action: RtcAction::Push { audio_id: 2, video_id: 3 } }
                     }
                     None => {
-                        let code = client.show_code(Some("Hello".to_owned()));
-                        tracing::warn!("show :{}",code);
-                        let msg = Message::WebRtc {
-                            stream_id: 0,
-                            action: luffa_rpc_types::RtcAction::Status { timestamp: 0, code },
-                        };
+                        // let code = client.show_code(Some("Hello".to_owned()));
+                        // tracing::warn!("show :{}",code);
+                        // let msg = Message::WebRtc {
+                        //     stream_id: 0,
+                        //     action: luffa_rpc_types::RtcAction::Status { timestamp: 0, code },
+                        // };
+                        let msg = Message::StatusSync { to:to_id, from_id: 0, status: AppStatus::Deactive };
                         msg
                     }
                 };

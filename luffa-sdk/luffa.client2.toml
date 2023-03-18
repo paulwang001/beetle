@@ -1,3 +1,5 @@
+[store]
+path = "../.local/client2/store"
 [p2p]
-libp2p = { listening_multiaddrs = ["/ip4/0.0.0.0/udp/0/quic-v1"],bootstrap_peers=["/ip4/206.238.220.40/udp/8899/quic-v1/p2p/12D3KooWLm17MWN8mq1XkiUmt74t12pqk2B3fMAYTww1Fq9Z8j7N"]}
-key_store_path = "/Users/powerwang/.local/share/client2"
+libp2p = { listening_multiaddrs = ["/ip4/0.0.0.0/udp/0/quic-v1"],bootstrap_peers=["/ip4/127.0.0.1/udp/8899/quic-v1/p2p/12D3KooWKhQ7QuAFub9K8zTbmaLukLzXHUqEXPXXvxuJkFBTQWL5"]}
+key_store_path = "../.local/client2/keys"

@@ -1,10 +1,7 @@
 [store]
-path = "/home/snqu/.local/share/boot/store"
+path = "../.local/boot/store"
 [p2p]
-# libp2p = {listening_multiaddrs = ["/ip4/0.0.0.0/udp/8899/quic-v1"],bootstrap_peers=["/ip4/206.238.220.40/udp/8899/quic-v1/p2p/12D3KooWDyjzAiWnZ11H8SGkL11WmB4UJxcmFQirMuyZPPqnyZAD"]}
-# libp2p = {listening_multiaddrs = ["/ip4/0.0.0.0/udp/8899/quic-v1","/ip4/0.0.0.0/tcp/7700"],bootstrap_peers=["/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"]}
 libp2p = {listening_multiaddrs = ["/ip4/0.0.0.0/udp/8899/quic-v1","/ip4/0.0.0.0/tcp/8800"],bootstrap_peers=[]}
-key_store_path = "/home/snqu/.local/share/boot"
-rpc_client = {p2p_addr = "irpc://0.0.0.0:40001",store_addr = "irpc://127.0.0.1:30001"}
+key_store_path = "../.local/boot/keys"
 
 
