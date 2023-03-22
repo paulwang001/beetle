@@ -3405,6 +3405,7 @@ dependencies = [
  "anyhow",
  "async-stream",
  "async-trait",
+ "bs58",
  "bytes",
  "cid",
  "clap 4.1.6",
@@ -3413,6 +3414,7 @@ dependencies = [
  "futures",
  "futures-util",
  "git-version",
+ "hex",
  "lazy_static",
  "libipld",
  "libp2p",
@@ -3429,6 +3431,7 @@ dependencies = [
  "smallvec",
  "ssh-key",
  "tempfile",
+ "tiny-bip39",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -3510,6 +3513,7 @@ dependencies = [
  "crc64fast",
  "futures",
  "futures-lite",
+ "hex",
  "lazy_static",
  "libp2p",
  "luffa-metrics",
@@ -4317,6 +4321,15 @@ name = "pathdiff"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8835116a5c179084a830efb3adc117ab007512b535bc1a21c991d3b32a6b44dd"
+
+[[package]]
+name = "pbkdf2"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83a0692ec44e4cf1ef28ca317f14f8f07da2d95ec3fa01f86e4467b725e60917"
+dependencies = [
+ "digest 0.10.6",
+]
 
 [[package]]
 name = "peeking_take_while"
@@ -5940,6 +5953,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a460aeb8de6dcb0f381e1ee05f1cd56fcf5a5f6eb8187ff3d8f0b11078d38b7c"
 dependencies = [
  "time-core",
+]
+
+[[package]]
+name = "tiny-bip39"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62cc94d358b5a1e84a5cb9109f559aa3c4d634d2b1b4de3d0fa4adc7c78e2861"
+dependencies = [
+ "anyhow",
+ "hmac 0.12.1",
+ "once_cell",
+ "pbkdf2",
+ "rand 0.8.5",
+ "rustc-hash",
+ "sha2 0.10.6",
+ "thiserror",
+ "unicode-normalization",
+ "wasm-bindgen",
+ "zeroize",
 ]
 
 [[package]]

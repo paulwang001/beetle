@@ -19,6 +19,7 @@ clap = { workspace = true, features = ["derive"] }
 config.workspace = true
 crc64fast.workspace = true
 futures.workspace = true
+hex.workspace = true
 lazy_static.workspace = true
 luffa-metrics.workspace = true
 luffa-node.workspace = true

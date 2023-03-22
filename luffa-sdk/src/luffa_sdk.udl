@@ -30,6 +30,7 @@ dictionary EventMeta {
 enum ClientError {
   "CodeParser",
   "SendFailed",
+  "StartFailed",
   "SearchError",
 };
 
@@ -41,13 +42,11 @@ interface Client {
     
     constructor();
 
-    string show_code(string? comment);
+    string? show_code();
 
-    [Throws=ClientError] 
-    string parse_contacts_code(string code);
+    void contacts_offer([ByRef] string code);
 
-    [Throws=ClientError] 
-    void answer_contacts_code(string code,string? comment);
+    void contacts_anwser(u64 to,sequence<u8> secret_key);
 
     [Throws=ClientError] 
     u64 send_msg(u64 to,sequence<u8> msg);
@@ -56,11 +55,15 @@ interface Client {
 
     string? get_peer_id();
 
+    string? get_did();
+
     sequence<string> relay_list();
+    sequence<string> keys();
 
     boolean connect(string peer_id);
 
-    void start(string? cfg_path,Callback cb);
+    [Throws=ClientError]
+    boolean start(string? cfg_path,string? key,string? tag,Callback cb);
 
     void stop();
 
@@ -81,6 +84,14 @@ interface Client {
 
     EventMeta meta_msg([ByRef] sequence<u8> data);
     EventMeta? read_msg_with_meta(u64 did,u64 crc);
+
+    string? gen_key([ByRef] string password,boolean store);
+
+    string? import_key([ByRef] string phrase,[ByRef] string password);
+
+    boolean save_key([ByRef] string name);
+
+    string? read_key_phrase([ByRef] string name);
 
 
 };

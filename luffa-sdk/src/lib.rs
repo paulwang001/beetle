@@ -7,12 +7,12 @@ use aes_gcm::{
 };
 use anyhow::Context;
 use api::P2pClient;
-use libp2p::gossipsub::GossipsubMessage;
+use futures::StreamExt;
 use libp2p::identity::PublicKey;
 use libp2p::PeerId;
 use libp2p::{gossipsub::TopicHash, identity::Keypair};
 use luffa_node::{
-    load_identity, DiskStorage, GossipsubEvent, Keychain, NetworkEvent, Node, ENV_PREFIX,
+    load_identity, DiskStorage, GossipsubEvent, Keychain, NetworkEvent, Node, ENV_PREFIX, KeyFilter,
 };
 use luffa_rpc_types::{message_from, ChatContent, ContactsTypes, Contacts, message_to, ContentData, FeedbackStatus};
 use luffa_rpc_types::{AppStatus, ContactsEvent, ContactsToken, Event, Message};
@@ -49,7 +49,7 @@ use crate::config::Config;
 
 const TOPIC_STATUS: &str = "luffa_status";
 // const TOPIC_CONTACTS: &str = "luffa_contacts";
-const TOPIC_CHAT: &str = "luffa_chat";
+// const TOPIC_CHAT: &str = "luffa_chat";
 // const TOPIC_CHAT_PRIVATE: &str = "luffa_chat_private";
 // const TOPIC_CONTACTS_SCAN: &str = "luffa_contacts_scan_answer";
 const CONFIG_FILE_NAME: &str = "luffa.config.toml";
@@ -96,6 +96,8 @@ pub enum ClientError {
     CodeParser,
     #[error("Send message failed")]
     SendFailed,
+    #[error("Client start failed")]
+    StartFailed,
     #[error("Search error")]
     SearchError,
 }
@@ -110,13 +112,13 @@ pub trait Callback: Send + Sync + Debug {
 
 fn content_index(idx_path: &Path) -> (Index, Schema) {
     let mut schema_builder = Schema::builder();
-    let crc = schema_builder.add_u64_field("crc", INDEXED | STORED);
-    let from_id = schema_builder.add_u64_field("from_id", INDEXED | STORED);
-    let to_id = schema_builder.add_u64_field("to_id", INDEXED | STORED);
-    let event_time = schema_builder.add_u64_field("event_time", INDEXED | STORED);
-    let msg_type = schema_builder.add_text_field("msg_type", STRING | STORED);
-    let title = schema_builder.add_text_field("title", TEXT);
-    let body = schema_builder.add_text_field("body", TEXT);
+    schema_builder.add_u64_field("crc", INDEXED | STORED);
+    schema_builder.add_u64_field("from_id", INDEXED | STORED);
+    schema_builder.add_u64_field("to_id", INDEXED | STORED);
+    schema_builder.add_u64_field("event_time", INDEXED | STORED);
+    schema_builder.add_text_field("msg_type", STRING | STORED);
+    schema_builder.add_text_field("title", TEXT);
+    schema_builder.add_text_field("body", TEXT);
     let schema = schema_builder.build();
     std::fs::create_dir_all(idx_path).unwrap();
     // Indexing documents
@@ -131,13 +133,14 @@ fn content_index(idx_path: &Path) -> (Index, Schema) {
 
 #[derive(Clone)]
 pub struct Client {
-    sender: Arc<RwLock<Option<tokio::sync::mpsc::Sender<(u64, Vec<u8>, u64,ShotSender<Result<u64>>)>>>>,
-    key: Arc<RwLock<Option<Keypair>>>,
+    sender: Arc<RwLock<Option<tokio::sync::mpsc::Sender<(u64, Vec<u8>, u64,ShotSender<Result<u64>>,Option<Vec<u8>>)>>>>,
+    key: Arc<RwLock<Option<Keychain<DiskStorage>>>>,
     db: Arc<Db>,
     client: Arc<RwLock<Option<Arc<P2pClient>>>>,
     idx: Arc<Index>,
     schema: Schema,
     writer: Arc<RwLock<IndexWriter>>,
+    filter:Arc<RwLock<Option<KeyFilter>>>,
 }
 
 impl Client {
@@ -150,6 +153,7 @@ impl Client {
         let writer = idx.writer_with_num_threads(1, 12 * 1024 * 1024).unwrap();
         Client {
             key: Arc::new(RwLock::new(None)),
+            filter: Arc::new(RwLock::new(None)),
             sender: Arc::new(RwLock::new(None)),
             db,
             client: Arc::new(RwLock::new(None)),
@@ -158,26 +162,127 @@ impl Client {
             writer: Arc::new(RwLock::new(writer)),
         }
     }
-    /// show code
-    pub fn show_code(&self, comment: Option<String>) -> String {
-        self.gen_offer_anwser(comment, None)
+
+    async fn get_keypair(&self,filter:Option<KeyFilter>) -> Option<Keypair> {
+        let mut keychain = self.key.write().await;
+        let chain = keychain.as_mut().unwrap();
+        match filter {
+            Some(KeyFilter::Phrase(phrase,password))=>{
+                if let Ok(key) = chain.create_ed25519_key_from_seed(&phrase, &password).await {
+                    let key:Keypair = key.into();
+                    return Some(key)
+                }
+            }
+            Some(KeyFilter::Name(name))=>{
+                while let Some(key) = chain.keys().next().await {
+                    if let Ok(key) = key {
+                        if key.name() == name {
+                            let key:Keypair = key.into();
+                            return Some(key)
+                        }
+                    }
+                }
+            }
+            _=>{
+                while let Some(key) = chain.keys().next().await {
+                    if let Ok(key) = key {
+                        let key:Keypair = key.into();
+                        return Some(key)
+                    }
+                }
+            }
+        }
+        None
     }
-    /// gen a offer
-    pub fn gen_offer_anwser(&self, comment: Option<String>, secret_key: Option<Vec<u8>>) -> String {
-        let (key, is_offer) = match secret_key {
-            Some(secret) => (GenericArray::clone_from_slice(&secret[..]), false),
-            None => (Aes256Gcm::generate_key(&mut OsRng), true),
+    /// show code
+    pub fn show_code(&self) -> Option<String> {
+        if let Some(uid)= self.get_did() {
+            let s_key = Aes256Gcm::generate_key(&mut OsRng);
+            let secret_key = s_key.to_vec();
+            let mut digest = crc64fast::Digest::new();
+            digest.write(&secret_key);
+            let offer_id = digest.sum64();
+            tracing::warn!("gen offer id:{}",offer_id);
+            self.save_contacts_offer(offer_id, secret_key.clone());
+            let my_id = self.get_local_id().unwrap();
+            let tag = self.find_contacts_tag(my_id).unwrap_or_default();
+            Some(format!("luffa://{}/{}/{}",uid,bs58::encode(secret_key).into_string(),tag))
+        }
+        else{
+            None
+        }
+    }
+
+    ///Offer contacts 
+    pub fn contacts_offer(&self,code:&String) {
+        let mut tmp = code.split('/');
+        let _from_tag = tmp.next_back();
+        let key = tmp.next_back();
+        let uid = tmp.next_back();
+        let secret_key = key.unwrap();
+        let mut to = [0u8;8];
+        to.clone_from_slice(&bs58::decode(uid.unwrap()).into_vec().unwrap());
+        let to = u64::from_be_bytes(to);
+        let my_id = self.get_local_id().unwrap();
+        let tag = self.find_contacts_tag(my_id);
+        let key = bs58::decode(secret_key).into_vec().unwrap();
+
+        let mut digest = crc64fast::Digest::new();
+        digest.write(&key);
+        let from_id = digest.sum64();
+        let msg =
+        {
+            let offer_key = Aes256Gcm::generate_key(&mut OsRng);
+            let offer_key = offer_key.to_vec();
+    
+            let secret_key = key.to_vec();
+            let mut digest = crc64fast::Digest::new();
+            digest.write(&secret_key);
+            let offer_id = digest.sum64();
+
+            tracing::warn!("secret_key::: {}",secret_key.len());
+            let token = RUNTIME.block_on(async {
+                let filter = self.filter.read().await;
+                let key = self.get_keypair(filter.clone()).await;
+                let token = key.as_ref().map(|key| {
+                    ContactsToken::new(
+                        key,
+                        tag,
+                        offer_key.clone(),
+                        luffa_rpc_types::ContactsTypes::Private,
+                    )
+                    .unwrap()
+                });
+                token.unwrap()
+            });
+            
+            tracing::warn!("gen offer id:{}",offer_id);
+            self.save_contacts_offer(offer_id, secret_key);
+            Message::ContactsExchange {
+                exchange: ContactsEvent::Offer { token },
+            }
         };
 
-        let secret_key = key.to_vec();
+        self.send_to(to, msg, from_id,Some(key)).expect("");
+        
+    } 
+
+    /// answer an offer and send it to from 
+    pub fn contacts_anwser(&self, to:u64,secret_key: Vec<u8>) {
+        let mut digest = crc64fast::Digest::new();
+        digest.write(&secret_key);
+        let from_id = digest.sum64();
+        let my_id = self.get_local_id().unwrap();
+        let comment = self.find_contacts_tag(my_id);
         tracing::warn!("secret_key::: {}",secret_key.len());
         let token = RUNTIME.block_on(async {
-            let key = self.key.read().await;
+            let filter = self.filter.read().await;
+            let key = self.get_keypair(filter.clone()).await;
             let token = key.as_ref().map(|key| {
                 ContactsToken::new(
                     key,
                     comment,
-                    secret_key,
+                    secret_key.clone(),
                     luffa_rpc_types::ContactsTypes::Private,
                 )
                 .unwrap()
@@ -185,169 +290,15 @@ impl Client {
             token.unwrap()
         });
 
-        let secret_key = token.secret_key.clone();
-        let msg = if is_offer {
-            Message::ContactsExchange {
-                exchange: ContactsEvent::Offer { token },
-            }
-        } else {
+        let msg = {
             Message::ContactsExchange {
                 exchange: ContactsEvent::Answer { token },
             }
         };
-        // let msg = msg.encrypt(None).unwrap();
-        let msg = serde_cbor::to_vec(&msg).unwrap();
-        if is_offer {
-            let mut digest = crc64fast::Digest::new();
-            digest.write(&secret_key);
-            let offer_id = digest.sum64();
-            tracing::warn!("gen offer id:{}",offer_id);
-            self.save_contacts_offer(offer_id, secret_key);
-        }
-        let code = multibase::encode(multibase::Base::Base64, &msg);
-        code
-        // let nonce = Nonce::from_slice(&nonce); // 96-bits; unique per message
-        // let ciphertext = cipher.encrypt(nonce, b"plaintext message".as_ref())?;
-        // let plaintext = cipher.decrypt(nonce, ciphertext.as_ref())?;
-        // assert_eq!(&plaintext, b"plaintext message");
+        self.send_to(to, msg, from_id,Some(secret_key)).expect("");
+        
     }
 
-    pub fn parse_contacts_code(&self, code: String) -> std::result::Result<String, ClientError> {
-        match multibase::decode(&code) {
-            Ok((_, msg)) => {
-                let msg: Message =
-                    serde_cbor::from_slice(&msg).map_err(|e| {
-                        tracing::warn!("{e:?}");
-                        ClientError::CodeParser
-                    })?;
-                tracing::warn!("{:?}",msg);    
-                match msg {
-                    Message::ContactsExchange { exchange } => {
-                        match exchange {
-                            ContactsEvent::Offer { token } => {
-                                match token.validate() {
-                                    Ok(true)=>{
-                                        let ContactsToken {
-                                            public_key,
-                                            create_at,
-                                            sign,
-                                            secret_key,
-                                            comment,
-                                            ..
-                                        } = token;
-                                        debug!("p-> secret_key::: {}",secret_key.len());
-                                        let pk = PublicKey::from_protobuf_encoding(&public_key).unwrap();
-                                        let to = PeerId::from_public_key(&pk);
-                                        let mut digest = crc64fast::Digest::new();
-                                        digest.write(&to.to_bytes());
-                                        let did = digest.sum64();
-                                        Ok(format!("{}@{}",did,comment.unwrap_or_default()))
-                                    }
-                                    Ok(false)=>{
-                                        Err(ClientError::CodeParser)
-                                    }
-                                    Err(e)=>{
-                                        Err(ClientError::CodeParser)
-                                    }
-                                }
-                                
-                                // let pk = PublicKey::from_protobuf_encoding(&public_key).unwrap();
-                                // let mut msg = vec![];
-                                // msg.extend_from_slice(&secret_key);
-                                // // buf.extend_from_slice(&nonce);
-                                // msg.extend_from_slice(&create_at.to_be_bytes());
-                                // if pk.verify(&msg, &sign) {
-                                   
-                                // } else {
-                                //     error!("is invalid");
-                                    
-                                // }
-                            }
-                            _ => Err(ClientError::CodeParser),
-                        }
-                    }
-                    _ => Err(ClientError::CodeParser),
-                }
-            }
-            Err(e) => {
-                error!("{e:?}");
-                Err(ClientError::CodeParser)
-            },
-        }
-    }
-
-    /// scan qr code to get offer
-    /// save to constacts,
-    /// and then answer to did that who owner the QR
-    pub fn answer_contacts_code(
-        &self,
-        code: String,
-        comment: Option<String>,
-    ) -> std::result::Result<(), ClientError> {
-        match multibase::decode(&code) {
-            Ok((_, msg)) => {
-                let msg: Message =
-                    serde_cbor::from_slice(&msg).map_err(|e| ClientError::CodeParser)?;
-                match msg {
-                    Message::ContactsExchange { exchange } => {
-                        match exchange {
-                            ContactsEvent::Offer { token } => {
-                                match token.validate() {
-                                    Ok(true)=>{
-                                        let ContactsToken {
-                                            public_key,
-                                            create_at,
-                                            sign,
-                                            secret_key,
-                                            contacts_type,
-                                            ..
-                                        } = token;
-                                        tracing::warn!("a secret_key::: {}",secret_key.len());
-                                        let code =
-                                        self.gen_offer_anwser(comment.clone(), Some(secret_key.clone()));
-                                        let (_, data) = multibase::decode(&code).unwrap();
-                                        let msg: Message = serde_cbor::from_slice(&data)
-                                            .map_err(|e| ClientError::CodeParser)?;
-                                        let pk = PublicKey::from_protobuf_encoding(&public_key).unwrap();
-                                        let to = PeerId::from_public_key(&pk);
-                                        let mut digest = crc64fast::Digest::new();
-                                        digest.write(&to.to_bytes());
-                                        let to = digest.sum64();
-                                        // Save answer to DB
-                                        Self::save_contacts(
-                                            self.db.clone(),
-                                            to,
-                                            secret_key.clone(),
-                                            public_key,
-                                            contacts_type,
-                                            sign,
-                                            comment,
-                                        );
-                                        // let from_id = self.get_local_id().unwrap_or_default();
-                                        let mut digest = crc64fast::Digest::new();
-                                        digest.write(&secret_key);
-                                        let offer_id = digest.sum64();
-                                        tracing::warn!("answer offer id:{}",offer_id);
-                                        self.send_to(to, msg, offer_id).expect("");
-                                        Ok(())
-                                    }
-                                    Ok(false)=>{
-                                        Err(ClientError::CodeParser)
-                                    }
-                                    Err(e)=>{
-                                        Err(ClientError::CodeParser)
-                                    }
-                                }
-                            }
-                            _ => Err(ClientError::CodeParser),
-                        }
-                    }
-                    _ => Err(ClientError::CodeParser),
-                }
-            }
-            Err(_e) => Err(ClientError::CodeParser),
-        }
-    }
     fn save_contacts(
         db: Arc<Db>,
         to: u64,
@@ -419,7 +370,7 @@ impl Client {
             _ => None,
         }
     }
-    fn send_to(&self, to: u64, msg: Message, from_id: u64)->Result<u64> {
+    fn send_to(&self, to: u64, msg: Message, from_id: u64,key:Option<Vec<u8>>)->Result<u64> {
         RUNTIME.block_on(async move {
             let sender = self.sender.clone();
             let msg = serde_cbor::to_vec(&msg).unwrap();
@@ -429,7 +380,7 @@ impl Client {
                 let tx = sender.read().await;
                 let tx = tx.as_ref().unwrap();
                 let (req,res) = tokio::sync::oneshot::channel();
-                tx.send((to, msg, from_id,req)).await.unwrap();
+                tx.send((to, msg, from_id,req,key)).await.unwrap();
                 match res.await {
                     Ok(r)=>{
                         r
@@ -459,7 +410,7 @@ impl Client {
         match message_from(msg) {
             Some(msg) => {
                 
-                let crc = self.send_to(to, msg, 0).map_err(|e| {
+                let crc = self.send_to(to, msg, 0,None).map_err(|e| {
                     error!("{e:?}");
                     tracing::warn!("{e:?}");
                     ClientError::SendFailed
@@ -636,16 +587,23 @@ impl Client {
         })
     }
 
+    pub fn get_did(&self) -> Option<String> {
+        self.get_local_id().map(|d| {
+            // hex::encode(d.to_be_bytes())
+            bs58::encode(d.to_be_bytes()).into_string()
+        })
+    }
+
     async fn local_id(&self) ->Option<u64> {
-        let key = self.key.read().await;
-        let key = key
-            .as_ref()
-            .map(|p| PeerId::from_public_key(&p.public()).to_bytes());
-        key.map(|m| {
+        let filter = self.filter.read().await;
+        let key = self.get_keypair(filter.clone()).await;
+        key.map(|k| {
+            let data =  PeerId::from_public_key(&k.public()).to_bytes();
             let mut digest = crc64fast::Digest::new();
-            digest.write(&m);
+            digest.write(&data);
             digest.sum64()
         })
+        
     }
 
     pub fn session_list(&self, top: u32) -> Vec<ChatSession> {
@@ -663,6 +621,102 @@ impl Client {
         chats.reverse();
         chats.truncate(top as usize);
         chats
+    }
+
+    pub fn keys(&self) -> Vec<String>{
+        // luffa_node::Keychain::keys(&self)
+        RUNTIME.block_on(async {
+
+            let keychain = self.key.read().await;
+            let chain = keychain.as_ref().unwrap();
+            let keys  = chain.keys().map(|m| match m {
+                Ok(k)=> Some(k.name()),
+                Err(_e)=> None
+            }).collect::<Vec<_>>().await;
+
+            keys.into_iter().filter(|x| x.is_some()).map(|x| x.unwrap()).collect::<Vec<_>>()
+
+        })
+    }
+
+    pub fn gen_key(&self,password:&str,store:bool) -> Option<String>{
+        RUNTIME.block_on(async {
+            let mut keychain = self.key.write().await;
+            let chain = keychain.as_mut().unwrap();
+            match chain.create_ed25519_key_bip39(password, store).await {
+                Ok((phrase,key))=>{
+                    let name = key.name();
+                    if !store {
+                        let tree = self.db.open_tree("bip39_keys").unwrap();
+                        match key {
+                           luffa_node::Keypair::Ed25519(v)=>{
+                              let data = v.to_bytes();
+                              let k_pair = format!("pair-{}",name);
+                              let k_phrase = format!("phrase-{}",name);
+                              tree.insert(k_pair, data.to_vec()).unwrap();
+                              tree.insert(k_phrase, phrase.as_bytes()).unwrap();
+                              tree.flush().unwrap();
+                            } 
+                            _=>{
+                                
+                            }    
+                        }
+                    }
+                    Some(name)
+                }
+                Err(e)=>{
+                    None
+                }
+            }
+        })
+    }
+    pub fn import_key(&self,phrase:&str,password:&str) -> Option<String>{
+        RUNTIME.block_on(async {
+            let mut keychain = self.key.write().await;
+            let chain = keychain.as_mut().unwrap();
+            match chain.create_ed25519_key_from_seed(phrase,password).await {
+                Ok(key)=>{
+                    let name = key.name();
+                    Some(name)
+                }
+                Err(e)=>{
+                    None
+                }
+            }
+        })
+    }
+
+    pub fn save_key(&self,name:&str) -> bool {
+        RUNTIME.block_on(async {
+            let tree = self.db.open_tree("bip39_keys").unwrap();
+            let k_pair = format!("pair-{}",name);
+            if let Ok(Some(k_val)) = tree.get(k_pair) {
+                let mut keychain = self.key.write().await;
+                let chain = keychain.as_mut().unwrap();
+                let mut data = [0u8;64];
+                data.clone_from_slice(&k_val);
+                if let Ok(k) = chain.create_ed25519_key_from_bytes(&data).await {
+                    true
+                }
+                else {
+                    false
+                }
+            }
+            else {
+                true
+            }
+        })
+    }
+    pub fn read_key_phrase(&self,name:&str) -> Option<String> {
+        
+        let tree = self.db.open_tree("bip39_keys").unwrap();
+        let k_pair = format!("phrase-{}",name);
+        if let Ok(Some(k_val)) = tree.get(k_pair) {
+            Some(String::from_utf8(k_val.to_vec()).unwrap())
+        }
+        else {
+            None
+        }
     }
 
     pub fn save_session(&self, did: u64, tag: String,read:Option<u64>,reach:Option<u64>,msg:Option<String>) {
@@ -751,7 +805,7 @@ impl Client {
         match tree.get(&type_key) {
             Ok(Some(v))=>{
                 let tp = v[0];
-                let tp = if tp == 0 {ContactsTypes::Private} else {ContactsTypes::Group};
+                let tp = if tp == 0 { ContactsTypes::Private } else { ContactsTypes::Group };
                 Some(tp)
             }
             _=>{
@@ -763,12 +817,13 @@ impl Client {
         Self::get_contacts_tag(self.db.clone(), did).map(|(v,_)| v)
     }
 
-    pub fn update_contacts_tag(&self,did:u64,contact_type:u8,tag:String) {
-        Self::set_contacts_tag(self.db.clone(), did, contact_type, tag)
+    pub fn update_contacts_tag(&self,did:u64,tag:String) {
+        Self::set_contacts_tag(self.db.clone(), did, tag)
     }
-    fn set_contacts_tag(db:Arc<Db>,did:u64,contact_type:u8,tag:String) {
+    fn set_contacts_tag(db:Arc<Db>,did:u64,tag:String) {
         let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-        let tag_key = format!("TAG-{}-{}", contact_type ,did);
+        let tag_key = format!("TAG-{}",did);
+        println!("set tag:{did} ==> {}",tag);
         tree.insert(tag_key.as_bytes(), tag.as_bytes()).unwrap();
         tree.flush().unwrap();
     }
@@ -884,12 +939,14 @@ impl Client {
     }
 
     pub fn get_peer_id(&self) -> Option<String> {
+        
         RUNTIME.block_on(async {
-            let key = self.key.read().await;
-            let key = key
-                .as_ref()
-                .map(|p| PeerId::from_public_key(&p.public()).to_bytes());
-            key.map(|m| bs58::encode(m).into_string())
+            let filter = self.filter.read().await;
+            let key = self.get_keypair(filter.clone()).await;
+            key.map(|k| {
+                let data =  PeerId::from_public_key(&k.public()).to_bytes();
+                bs58::encode(data).into_string()
+            })
         })
     }
 
@@ -898,23 +955,7 @@ impl Client {
 
         RUNTIME.block_on(async {
             let c = client.read().await;
-            // if let Some(cc) = c.as_ref() {
-            //     match cc
-            //         .gossipsub_mesh_peers(TopicHash::from_raw(TOPIC_RELAY))
-            //         .await
-            //     {
-            //         Ok(peers) => {
-            //             tracing::debug!("peers:{peers:?}");
-            //             return peers
-            //                 .into_iter()
-            //                 .map(|p| bs58::encode(p.to_bytes()).into_string())
-            //                 .collect::<Vec<_>>();
-            //         }
-            //         Err(e) => {
-            //             tracing::warn!("{e:?}");
-            //         }
-            //     }
-            // }
+        
             if let Some(cc) = c.as_ref() {
                 match cc
                     .get_peers()
@@ -963,10 +1004,13 @@ impl Client {
                 status: AppStatus::Bye,
             },
             u64::MAX,
+            None,
         ).unwrap();
     }
 
-    pub fn start(&self, cfg_path: Option<String>, cb: Box<dyn Callback>) {
+    pub fn start(&self, cfg_path: Option<String>,key:Option<String>,tag:Option<String>, cb: Box<dyn Callback>) -> std::result::Result<bool, ClientError>
+    
+    {
         #[cfg(unix)]
         {
             match luffa_util::increase_fd_limit() {
@@ -996,19 +1040,27 @@ impl Client {
         .unwrap();
 
         debug!("config--->{config:?}");
+        let filter = key.map(|k| KeyFilter::Name(format!("{}",k)));
+        // let keychain = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone());
         let kc = RUNTIME.block_on(async {
-            let mut kc = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone())
+            let kc = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone())
                 .await
                 .unwrap();
-            let key = load_identity(&mut kc).await.unwrap();
-
             let mut m_key = self.key.write().await;
-            *m_key = Some(key);
+            *m_key = Some(kc.clone());
+            let mut f = self.filter.write().await;
+            *f = filter.clone();
             kc
         });
 
         let (tx, rx) = tokio::sync::mpsc::channel(4096);
         let db = self.db.clone();
+        let my_id = self.get_local_id();
+        if my_id.is_none() {
+            return Err(ClientError::StartFailed);
+        }
+        let my_id = my_id.unwrap();
+        self.update_contacts_tag(my_id, tag.unwrap_or(format!("{}",my_id)).to_string());
         let client = self.client.clone();
         let idx_writer = self.writer.clone();
         let schema = self.schema.clone();
@@ -1019,10 +1071,11 @@ impl Client {
             // let cb_t = cb.clone();
             tokio::spawn(async move {
                 debug!("runing...");
-                Self::run(db, config, kc, cb, client, rx, idx_writer, schema).await;
+                Self::run(db, config, kc, cb, client, rx, idx_writer, schema,filter).await;
                 debug!("run exit!....");
             });
         });
+        Ok(true)
     }
     async fn run(
         db: Arc<Db>,
@@ -1030,9 +1083,10 @@ impl Client {
         kc: Keychain<DiskStorage>,
         cb: Box<dyn Callback>,
         client_lock: Arc<RwLock<Option<Arc<P2pClient>>>>,
-        mut receiver: tokio::sync::mpsc::Receiver<(u64, Vec<u8>, u64,ShotSender<anyhow::Result<u64>>)>,
+        mut receiver: tokio::sync::mpsc::Receiver<(u64, Vec<u8>, u64,ShotSender<anyhow::Result<u64>>,Option<Vec<u8>>)>,
         idx_writer: Arc<RwLock<IndexWriter>>,
         schema: Schema,
+        filter:Option<KeyFilter>,
     ) {
         // let (tx, rx) = tokio::sync::mpsc::channel::<NetworkEvent>(4096);
         config.metrics = luffa_node::metrics::metrics_config_with_compile_time_info(config.metrics);
@@ -1048,7 +1102,7 @@ impl Client {
             let store = start_store(config.store.clone()).await.unwrap();
 
             let (peer_id, p2p_rpc, events, sender) =
-                start_node(config.p2p.clone(), kc, Arc::new(store))
+                start_node(config.p2p.clone(), kc, Arc::new(store),filter)
                     .await
                     .unwrap();
             (peer_id, p2p_rpc, events, sender)
@@ -1061,7 +1115,6 @@ impl Client {
         let client_t = client.clone();
         let db_t = db.clone();
         tokio::spawn(async move {
-            let mut has_err = false;
             let mut timer = std::time::Instant::now();
             loop {
                 let peers =match client_t.get_peers().await {
@@ -1072,99 +1125,71 @@ impl Client {
                         continue;   
                     }
                 };
-                if peers.len() < 2 && timer.elapsed().as_millis() < 30000 {
+                if peers.len() < 1 && timer.elapsed().as_millis() < 30000 {
                     
-                    tracing::warn!("waiting....{}",2 - peers.len()); 
+                    tracing::warn!("waiting....{}",1 - peers.len()); 
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                     continue;   
                 }
                 timer = std::time::Instant::now();
-                let topics = vec![TOPIC_STATUS,TOPIC_CHAT];
-                for t in topics.into_iter() {
-                    if let Err(e) = client_t.gossipsub_subscribe(TopicHash::from_raw(t)).await {
-                        error!("{e:?}");
-                        tracing::warn!("{e:?}");
-                        has_err = true;
-                        break;
-                    }
+
+                tracing::info!("subscribed all as client,status sync");
+                let msg = luffa_rpc_types::Message::StatusSync {
+                    to: 0,
+                    status: AppStatus::Active,
+                    from_id: my_id,
+                };
+                let key: Option<Vec<u8>> = None;
+                let event = Event::new(0, &msg, key, my_id);
+                let data = event.encode().unwrap();
+                if let Err(e) = client_t
+                    .gossipsub_publish(
+                        TopicHash::from_raw(format!("{}", TOPIC_STATUS)),
+                        bytes::Bytes::from(data),
+                    )
+                    .await
+                {
+                    tracing::warn!("status sync pub>> {e:?}");
                 }
+                let tree = db_t.open_tree(KVDB_CONTACTS_TREE).unwrap();
 
-                if !has_err {
-                    tracing::info!("subscribed all as client,status sync");
-                    let msg = luffa_rpc_types::Message::StatusSync {
-                        to: 0,
-                        status: AppStatus::Active,
-                        from_id: my_id,
-                    };
-                    let key: Option<Vec<u8>> = None;
-                    let event = Event::new(0, &msg, key, my_id);
-                    let data = event.encode().unwrap();
-                    if let Err(e) = client_t
-                        .gossipsub_publish(
-                            TopicHash::from_raw(format!("{}", TOPIC_STATUS)),
-                            bytes::Bytes::from(data),
-                        )
-                        .await
-                    {
-                        tracing::warn!("status sync pub>> {e:?}");
-                    }
-                    let tree = db_t.open_tree(KVDB_CONTACTS_TREE).unwrap();
+                let tag_prefix = format!("TAG-");
+                let itr = tree.scan_prefix(tag_prefix);
+                let contacts = itr.map(|item| {
+                    let (k, _v) = item.unwrap();
+                    // let tag = String::from_utf8(v.to_vec()).unwrap();
+                    let key = String::from_utf8(k.to_vec()).unwrap();
+                    let parts = key.split('-');
 
-                    let tag_prefix = format!("TAG-");
-                    let itr = tree.scan_prefix(tag_prefix);
-                    let contacts = itr.map(|item| {
-                        let (k, _v) = item.unwrap();
-                        // let tag = String::from_utf8(v.to_vec()).unwrap();
-                        let key = String::from_utf8(k.to_vec()).unwrap();
-                        let parts = key.split('-');
-
-                        let to = parts.last().unwrap();
-                        let to: u64 = to.parse().unwrap();
-                        let c_type = Self::get_contacts_type(db_t.clone(), to).unwrap_or(ContactsTypes::Private);
-                        let c_type: u8 = c_type as u8;
-                        let c_type = if c_type == 0 {ContactsTypes::Private}  else { ContactsTypes::Group};
-                        let have_time = Self::get_contacts_have_time(db_t.clone(), to);
-                        Contacts {
-                            did: to,
-                            r#type:c_type,
-                            have_time,
-                            wants:vec![],
-                        }  
-                    })
-                    .collect::<Vec<_>>();
-                    let mut itr = contacts.iter();
-                    while let Some(ctt) = itr.next() {
-                        if ctt.r#type == ContactsTypes::Private {
-                            // let p_key = format!("PKEY-{}", ctt.did);
-                            // if let Ok(Some(k)) = tree.get(&p_key) {
-                            //     let pk = PublicKey::from_protobuf_encoding(&k).unwrap();
-                            //     let did_peer = PeerId::from_public_key(&pk);
-                            //     if let Err(e) = client_t.gossipsub_add_explicit_peer(did_peer).await {
-                            //         tracing::warn!("{e:?}");
-                            //     }
-                            // }
-                            continue;
-                        }
-                        // let topic = TopicHash::from_raw(format!("{}_{}", TOPIC_CHAT, ctt.did));
-                        // if let Err(e) = client_t.gossipsub_subscribe(topic).await {
-                        //     tracing::warn!("{e:?}");
-                        // }
-                    }
-                    let sync = Message::ContactsSync { did: my_id, contacts };
-                    let event = Event::new(0, &sync, None, my_id);
-                    let data = event.encode().unwrap();
-                    if let Err(e) = client_t
-                        .gossipsub_publish(
-                            TopicHash::from_raw(format!("{}", TOPIC_STATUS)),
-                            bytes::Bytes::from(data),
-                        )
-                        .await
-                    {
-                        tracing::warn!("pub contacts sync status >>> {e:?}");
-                    }
-                    // break;
-                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                    let to = parts.last().unwrap();
+                    let to: u64 = to.parse().unwrap();
+                    let c_type = Self::get_contacts_type(db_t.clone(), to).unwrap_or(ContactsTypes::Private);
+                    let c_type: u8 = c_type as u8;
+                    let c_type = if c_type == 0 {ContactsTypes::Private}  else { ContactsTypes::Group};
+                    let have_time = Self::get_contacts_have_time(db_t.clone(), to);
+                    Contacts {
+                        did: to,
+                        r#type:c_type,
+                        have_time,
+                        wants:vec![],
+                    }  
+                })
+                .collect::<Vec<_>>();
+                
+                let sync = Message::ContactsSync { did: my_id, contacts };
+                let event = Event::new(0, &sync, None, my_id);
+                let data = event.encode().unwrap();
+                if let Err(e) = client_t
+                    .gossipsub_publish(
+                        TopicHash::from_raw(format!("{}", TOPIC_STATUS)),
+                        bytes::Bytes::from(data),
+                    )
+                    .await
+                {
+                    tracing::warn!("pub contacts sync status >>> {e:?}");
                 }
+                // break;
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
             }
         });
 
@@ -1177,14 +1202,158 @@ impl Client {
         let db_t = db.clone();
         let idx = idx_writer.clone();
         let idx_t = idx.clone();
+        let idx_tt = idx.clone();
         let schema_t = schema.clone();
+        let schema_tt = schema.clone();
         let process = tokio::spawn(async move {
             while let Some(evt) = events.recv().await {
                 match evt {
                     NetworkEvent::RequestResponse(rsp)=>{
                         match rsp {
-                            luffa_node::ChatEvent::Response { request_id, data } => {
+                            luffa_node::ChatEvent::Response { data,.. } => {
+                                if let Ok(im) = Event::decode_uncheck(&data) {
+                                    let Event {
+                                        msg,
+                                        nonce,
+                                        to,
+                                        from_id,
+                                        crc,
+                                        event_time,
+                                        ..
+                                    } = im;
 
+                                    if nonce.is_none() {
+                                        if to != my_id {
+                                            continue;
+                                        }
+                                        if let Ok(msg) = luffa_rpc_types::Message::decrypt(
+                                            bytes::Bytes::from(msg),
+                                            None,
+                                            nonce,
+                                        ) {
+                                            match msg {
+                                                Message::ContactsSync { did,contacts }=>{
+                                                    if did != my_id {
+                                                        continue;
+                                                    }
+                                                    for ctt in contacts {
+                                                        let did = ctt.did;
+                                                        let table = format!("message_{}",ctt.did);
+                                                        for crc in ctt.wants {
+                                                            if Self::have_in_tree(db_t.clone(), crc, &table) {
+                                                                continue;
+                                                            }
+                                                            let clt = client_t.clone();
+                                                            let db_tt = db_t.clone();
+                                                            // add to wants crc of contacts
+                                                            let cb_t = cb.clone();
+                                                            let scm= schema_tt.clone();
+                                                            let idx = idx_tt.clone();
+                                                            tokio::spawn(async move {
+                                                                match clt.get_crc_record(crc).await {
+                                                                    Ok(res)=>{
+                                                                        let data = res.data;
+                                                                        // TODO remove crc from wants and update want_time
+                                                                        tracing::warn!("get record: {crc}");
+                                                                        let data = data.to_vec();
+                                                                        Self::process_event(
+                                                                            db_tt.clone(),
+                                                                            cb_t.clone(),
+                                                                            clt.clone(),
+                                                                            idx.clone(),
+                                                                            scm,
+                                                                            &data,
+                                                                            my_id,
+                                                                        ).await;
+                                                                        if let Ok(im) = Event::decode_uncheck(&data) {
+                                                                            let Event {
+                                                                                msg,
+                                                                                event_time,
+                                                                                nonce,
+                                                                                ..
+                                                                            } = im;
+                                                                            if let Some(key) = Self::get_aes_key_from_contacts(db_tt.clone(), did) {
+                                                                                if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), Some(key), nonce) {
+                                                                                    let feedback = msg.chat_feedback();
+                                                                                    match feedback {
+                                                                                        Some((crc,status))=>{
+                                                                                            match status {
+                                                                                                FeedbackStatus::Read=>{
+                                                                                                    
+                                                                                                    // Self::update_session(db_tt.clone(),did,None,Some(crc),None,None,event_time);
+                                                                                                }
+                                                                                                FeedbackStatus::Reach=>{
+
+                                                                                                }
+                                                                                                _=>{
+
+                                                                                                }
+                                                                                            }
+                                                                                        }
+                                                                                        None=>{
+                                                                                            Self::set_contacts_have_time(db_tt.clone(), did,event_time);
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            }
+
+                                                                        }
+                                                                    }
+                                                                    Err(e)=>{
+                                                                        tracing::warn!("get crc record failed:{e:?}");
+                                                                    }
+                                                                }
+                                                            });
+                                                        }
+                                                    }
+                                                }
+                                                _=>{
+
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else{
+                                        let did = if to == my_id { from_id } else {to};
+                                        let table = format!("message_{}",did);
+                                        if !Self::have_in_tree(db_t.clone(), crc, &table) {
+                                            Self::process_event(
+                                                db_t.clone(),
+                                                cb.clone(),
+                                                client_t.clone(),
+                                                idx.clone(),
+                                                schema_tt.clone(),
+                                                &data,
+                                                my_id,
+                                            ).await;
+                                        }
+                                    } 
+                                }
+                            },
+                            luffa_node::ChatEvent::Request(data) => {
+                                //TODO message which coming from other
+                                if let Ok(im) = Event::decode_uncheck(&data) {
+                                    let Event {
+                                        from_id,
+                                        to,
+                                        crc,
+                                        ..
+                                    } = im;
+                                    let did = if to == my_id { from_id } else {to};
+                                    let table = format!("message_{}",did);
+                                    if !Self::have_in_tree(db_t.clone(), crc, &table) {
+                                        Self::process_event(
+                                            db_t.clone(),
+                                            cb.clone(),
+                                            client_t.clone(),
+                                            idx.clone(),
+                                            schema_tt.clone(),
+                                            &data,
+                                            my_id,
+                                        ).await;
+                                    }
+                                    
+                                }
                             },
                             luffa_node::ChatEvent::OutboundFailure { peer, request_id, error } => {
 
@@ -1202,473 +1371,7 @@ impl Client {
                         tracing::debug!("Subscribed> peer_id: {peer_id:?} topic:{topic}");
                     }
                     NetworkEvent::Gossipsub(GossipsubEvent::Message { message, from, id }) => {
-                        let GossipsubMessage { data, .. } = message;
-                        if let Ok(im) = Event::decode(&data) {
-                            let Event {
-                                msg,
-                                nonce,
-                                to,
-                                from_id,
-                                crc,
-                                event_time,
-                                ..
-                            } = im;
-                            debug!("Gossipsub> peer_id: {from:?} msg:{}", msg.len());
-                            // TODO check did status
-                            if nonce.is_none() {
-                                if to != my_id {
-                                    continue;
-                                }
-                                tracing::debug!("nonce is None");
-                                if let Ok(msg) = luffa_rpc_types::Message::decrypt(
-                                    bytes::Bytes::from(msg),
-                                    None,
-                                    nonce,
-                                ) {
-                                    // TODO: did is me or I'm a member any local group
-                                    debug!("Gossipsub> on_message peer_id: {from:?} msg:{:?}", msg);
-                                    let msg_data = serde_cbor::to_vec(&msg).unwrap();
-                                    // let cb = &*cb;
-                                    cb.on_message(crc, from_id, to, msg_data);
-                                    match msg {
-                                        
-                                        Message::ContactsSync { did,contacts }=>{
-                                            if did == my_id {
-                                                for ctt in contacts {
-                                                    let did = ctt.did;
-                                                    let table = format!("message_{}",ctt.did);
-                                                    for crc in ctt.wants {
-                                                        if Self::have_in_tree(db_t.clone(), crc, &table) {
-                                                            continue;
-                                                        }
-                                                        let table = table.clone();
-                                                        let clt = client_t.clone();
-                                                        let db_tt = db_t.clone();
-                                                        // add to wants crc of contacts
-                                                        let cb_t = cb.clone();
-                                                        tokio::spawn(async move {
-                                                            match clt.get_crc_record(crc).await {
-                                                                Ok(res)=>{
-                                                                    let data = res.data;
-                                                                    // TODO remove crc from wants and update want_time
-                                                                    tracing::warn!("get record: {crc}");
-                                                                    let data = data.to_vec();
-                                                                    let mut feedback = None;
-                                                                    if let Ok(im) = Event::decode_uncheck(&data) {
-                                                                        let Event {
-                                                                            msg,
-                                                                            to,
-                                                                            from_id,
-                                                                            crc,
-                                                                            nonce,
-                                                                            ..
-                                                                        } = im;
-                                                                        if let Some(key) = Self::get_aes_key_from_contacts(db_tt.clone(), did) {
-                                                                            if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), Some(key), nonce) {
-                                                                                feedback = msg.chat_feedback();
-                                                                                let msg = message_to(msg).unwrap();
-                                                                                cb_t.on_message(crc, from_id, to, msg);
-                                                                                match feedback {
-                                                                                    Some((crc,status))=>{
-                                                                                        match status {
-                                                                                            FeedbackStatus::Read=>{
-                                                                                                
-                                                                                                // Self::update_session(db_tt.clone(),did,None,Some(crc),Some(crc),None,event_time);
-                                                                                            }
-                                                                                            FeedbackStatus::Reach=>{
-
-                                                                                            }
-                                                                                            _=>{
-
-                                                                                            }
-                                                                                        }
-                                                                                    }
-                                                                                    None=>{
-                                                                                        Self::update_session(db_tt.clone(),did,None,None,Some(crc),None,event_time);
-                                                                                        Self::set_contacts_have_time(db_tt.clone(), did,event_time);
-                                                                                        Self::save_to_tree(
-                                                                                            db_tt.clone(),
-                                                                                            crc,
-                                                                                            &table,
-                                                                                            data,
-                                                                                            event_time,
-                                                                                        );
-                                                                                    }
-                                                                                }
-                                                                            }
-                                                                        }
-
-                                                                    }
-                                                                }
-                                                                Err(e)=>{
-                                                                    tracing::warn!("get crc record failed:{e:?}");
-                                                                }
-                                                            }
-                                                        });
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        _=>{
-
-                                        }
-                                    }
-                                    // todo!()
-                                }
-                            } else {
-                                let did = if to == my_id { from_id } else { to };
-                                match Self::get_aes_key_from_contacts(db_t.clone(), did) {
-                                    Some(key) => {
-                                        eprintln!("ase >>> {}  nonce:{:?}",key.len(),nonce);
-                                        if let Ok(msg) = luffa_rpc_types::Message::decrypt(
-                                            bytes::Bytes::from(msg),
-                                            Some(key.clone()),
-                                            nonce.clone(),
-                                        ) {
-                                            // TODO: did is me or I'm a member any local group
-                                            let msg_data = serde_cbor::to_vec(&msg).unwrap();
-                                            let table = 
-                                                format!("message_{did}");
-
-                                            Self::save_to_tree(
-                                                db_t.clone(),
-                                                crc,
-                                                &table,
-                                                data.clone(),
-                                                event_time,
-                                            );
-                                            cb.on_message(crc, from_id, to, msg_data);
-                                            eprintln!("on message>>>>>> {from_id}  to {to}");
-                                            let feed = luffa_rpc_types::Message::Feedback {
-                                                crc,
-                                                status: luffa_rpc_types::FeedbackStatus::Reach,
-                                            };
-                                            let event =
-                                                luffa_rpc_types::Event::new(0, &feed, None, my_id);
-                                            let event = event.encode().unwrap();
-                                            if let Err(e) = client_t
-                                                .gossipsub_publish(
-                                                    TopicHash::from_raw(TOPIC_STATUS),
-                                                    bytes::Bytes::from(event),
-                                                )
-                                                .await
-                                            {
-                                                error!("pub reach to all relays>> {e:?}");
-                                            }
-                                            tracing::debug!("will feedback");
-                                            match msg {
-                                                Message::ContactsExchange { exchange } => {
-                                                    match exchange {
-                                                        ContactsEvent::Answer { token } => {
-                                                            let ContactsToken {
-                                                                public_key,
-                                                                sign,
-                                                                secret_key,
-                                                                contacts_type,
-                                                                comment,
-                                                                ..
-                                                            } = token;
-                                                            Self::save_contacts(
-                                                                db_t.clone(),
-                                                                did,
-                                                                secret_key,
-                                                                public_key.clone(),
-                                                                contacts_type,
-                                                                sign,
-                                                                comment.clone(),
-                                                            );
-                                                            let msg_type = match contacts_type {
-                                                                ContactsTypes::Private => {
-                                                                    format!("contacts_private")
-                                                                }
-                                                                ContactsTypes::Group => {
-                                                                    format!("contacts_group")
-                                                                }
-                                                            };
-                                                            let fld_crc =
-                                                                schema.get_field("crc").unwrap();
-                                                            let fld_from = schema
-                                                                .get_field("from_id")
-                                                                .unwrap();
-                                                            let fld_to =
-                                                                schema.get_field("to_id").unwrap();
-                                                            let fld_time = schema
-                                                                .get_field("event_time")
-                                                                .unwrap();
-                                                            let fld_title =
-                                                                schema.get_field("title").unwrap();
-                                                            let fld_body =
-                                                                schema.get_field("body").unwrap();
-                                                            let fld_type = schema
-                                                                .get_field("msg_type")
-                                                                .unwrap();
-                                                            let title = multibase::encode(multibase::Base::Base58Btc, public_key);
-                                                            let body = format!(
-                                                                "{}",
-                                                                comment.clone().unwrap_or_default()
-                                                            );
-                                                            let doc = doc!(
-                                                                fld_crc => crc,
-                                                                fld_from => from_id,
-                                                                fld_to => to,
-                                                                fld_time => event_time,
-                                                                fld_type => msg_type,
-                                                                fld_title => title,
-                                                                fld_body => body,
-                                                            );
-                                                            let mut wr = idx.write().await;
-                                                            wr.add_document(doc).unwrap();
-                                                            wr.commit().unwrap();
-                                                            let msg = luffa_rpc_types::Message::Chat { content: ChatContent::Feedback { crc,status: luffa_rpc_types::FeedbackStatus::Reach } };
-                                                            let event = luffa_rpc_types::Event::new(
-                                                                did,
-                                                                &msg,
-                                                                Some(key),
-                                                                my_id,
-                                                            );
-                                                            let event = event.encode().unwrap();
-                                                            if let Err(e) = client_t
-                                                                .gossipsub_publish(
-                                                                    TopicHash::from_raw(format!(
-                                                                        "{}",
-                                                                        TOPIC_CHAT
-                                                                    )),
-                                                                    bytes::Bytes::from(event),
-                                                                )
-                                                                .await
-                                                            {
-                                                                error!("{e:?}");
-                                                            }
-                                                            Self::update_session(db_t.clone(), did, comment.clone(), None, None, None, event_time);
-                                                        }
-                                                        _ => {}
-                                                    }
-                                                }
-                                                Message::Chat { content } => {
-                                                    // TODO index content search engine
-                                                    match content {
-                                                        ChatContent::Burn { crc, expires } => {
-                                                            let table = 
-                                                                format!("message_{did}")
-                                                            ;
-                                                            Self::burn_from_tree(
-                                                                db_t.clone(),
-                                                                crc,
-                                                                table,
-                                                            );
-
-                                                            let fld_crc =
-                                                                schema.get_field("crc").unwrap();
-                                                            let mut wr = idx.write().await;
-                                                            let del =
-                                                                Term::from_field_u64(fld_crc, crc);
-                                                            wr.delete_term(del);
-                                                            wr.commit().unwrap();
-                                                        }
-                                                        ChatContent::Send { data } => {
-                                                            let feed = luffa_rpc_types::Message::Chat { content: ChatContent::Feedback { crc,status: luffa_rpc_types::FeedbackStatus::Reach } };
-                                                            let event = luffa_rpc_types::Event::new(
-                                                                did,
-                                                                &feed,
-                                                                Some(key),
-                                                                my_id,
-                                                            );
-                                                            tracing::info!("send feedback to {from_id}");
-                                                            let event = event.encode().unwrap();
-                                                            if let Err(e) = client_t
-                                                                .gossipsub_publish(
-                                                                    TopicHash::from_raw(format!(
-                                                                        "{}",
-                                                                        TOPIC_CHAT
-                                                                    )),
-                                                                    bytes::Bytes::from(event),
-                                                                )
-                                                                .await
-                                                            {
-                                                                error!("{e:?}");
-                                                            }
-                                                            
-                                                            let (title,body) =
-                                                            match data {
-                                                                luffa_rpc_types::ContentData::Text { source, reference } => {
-                                                                    match source {
-                                                                        luffa_rpc_types::DataSource::Cid { cid } => {
-                                                                            let t = multibase::encode(multibase::Base::Base58Btc, cid);
-                                                                            let body = format!("");
-                                                                            (t,body)
-                                                                        },
-                                                                        luffa_rpc_types::DataSource::Raw { data } => {
-                                                                            let t = format!("");
-                                                                            let body = multibase::encode(multibase::Base::Base64, data);
-                                                                            (t,body)
-                                                                        },
-                                                                        luffa_rpc_types::DataSource::Text { content } => {
-                                                                            let t = format!("");
-
-                                                                            (t,content)
-
-                                                                        },
-                                                                    }
-
-                                                                },
-                                                                luffa_rpc_types::ContentData::Link { txt, url, reference } => {
-                                                                    (txt,url)
-                                                                },
-                                                                luffa_rpc_types::ContentData::Media { title, m_type, source } => {
-                                                                    (title,format!(""))
-                                                                },
-                                                            };
-                                                            // let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-                                                            let (msg_type,did) = if to == my_id {
-                                                                // let tag_key_private = format!("TAG-0-{}", from_id);
-                                                                (format!("content_private"),from_id)
-                                                            } else {
-                                                                // let tag_key_group = format!("TAG-1-{}", to);
-                                                                // let tag = 
-                                                                // match tree.get(&tag_key_group) {
-                                                                //     Ok(Some(v))=>{
-                                                                //         Some(String::from_utf8(v.to_vec()).unwrap())
-                                                                //     }
-                                                                //     _=>{
-                                                                //         None
-                                                                //     }
-                                                                // };
-                                                                (format!("content_group"),to)
-                                                            };
-
-
-                                                            Self::update_session(db_t.clone(), did, None, None, Some(crc), Some(body.clone()), event_time);
-                                                            let fld_crc =
-                                                                schema.get_field("crc").unwrap();
-                                                            let fld_from = schema
-                                                                .get_field("from_id")
-                                                                .unwrap();
-                                                            let fld_to =
-                                                                schema.get_field("to_id").unwrap();
-                                                            let fld_time = schema
-                                                                .get_field("event_time")
-                                                                .unwrap();
-                                                            let fld_title =
-                                                                schema.get_field("title").unwrap();
-                                                            let fld_body =
-                                                                schema.get_field("body").unwrap();
-                                                            let fld_type = schema
-                                                                .get_field("msg_type")
-                                                                .unwrap();
-                                                            let doc = doc!(
-                                                                fld_crc => crc,
-                                                                fld_from => from_id,
-                                                                fld_to => to,
-                                                                fld_time => event_time,
-                                                                fld_type => msg_type,
-                                                                fld_title => title,
-                                                                fld_body => body,
-                                                            );
-                                                            let mut wr = idx.write().await;
-                                                            wr.add_document(doc).unwrap();
-                                                            wr.commit().unwrap();
-                                                        }
-                                                        ChatContent::Feedback { crc, status }=>{
-                                                            Self::update_session(db_t.clone(), did, None, None, None, None, event_time);
-                                                        }
-                                                        _ => {}
-                                                    }
-                                                }
-                                                Message::WebRtc { stream_id, action } => {
-                                                    //TODO index to search engine
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-                                        else{
-                                            eprintln!("decrypt failes!!! {:?}",nonce);
-                                        }
-                                    }
-                                    None => {
-                                        // warn!("Gossipsub> peer_id: {from:?} nonce:{:?}", nonce);
-                                        if let Some(key) =
-                                            Self::get_offer_by_offer_id(db_t.clone(), from_id)
-                                        {
-                                            tracing::warn!("offer is:{}  nonce:{:?} key: {:?}",from_id,nonce,key);
-                                            if let Ok(msg) = luffa_rpc_types::Message::decrypt(
-                                                bytes::Bytes::from(msg),
-                                                Some(key.clone()),
-                                                nonce,
-                                            ) {
-                                                // TODO: did is me or I'm a member any local group
-                                                match &msg {
-                                                    Message::ContactsExchange { exchange }=>{
-                                                        match exchange{
-                                                            ContactsEvent::Answer { token }=>{
-                                                                let ContactsToken {
-                                                                    public_key,
-                                                                    sign,
-                                                                    contacts_type,
-                                                                    comment,
-                                                                    ..
-                                                                } = token;
-                                                                let pk = PublicKey::from_protobuf_encoding(public_key).unwrap();
-                                                                let peer = PeerId::from_public_key(&pk);
-                                                                let mut digest = crc64fast::Digest::new();
-                                                                digest.write(&peer.to_bytes());
-                                                                let from_id = digest.sum64();
-                                                                let data = serde_cbor::to_vec(&msg).unwrap();
-                                                                cb.on_message(crc, from_id, to, data);
-
-                                                                let msg = luffa_rpc_types::Message::Chat { content: ChatContent::Feedback { crc,status: luffa_rpc_types::FeedbackStatus::Reach } };
-                                                                let event = luffa_rpc_types::Event::new(
-                                                                    from_id,
-                                                                    &msg,
-                                                                    Some(key.clone()),
-                                                                    my_id,
-                                                                );
-                                                                let event = event.encode().unwrap();
-                                                                tracing::warn!("pub to :{}",from_id);
-                                                                if let Err(e) = client_t
-                                                                    .gossipsub_publish(
-                                                                        TopicHash::from_raw(format!(
-                                                                            "{}",
-                                                                            TOPIC_CHAT
-                                                                        )),
-                                                                        bytes::Bytes::from(event),
-                                                                    )
-                                                                    .await
-                                                                {
-                                                                    error!("{e:?}");
-                                                                }
-                                                                else{
-                                                                    tracing::warn!("pub to :{} Ok!",from_id);
-                                                                    Self::save_contacts(
-                                                                        db_t.clone(),
-                                                                        from_id,
-                                                                        key.clone(),
-                                                                        public_key.clone(),
-                                                                        *contacts_type,
-                                                                        sign.clone(),
-                                                                        comment.clone(),
-                                                                    );
-                                                                    Self::update_session(db_t.clone(), from_id, comment.clone(), None, None, None, event_time);
-                                                                }
-                                                            }
-                                                            _=>{
-
-                                                            }
-                                                        }
-                                                    }
-                                                    _=>{
-
-                                                    }
-                                                }
-                                                
-                                            }
-                                        } else {
-                                            eprintln!("invalid msg");
-                                        }
-                                    }
-                                }
-                                // todo!()
-                            }
-                        }
+                        
                     }
                     NetworkEvent::Gossipsub(GossipsubEvent::Unsubscribed { peer_id, topic }) => {
 
@@ -1732,7 +1435,7 @@ impl Client {
         });
 
         let db_t = db.clone();
-        while let Some((to, msg_data, from_id,channel)) = receiver.recv().await {
+        while let Some((to, msg_data, from_id,channel,k)) = receiver.recv().await {
             if to == u64::MAX {
                 channel.send(Err(anyhow::anyhow!("exit"))).unwrap();
                 break;
@@ -1742,27 +1445,29 @@ impl Client {
             
             let evt = if msg.need_encrypt() {
                 tracing::info!("----------encrypt------{}",to);
-                match Self::get_aes_key_from_contacts(db.clone(), to) {
-                    Some(key) => Some(Event::new(to, &msg, Some(key), from_id)),
-                    None => { 
-                        tracing::warn!("aes key not found");
-                        Some(Event::new(to, &msg, None, from_id))
-                    },
+                match k {
+                   Some(key)=>{
+                       Some(Event::new(to, &msg, Some(key), from_id))
+                   }
+                   None=>{
+                       match Self::get_aes_key_from_contacts(db.clone(), to) {
+                           Some(key) => Some(Event::new(to, &msg, Some(key), from_id)),
+                           None => { 
+                               tracing::warn!("aes key not found did:{} msg:{:?}",to,msg);
+                               continue;
+                            //    Some(Event::new(to, &msg, None, from_id))
+                           },
+                       }
+                   }  
                 }
             } else {
                 Some(Event::new(to, &msg, None, from_id))
             };
             match evt {
                 Some(e) => {
-                    
+                    let crc_id = e.crc;
                     let data = e.encode().unwrap();
-                    let topic_hash = if to == 0 {
-                        TopicHash::from_raw(TOPIC_STATUS)
-                    } else {
-                        tracing::info!("----------encrypt---send---");
-                        
-                        TopicHash::from_raw(format!("{}", TOPIC_CHAT))
-                    };
+                    
                     let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
                     let tag_key = format!("TAG-{}", to);
                     let (tag,msg_type) =
@@ -1792,15 +1497,7 @@ impl Client {
                         }
                     };
                     if to != my_id {
-                        // if let Err(e) = client
-                        //     .gossipsub_publish(topic_hash, bytes::Bytes::from(data.clone()))
-                        //     .await
-                        // {
-                        //     error!("{e:?}");
-                        //     tracing::warn!("{e:?}");
-                        //     channel.send(Err(anyhow::anyhow!("publish failed:{:?}",e))).unwrap();
-                        //     continue;
-                        // }
+                        
                         match client.chat_request(bytes::Bytes::from(data.clone())).await {
                             Ok(res)=>{
                                 tracing::info!("{res:?}");
@@ -1979,12 +1676,339 @@ impl Client {
             },
         }
     }
+
+    async fn process_event(
+        db_t: Arc<Db>,
+        cb: Arc<Box<dyn Callback>>,
+        client_t: Arc<P2pClient>,
+        idx: Arc<RwLock<IndexWriter>>,
+        schema: Schema,
+        data:&Vec<u8>,
+        my_id:u64
+    ) 
+    {
+        if let Ok(im) = Event::decode_uncheck(&data) {
+            let Event {
+                msg,
+                nonce,
+                to,
+                from_id,
+                crc,
+                event_time,
+                ..
+            } = im.clone();
+            if to != my_id {
+                return;
+            }
+            if nonce.is_none() {
+                return;
+            }
+            let did = if to == my_id { from_id } else { to };
+            match Self::get_aes_key_from_contacts(db_t.clone(), did) {
+                Some(key) => {
+                    if let Ok(msg) = luffa_rpc_types::Message::decrypt(
+                        bytes::Bytes::from(msg),
+                        Some(key.clone()),
+                        nonce.clone(),
+                    ) {
+                        // TODO: did is me or I'm a member any local group
+                        let msg_data = serde_cbor::to_vec(&msg).unwrap();
+                        let table = 
+                            format!("message_{did}");
+
+                        Self::save_to_tree(
+                            db_t.clone(),
+                            crc,
+                            &table,
+                            data.clone(),
+                            event_time,
+                        );
+                        cb.on_message(crc, from_id, to, msg_data);
+                        
+                        match msg {
+                            
+                            Message::Chat { content } => {
+                                // TODO index content search engine
+                                match content {
+                                    ChatContent::Burn { crc, expires } => {
+                                        let table = 
+                                            format!("message_{did}")
+                                        ;
+                                        Self::burn_from_tree(
+                                            db_t.clone(),
+                                            crc,
+                                            table,
+                                        );
+
+                                        let fld_crc =
+                                            schema.get_field("crc").unwrap();
+                                        let mut wr = idx.write().await;
+                                        let del =
+                                            Term::from_field_u64(fld_crc, crc);
+                                        wr.delete_term(del);
+                                        wr.commit().unwrap();
+                                    }
+                                    ChatContent::Send { data } => {
+                                        let feed = luffa_rpc_types::Message::Chat { content: ChatContent::Feedback { crc,status: luffa_rpc_types::FeedbackStatus::Reach } };
+                                        let event = luffa_rpc_types::Event::new(
+                                            did,
+                                            &feed,
+                                            Some(key),
+                                            my_id,
+                                        );
+                                        tracing::info!("send feedback to {from_id}");
+                                        let event = event.encode().unwrap();
+                                        if let Err(e) = client_t
+                                            .chat_request(
+                                                bytes::Bytes::from(event),
+                                            )
+                                            .await
+                                        {
+                                            error!("{e:?}");
+                                        }
+                                        
+                                        let (title,body) =
+                                        match data {
+                                            luffa_rpc_types::ContentData::Text { source, reference } => {
+                                                match source {
+                                                    luffa_rpc_types::DataSource::Cid { cid } => {
+                                                        let t = multibase::encode(multibase::Base::Base58Btc, cid);
+                                                        let body = format!("");
+                                                        (t,body)
+                                                    },
+                                                    luffa_rpc_types::DataSource::Raw { data } => {
+                                                        let t = format!("");
+                                                        let body = multibase::encode(multibase::Base::Base64, data);
+                                                        (t,body)
+                                                    },
+                                                    luffa_rpc_types::DataSource::Text { content } => {
+                                                        let t = format!("");
+
+                                                        (t,content)
+
+                                                    },
+                                                }
+
+                                            },
+                                            luffa_rpc_types::ContentData::Link { txt, url, reference } => {
+                                                (txt,url)
+                                            },
+                                            luffa_rpc_types::ContentData::Media { title, m_type, source } => {
+                                                (title,format!(""))
+                                            },
+                                        };
+                                        // let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
+                                        let (msg_type,did) = if to == my_id {
+                                            // let tag_key_private = format!("TAG-0-{}", from_id);
+                                            (format!("content_private"),from_id)
+                                        } else {
+                                            // let tag_key_group = format!("TAG-1-{}", to);
+                                            // let tag = 
+                                            // match tree.get(&tag_key_group) {
+                                            //     Ok(Some(v))=>{
+                                            //         Some(String::from_utf8(v.to_vec()).unwrap())
+                                            //     }
+                                            //     _=>{
+                                            //         None
+                                            //     }
+                                            // };
+                                            (format!("content_group"),to)
+                                        };
+
+
+                                        Self::update_session(db_t.clone(), did, None, None, Some(crc), Some(body.clone()), event_time);
+                                        let fld_crc =
+                                            schema.get_field("crc").unwrap();
+                                        let fld_from = schema
+                                            .get_field("from_id")
+                                            .unwrap();
+                                        let fld_to =
+                                            schema.get_field("to_id").unwrap();
+                                        let fld_time = schema
+                                            .get_field("event_time")
+                                            .unwrap();
+                                        let fld_title =
+                                            schema.get_field("title").unwrap();
+                                        let fld_body =
+                                            schema.get_field("body").unwrap();
+                                        let fld_type = schema
+                                            .get_field("msg_type")
+                                            .unwrap();
+                                        let doc = doc!(
+                                            fld_crc => crc,
+                                            fld_from => from_id,
+                                            fld_to => to,
+                                            fld_time => event_time,
+                                            fld_type => msg_type,
+                                            fld_title => title,
+                                            fld_body => body,
+                                        );
+                                        let mut wr = idx.write().await;
+                                        wr.add_document(doc).unwrap();
+                                        wr.commit().unwrap();
+                                    }
+                                    ChatContent::Feedback { crc, status }=>{
+                                        match status {
+                                            FeedbackStatus::Reach=>{
+
+                                                Self::update_session(db_t.clone(), did, None, None, Some(crc), None, event_time);
+                                            }
+                                            _=>{
+
+                                                Self::update_session(db_t.clone(), did, None, None, None, None, event_time);
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            Message::WebRtc { stream_id, action } => {
+                                //TODO index to search engine
+                            }
+                            _ => {}
+                        }
+                    }
+                    else{
+                        eprintln!("decrypt failes!!! {:?}",nonce);
+                    }
+                }
+                None => {
+                    // warn!("Gossipsub> peer_id: {from:?} nonce:{:?}", nonce);
+                    if let Some(key) =
+                        Self::get_offer_by_offer_id(db_t.clone(), from_id)
+                    {
+                        tracing::warn!("offer is:{}  nonce:{:?} key: {:?}",from_id,nonce,key);
+                        if let Ok(msg) = luffa_rpc_types::Message::decrypt(
+                            bytes::Bytes::from(msg),
+                            Some(key.clone()),
+                            nonce,
+                        ) {
+                            let msg_t = msg.clone();
+                            // TODO: did is me or I'm a member any local group
+                            let offer_or_answer = | token: ContactsToken | async move {
+                                let ContactsToken {
+                                    public_key,
+                                    sign,
+                                    secret_key,
+                                    contacts_type,
+                                    comment,
+                                    ..
+                                } = token;
+                                let pk = PublicKey::from_protobuf_encoding(&public_key).unwrap();
+                                let peer = PeerId::from_public_key(&pk);
+                                let mut digest = crc64fast::Digest::new();
+                                digest.write(&peer.to_bytes());
+                                let from_id = digest.sum64();
+                                let data = serde_cbor::to_vec(&msg).unwrap();
+                                cb.on_message(crc, from_id, to, data);
+
+                                Self::save_contacts(
+                                    db_t.clone(),
+                                    from_id,
+                                    secret_key.clone(),
+                                    public_key.clone(),
+                                    contacts_type,
+                                    sign.clone(),
+                                    comment.clone(),
+                                );
+                                
+                                let msg_type = match contacts_type {
+                                    ContactsTypes::Private => {
+                                        format!("contacts_private")
+                                    }
+                                    ContactsTypes::Group => {
+                                        format!("contacts_group")
+                                    }
+                                };
+                                let fld_crc =
+                                    schema.get_field("crc").unwrap();
+                                let fld_from = schema
+                                    .get_field("from_id")
+                                    .unwrap();
+                                let fld_to =
+                                    schema.get_field("to_id").unwrap();
+                                let fld_time = schema
+                                    .get_field("event_time")
+                                    .unwrap();
+                                let fld_title =
+                                    schema.get_field("title").unwrap();
+                                let fld_body =
+                                    schema.get_field("body").unwrap();
+                                let fld_type = schema
+                                    .get_field("msg_type")
+                                    .unwrap();
+                                let title = multibase::encode(multibase::Base::Base58Btc, public_key);
+                                let body = format!(
+                                    "{}",
+                                    comment.clone().unwrap_or_default()
+                                );
+                                let doc = doc!(
+                                    fld_crc => crc,
+                                    fld_from => from_id,
+                                    fld_to => to,
+                                    fld_time => event_time,
+                                    fld_type => msg_type,
+                                    fld_title => title,
+                                    fld_body => body,
+                                );
+                                let mut wr = idx.write().await;
+                                wr.add_document(doc).unwrap();
+                                wr.commit().unwrap();
+                                let msg = luffa_rpc_types::Message::Chat { content: ChatContent::Feedback { crc,status: luffa_rpc_types::FeedbackStatus::Reach } };
+                                
+                                let event = luffa_rpc_types::Event::new(
+                                    from_id,
+                                    &msg,
+                                    Some(secret_key),
+                                    my_id,
+                                );
+                                let event = event.encode().unwrap();
+                                if let Err(e) = client_t
+                                    .chat_request(
+                                        bytes::Bytes::from(event),
+                                    )
+                                    .await
+                                {
+                                    error!("{e:?}");
+                                }
+                                Self::update_session(db_t.clone(), from_id, comment.clone(), None, None, None, event_time);
+                                
+                            };
+                            match msg_t {
+                                Message::ContactsExchange { exchange }=>{
+                                    match exchange{
+                                        ContactsEvent::Answer { token }=>{
+                                            offer_or_answer(token).await;
+                                        }
+                                        ContactsEvent::Offer { token }=>{
+                                            offer_or_answer(token).await;
+                                        }
+                                        _=>{
+
+                                        }
+                                    }
+                                }
+                                _=>{
+
+                                }
+                            }
+                            
+                        }
+                    } else {
+                        eprintln!("invalid msg");
+                    }
+                }
+            }
+        }        // todo!()
+    }
+
 }
 /// Starts a new p2p node, using the given mem rpc channel.
 pub async fn start_node(
     config: luffa_node::config::Config,
     keychain: Keychain<DiskStorage>,
     db: Arc<luffa_store::Store>,
+    filter:Option<KeyFilter>,
 ) -> anyhow::Result<(
     PeerId,
     JoinHandle<()>,
@@ -1992,7 +2016,7 @@ pub async fn start_node(
     Sender<luffa_node::rpc::RpcMessage>,
 )> {
     tracing::info!("node>>>{config:?}");
-    let (mut p2p, sender) = Node::new(config, keychain, db,Some("Luffa".to_string())).await?;
+    let (mut p2p, sender) = Node::new(config, keychain, db,Some("Luffa".to_string()),filter).await?;
     let events = p2p.network_events();
     let local_id = p2p.local_peer_id().clone();
     // Start services

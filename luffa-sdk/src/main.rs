@@ -1,6 +1,8 @@
 #![feature(poll_ready)]
 use anyhow::Result;
 use futures::pending;
+use libp2p::PeerId;
+use libp2p::identity::PublicKey;
 use luffa_rpc_types::{message_to, ChatContent, ContactsEvent, ContactsToken, Message, RtcAction, message_from, AppStatus};
 use luffa_sdk::{Callback, Client};
 use std::future::{Future, IntoFuture};
@@ -12,6 +14,22 @@ use std::{collections::VecDeque, sync::Arc, sync::Mutex};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tracing::log::warn;
 use tracing::{error, info};
+/// CLI arguments support.
+use clap::Parser;
+use std::path::PathBuf;
+
+#[derive(Parser, Debug, Clone)]
+#[clap(author, version, about, long_about = None)]
+pub struct Args {
+    #[clap(short, long)]
+    to: Option<u64>,
+    #[clap(long)]
+    scan: Option<String>,
+    #[clap(long)]
+    pub cfg: Option<String>,
+    #[clap(long)]
+    pub tag: Option<String>,
+}
 
 #[derive(Debug)]
 struct Process {
@@ -32,23 +50,25 @@ impl Callback for Process {
 
 fn main() -> Result<()> {
     let (tx, rx) = sync_channel(1024);
-
+    let args = Args::parse();
     let process = Process::new(tx);
 
     let msg = Box::new(process);
-    let to_id = std::env::args().nth(1).unwrap_or_default();
-    let to_id: u64 = to_id.parse().unwrap_or_default();
+    let to_id = args.to;
+    let scan = args.scan;
+    let tag = args.tag;
     // let msg_t = Arc::new(msg.clone());
     let client = Client::new();
-    let cfg_path = std::env::args().nth(2);
+    let cfg_path = args.cfg;
     // let msg_t = msg.clone();
     tracing::info!("starting");
-    client.start(cfg_path, msg);
+    client.start(cfg_path,None,tag,msg).unwrap();
     tracing::info!("started.");
     let client = Arc::new(client);
     let client_t = client.clone();
     std::thread::spawn(move || {
         let mut x = 0;
+        let mut code = String::new();
         loop {
             std::thread::sleep(Duration::from_secs(10));
             let peer_id = client.get_local_id();
@@ -56,81 +76,90 @@ fn main() -> Result<()> {
             let peers = client.relay_list();
             // client.send_msg(to, msg)
             tracing::debug!("{:?}", peers);
-            if to_id > 0 {
-                let msg = match client.find_contacts_tag(to_id) {
-                    Some(tag) => {
-                        x += 1;
-                        tracing::warn!("is man");
-                        // Message::Chat {
-                        //     content: ChatContent::Send {
-                        //         data: luffa_rpc_types::ContentData::Text {
-                        //             source: luffa_rpc_types::DataSource::Text {
-                        //                 content: format!("{tag} Hello - {x}"),
-                        //             },
-                        //             reference: None,
-                        //         },
-                        //     },
-                        // }
-                        Message::WebRtc { stream_id: 1000, action: RtcAction::Push { audio_id: 2, video_id: 3 } }
-                    }
-                    None => {
-                        // let code = client.show_code(Some("Hello".to_owned()));
-                        // tracing::warn!("show :{}",code);
-                        // let msg = Message::WebRtc {
-                        //     stream_id: 0,
-                        //     action: luffa_rpc_types::RtcAction::Status { timestamp: 0, code },
-                        // };
-                        let msg = Message::StatusSync { to:to_id, from_id: 0, status: AppStatus::Deactive };
-                        msg
-                    }
-                };
-
-                let msg = message_to(msg).unwrap();
-                match client.send_msg(to_id, msg) {
-                    Ok(crc) => {
-                        tracing::info!("send seccess {crc}");
-                    }
-                    Err(e) => {
-                        error!("{e:?}");
-                    }
-                }
-            }
-            else{
-                let list = client.contacts_list(0);
-                for c in list {
-                    
-                    let ls = client.recent_messages(c.did, 100);
-                    {
-                        let msg_len = ls.len();
-                        tracing::warn!(" contacts>> {:?} msg_len>>{}", c,msg_len);
-
-                        for crc in ls {
-                            if let Some(meta) = client.read_msg_with_meta(c.did, crc) {
-                                let msg = message_from(meta.msg).unwrap();
-                                match &msg {
-                                    Message::Chat { content }=>{
-
-                                    }
-                                    Message::WebRtc { stream_id, action }=>{
-
-                                    }
-                                    _=>{
-//moXBDb250YWN0c0V4Y2hhbmdloWhleGNoYW5nZaFlT2ZmZXKhZXRva2VupmpwdWJsaWNfa2V5mCQIARIYIBjeGJsYmxieGE8YnRghGDkXGFEDGCAYJBhOGDMNEhi7GDoYHxhbGG4YmBgyGI4Y1Rj6FxjMGKAYMwFpY3JlYXRlX2F0GmQNjwNkc2lnbphAGLsYrxjFGHEY0hhCGPwYhhiSGEsYPBjqBBj7DhjOGE0YhBjOGFUYpRiDGDEYlhi5GLcYYxiKGIMYKBhkGCwYlRg6Bhg4GBgYahh8GEURGMcYZAgYeBjjGEQYiBYYtRhOGKwYXxgxGHEYLxjHEhj4GKMOGPcYQAFqc2VjcmV0X2tleZggGGAY3BipGDgYvxiHGEIYMRi8GL0YOxhMGG4YkRhOGJQYNBjUGO8Y2QwYZxglGFYYkhhlGEsYhxjyGM4YoBjSbWNvbnRhY3RzX3R5cGVnUHJpdmF0ZWdjb21tZW50ZUhlbGxv
-                                        tracing::warn!("[{msg_len}] {:?}",msg);
-                                    }
-                                }    
+            match to_id {
+                Some(to_id)=>{
+                    match client.find_contacts_tag(to_id) {
+                        Some(tag) => {
+                            x += 1;
+                            tracing::warn!("is man");
+                          
+                            let msg = Message::WebRtc { stream_id: 1000, action: RtcAction::Push { audio_id: 2, video_id: 3 } };
+                            let msg = message_to(msg).unwrap();
+                            match client.send_msg(to_id, msg) {
+                                Ok(crc) => {
+                                    tracing::info!("send seccess {crc}");
+                                }
+                                Err(e) => {
+                                    error!("{e:?}");
+                                }
                             }
                         }
-                    }
+                        None => {
+                            match scan.as_ref() {
+                                Some(scan)=>{
+                                    client.contacts_offer(scan);
+                                }
+                                None=>{
+                                    if code.is_empty() {
+                                        code = client.show_code().unwrap();
+                                    }
+                                    tracing::warn!("scan me :{}",code);
+                                }
+                            }
+                            // client.contacts_offer(&code);
+                            // let msg = Message::WebRtc {
+                            //     stream_id: 0,
+                            //     action: luffa_rpc_types::RtcAction::Status { timestamp: 0, code },
+                            // };
+                            // let msg = Message::StatusSync { to:to_id, from_id: 0, status: AppStatus::Deactive };
+                            // msg
+                        }
+                    };
                 }
-                let list = client.session_list(10);
-                tracing::warn!(" session>> {:?}", list);
-
-                for s in list {
-                    let did = s.did;
-                    for crc in s.reach_crc {
-                        if let Some(meta) = client.read_msg_with_meta(did, crc) {
-                            tracing::warn!("{:?}",meta);
+                None=>{
+                    match scan.as_ref() {
+                        Some(scan)=>{
+                            client.contacts_offer(scan);
+                        }
+                        None=>{
+                            
+                            let list = client.contacts_list(0);
+                            for c in list {
+                                
+                                let ls = client.recent_messages(c.did, 100);
+                                {
+                                    let msg_len = ls.len();
+                                    tracing::warn!(" contacts>> {:?} msg_len>>{}", c,msg_len);
+            
+                                    for crc in ls {
+                                        if let Some(meta) = client.read_msg_with_meta(c.did, crc) {
+                                            let msg = message_from(meta.msg).unwrap();
+                                            match &msg {
+                                                Message::Chat { content }=>{
+            
+                                                }
+                                                Message::WebRtc { stream_id, action }=>{
+            
+                                                }
+                                                _=>{
+                                                    tracing::warn!("[{msg_len}] {:?}",msg);
+                                                }
+                                            }    
+                                        }
+                                    }
+                                }
+                            }
+                            let list = client.session_list(10);
+                            tracing::warn!(" session>> {:?}", list);
+            
+                            for s in list {
+                                let did = s.did;
+                                for crc in s.reach_crc {
+                                    if let Some(meta) = client.read_msg_with_meta(did, crc) {
+                                        tracing::warn!("{:?}",meta);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -143,13 +172,8 @@ fn main() -> Result<()> {
 
         match &msg {
             Message::WebRtc { stream_id, action } => match action {
-                RtcAction::Status { timestamp, code } => {
-                    if let Ok(c) = client_t.parse_contacts_code(code.clone()) {
-                        tracing::warn!("scan code: {c}");
-                        client_t
-                            .answer_contacts_code(code.clone(), Some("World".to_owned()))
-                            .unwrap();
-                    }
+                RtcAction::Status { timestamp, code,info } => {
+                    
                 }
                 RtcAction::Push { audio_id, video_id }=>{
                     tracing::warn!("{}-----push-----{}",stream_id,audio_id);
@@ -158,11 +182,14 @@ fn main() -> Result<()> {
             },
             Message::ContactsExchange { exchange } => match exchange {
                 ContactsEvent::Offer { token } => {
-                    let code = serde_cbor::to_vec(&msg).unwrap();
-                    let code = multibase::encode(multibase::Base::Base64, code);
+                    let ContactsToken { public_key, create_at, sign, secret_key, contacts_type, comment } = token;
+                    let pk = PublicKey::from_protobuf_encoding(public_key).unwrap();
+                    let peer = PeerId::from_public_key(&pk);
+                    let mut digest = crc64fast::Digest::new();
+                    digest.write(&peer.to_bytes());
+                    let to = digest.sum64();
                     client_t
-                        .answer_contacts_code(code, Some("World".to_owned()))
-                        .unwrap();
+                        .contacts_anwser(to, secret_key.clone());
                 }
                 ContactsEvent::Answer { token } => {
                     let msg = Message::Chat {

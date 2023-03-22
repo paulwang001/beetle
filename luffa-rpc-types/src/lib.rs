@@ -16,7 +16,7 @@ use libp2p::identity::{Keypair, PublicKey};
 use multihash::{Code, MultihashDigest};
 
 use aes_gcm::{
-    aead::{generic_array::GenericArray, Aead, KeyInit},
+    aead::{ Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
 
@@ -60,7 +60,7 @@ pub struct VersionResponse {
 }
 
 pub const KEY_SIZE: usize = 32;
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize,Clone)]
 pub struct Event {
     // zero is all
     pub to: u64,
@@ -133,7 +133,7 @@ impl Event {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize,Clone)]
 pub enum Message {
     /// App  status
     StatusSync {
@@ -172,7 +172,7 @@ pub enum Message {
     },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize,Clone)]
 pub enum RtcAction {
     Push {
         audio_id: u32,
@@ -188,12 +188,13 @@ pub enum RtcAction {
     },
     Status {
         timestamp:u64,
-        code:String,
+        code:u32,
+        info:String,
     },
     Offer { dsp: String },
     Answer { dsp: String },
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize,Clone)]
 pub struct Contacts {
     pub did: u64,
     pub r#type: ContactsTypes,
@@ -208,7 +209,7 @@ pub enum ContactsTypes {
     Group,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize,Clone)]
 #[repr(u8)]
 pub enum AppStatus {
     Active,
@@ -354,13 +355,13 @@ impl Message {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize,Clone)]
 pub enum ContactsEvent {
     Offer { token: ContactsToken },
     Answer { token: ContactsToken },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize,Clone)]
 pub struct ContactsToken {
     pub public_key: Vec<u8>,
     pub create_at: u64,
@@ -424,7 +425,7 @@ impl ContactsToken {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize,Clone)]
 pub enum ChatContent {
     Feedback {
         crc:u64,
@@ -439,7 +440,7 @@ pub enum ChatContent {
     },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize,Clone)]
 pub enum ContentData {
     Text {
         source: DataSource,
@@ -456,7 +457,7 @@ pub enum ContentData {
         source: DataSource,
     },
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize,Clone)]
 #[repr(u8)]
 pub enum MediaTypes {
     File,
@@ -466,7 +467,7 @@ pub enum MediaTypes {
     Html,
     Markdown,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize,Clone)]
 pub enum DataSource {
     Cid { cid: Vec<u8> },
     Raw { data: Vec<u8> },

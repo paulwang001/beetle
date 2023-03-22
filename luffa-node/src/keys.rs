@@ -5,10 +5,12 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{Stream, StreamExt, TryStreamExt};
+use libp2p::PeerId;
 use ssh_key::LineEnding;
 use tokio::fs;
 use tracing::warn;
 use zeroize::Zeroizing;
+use bip39::{Mnemonic, MnemonicType, Language, Seed};
 
 /// Supported keypairs.
 #[derive(Clone, Debug)]
@@ -32,6 +34,23 @@ impl Keypair {
     fn algorithm(&self) -> ssh_key::Algorithm {
         match self {
             Keypair::Ed25519(_) => ssh_key::Algorithm::Ed25519,
+        }
+    }
+    
+    pub fn name(&self) -> String {
+        match self {
+            Keypair::Ed25519(key) => {
+                let pk = key.public;
+                let pk = libp2p::identity::ed25519::PublicKey::decode(&pk.0).unwrap();
+                let pk = libp2p::identity::PublicKey::Ed25519(pk);
+
+                let peer_id = PeerId::from_public_key(&pk);
+
+                let mut digest = crc64fast::Digest::new();
+                digest.write(&peer_id.to_bytes());
+                let u_id = digest.sum64();
+                bs58::encode(u_id.to_be_bytes()).into_string()
+            },
         }
     }
 }
@@ -61,7 +80,7 @@ impl From<Keypair> for libp2p::identity::Keypair {
 }
 
 /// A keychain to manage your keys.
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct Keychain<S: Storage> {
     storage: S,
 }
@@ -74,12 +93,51 @@ impl<S: Storage> Keychain<S> {
 
     /// Creates a new Ed25519 based key and stores it.
     pub async fn create_ed25519_key(&mut self) -> Result<()> {
+
         let keypair = ssh_key::private::Ed25519Keypair::random(rand::thread_rng());
         let keypair = Keypair::Ed25519(keypair);
         
         self.storage.put(keypair).await?;
-
+        
         Ok(())
+    }
+    /// Creates a new Ed25519 based key and stores it.
+    pub async fn create_ed25519_key_bip39(&mut self,password:&str,store:bool) -> Result<(String,Keypair)> {
+        // create a new randomly generated mnemonic phrase
+        let mnemonic = Mnemonic::new(MnemonicType::Words24, Language::English);
+        
+        // get the HD wallet seed
+        let seed = Seed::new(&mnemonic, password);
+        let mut seed_data = [0u8;ssh_key::private::Ed25519PrivateKey::BYTE_SIZE];
+        let seed_bytes: &[u8] = seed.as_bytes();
+        seed_data.clone_from_slice(&seed_bytes[..32]);
+        // get the HD wallet seed as raw bytes
+
+        let keypair = ssh_key::private::Ed25519Keypair::from_seed(&seed_data);
+        let keypair = Keypair::Ed25519(keypair);
+        if store {
+            self.storage.put(keypair.clone()).await?;
+        }
+        
+        Ok((mnemonic.into_phrase(),keypair))
+    }
+    
+    pub async fn create_ed25519_key_from_seed(&mut self,phrase:&str,password:&str)-> Result<Keypair> {
+        let mnemonic = Mnemonic::from_phrase(phrase, Language::English)?;
+        let seed = Seed::new(&mnemonic, password);
+        let mut seed_data = [0u8;ssh_key::private::Ed25519PrivateKey::BYTE_SIZE];
+        let seed_bytes: &[u8] = seed.as_bytes();
+        seed_data.clone_from_slice(&seed_bytes[..32]);
+        let keypair = ssh_key::private::Ed25519Keypair::from_seed(&seed_data);
+        let keypair = Keypair::Ed25519(keypair);
+        self.storage.put(keypair.clone()).await?;
+        Ok(keypair)
+    }
+    pub async fn create_ed25519_key_from_bytes(&mut self,data:&[u8;64])-> Result<Keypair> {
+        let keypair = ssh_key::private::Ed25519Keypair::from_bytes(data)?;
+        let keypair = Keypair::Ed25519(keypair);
+        self.storage.put(keypair.clone()).await?;
+        Ok(keypair)
     }
 
     /// Returns a stream of all keys stored.
@@ -95,6 +153,10 @@ impl<S: Storage> Keychain<S> {
     /// Returns true if there are no keys stored.
     pub async fn is_empty(&self) -> Result<bool> {
         Ok(self.storage.len().await? == 0)
+    }
+
+    pub async fn name_keys(&self) -> Result<Vec<String>> {
+        self.storage.names().await
     }
 }
 
@@ -127,13 +189,13 @@ impl Keychain<DiskStorage> {
 }
 
 /// In memory storage backend for [`Keychain`].
-#[derive(Debug, Default)]
+#[derive(Debug, Default,Clone)]
 pub struct MemoryStorage {
     keys: Vec<Keypair>,
 }
 
 /// On disk storage backend for [`Keychain`].
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct DiskStorage {
     path: PathBuf,
 }
@@ -149,34 +211,34 @@ impl DiskStorage {
         Ok(DiskStorage { path: path.into() })
     }
 
-    async fn generate_name(&self, alg: ssh_key::Algorithm) -> Result<String> {
-        let count = self.next_count_for_alg(alg).await?;
-        let name = format!("id_{}_{}", print_algorithm(alg), count);
+    // async fn generate_name(&self, alg: ssh_key::Algorithm) -> Result<String> {
+    //     let count = self.next_count_for_alg(alg).await?;
+    //     let name = format!("id_{}_{}", print_algorithm(alg), count);
 
-        Ok(name)
-    }
+    //     Ok(name)
+    // }
 
-    async fn next_count_for_alg(&self, alg: ssh_key::Algorithm) -> Result<usize> {
-        let matcher = format!("id_{}", print_algorithm(alg));
-        let key_files = self.key_files();
-        futures::pin_mut!(key_files);
+    // async fn next_count_for_alg(&self, alg: ssh_key::Algorithm) -> Result<usize> {
+    //     let matcher = format!("id_{}", print_algorithm(alg));
+    //     let key_files = self.key_files();
+    //     futures::pin_mut!(key_files);
 
-        let mut counts = Vec::new();
-        while let Some(file) = key_files.next().await {
-            if let Ok(file) = file {
-                let file_name = file.file_name().unwrap().to_string_lossy();
-                if file_name.starts_with(&matcher) {
-                    if let Some(raw_count) = file_name.split('_').nth(2) {
-                        if let Ok(c) = raw_count.parse::<usize>() {
-                            counts.push(c);
-                        }
-                    }
-                }
-            }
-        }
-        counts.sort_unstable();
-        Ok(counts.last().map(|c| c + 1).unwrap_or_default())
-    }
+    //     let mut counts = Vec::new();
+    //     while let Some(file) = key_files.next().await {
+    //         if let Ok(file) = file {
+    //             let file_name = file.file_name().unwrap().to_string_lossy();
+    //             if file_name.starts_with(&matcher) {
+    //                 if let Some(raw_count) = file_name.split('_').nth(2) {
+    //                     if let Ok(c) = raw_count.parse::<usize>() {
+    //                         counts.push(c);
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     counts.sort_unstable();
+    //     Ok(counts.last().map(|c| c + 1).unwrap_or_default())
+    // }
 
     fn key_files(&self) -> impl Stream<Item = Result<PathBuf>> + '_ {
         async_stream::try_stream! {
@@ -199,7 +261,9 @@ pub trait Storage: std::fmt::Debug {
     async fn put(&mut self, keypair: Keypair) -> Result<()>;
     async fn len(&self) -> Result<usize>;
 
+    async fn names(&self) -> Result<Vec<String>>;
     fn keys(&self) -> Box<dyn Stream<Item = Result<Keypair>> + Unpin + Send + '_>;
+
 }
 
 #[async_trait]
@@ -222,13 +286,20 @@ impl Storage for MemoryStorage {
 
         Box::new(Box::pin(s))
     }
+    async fn names(&self) -> Result<Vec<String>> {
+        let names = self.keys.iter().map(|k| k.name()).collect::<Vec<_>>();
+
+        Ok(names)
+    }
 }
 
 #[async_trait]
 impl Storage for DiskStorage {
     async fn put(&mut self, keypair: Keypair) -> Result<()> {
-        let name = self.generate_name(keypair.algorithm()).await?;
+        let name = format!("id_{}",keypair.name());
+        // let name = self.generate_name(keypair.algorithm()).await?;
         let path = self.path.join(name);
+        
         let encoded_keypair = keypair.to_private_openssh()?;
         fs::write(path, encoded_keypair.as_bytes()).await?;
 
@@ -250,6 +321,7 @@ impl Storage for DiskStorage {
                     let content = fs::read_to_string(&path).await?;
                     match ssh_key::private::PrivateKey::from_openssh(&content) {
                         Ok(keypair) => {
+                            
                             yield Keypair::try_from(&keypair)?;
                         }
                         Err(err) => {
@@ -262,7 +334,31 @@ impl Storage for DiskStorage {
 
         Box::new(Box::pin(s))
     }
+    async fn names(&self) -> Result<Vec<String>> {
+        let mut names = vec![];
+        let mut reader = fs::read_dir(&self.path).await?;
+
+        while let Some(entry) = reader.next_entry().await? {
+            let path = entry.path();
+            if path_is_private_key(&path) {
+                let content = fs::read_to_string(&path).await?;
+                match ssh_key::private::PrivateKey::from_openssh(&content) {
+                    Ok(keypair) => {
+                        
+                        let key  = Keypair::try_from(&keypair)?;
+                        names.push(key.name());
+                        
+                    }
+                    Err(err) => {
+                        tracing::warn!("invalid keyfile at {}: {:?}", path.display(), err);
+                    }
+                }
+            }
+        }
+        Ok(names)
+    }
 }
+
 
 /// Checks if the provided path is likely to contain a private key of the form
 /// `id_<algorithm>_<id>`.
@@ -282,15 +378,16 @@ fn path_is_private_key<P: AsRef<Path>>(path: P) -> bool {
             return false;
         }
 
-        if file_name.split('_').count() != 3 {
+        if file_name.split('_').count() != 2 {
             return false;
         }
 
-        if let Some(raw_count) = file_name.split('_').nth(2) {
-            if raw_count.parse::<usize>().is_ok() {
-                return true;
-            }
-        }
+        // if let Some(raw_count) = file_name.split('_').nth(2) {
+        //     if raw_count.parse::<usize>().is_ok() {
+        //         return true;
+        //     }
+        // }
+        return true;
     }
 
     false
@@ -301,6 +398,12 @@ fn print_algorithm(alg: ssh_key::Algorithm) -> &'static str {
         ssh_key::Algorithm::Ed25519 => "ed25519",
         _ => panic!("unusupported algorithm {alg}"),
     }
+}
+
+#[derive(Debug,Clone)]
+pub enum KeyFilter {
+    Name(String),
+    Phrase(String,String),
 }
 
 #[cfg(test)]
@@ -335,12 +438,12 @@ mod tests {
         kc.create_ed25519_key().await.unwrap();
         assert_eq!(kc.len().await.unwrap(), 2);
 
-        let next_name = kc
-            .storage
-            .generate_name(ssh_key::Algorithm::Ed25519)
-            .await
-            .unwrap();
-        assert_eq!(next_name, "id_ed25519_2");
+        // let next_name = kc
+        //     .storage
+        //     .generate_name(ssh_key::Algorithm::Ed25519)
+        //     .await
+        //     .unwrap();
+        // assert_eq!(next_name, "id_ed25519_2");
 
         // create some dummy files
         fs::write(dir.path().join("foo"), b"foo").await.unwrap();

@@ -21,9 +21,9 @@ pub async fn start(
 ) -> anyhow::Result<(Keypair, PeerId, JoinHandle<()>, Receiver<NetworkEvent>,Sender<RpcMessage>)> {
     let mut kc = Keychain::<DiskStorage>::new(config.key_store_path.clone()).await?;
 
-    let key = load_identity(&mut kc).await?;
+    let key = load_identity(&mut kc,None).await?;
     
-    let (mut p2p,sender) = Node::new(config, kc,store,Some("Relay".to_string())).await?;
+    let (mut p2p,sender) = Node::new(config, kc,store,Some("Relay".to_string()),None).await?;
     let events = p2p.network_events();
     let local_id = p2p.local_peer_id().clone();
     tracing::info!("peer: {local_id}");
