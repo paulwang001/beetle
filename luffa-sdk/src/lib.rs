@@ -110,6 +110,15 @@ pub trait Callback: Send + Sync + Debug {
     fn on_message(&self, crc: u64, from_id: u64, to: u64, msg: Vec<u8>);
 }
 
+pub fn public_key_to_id(public_key: Vec<u8>)-> u64 {
+    let pk = PublicKey::from_protobuf_encoding(&public_key).unwrap();
+    let peer = PeerId::from_public_key(&pk);
+    let mut digest = crc64fast::Digest::new();
+    digest.write(&peer.to_bytes());
+    let to = digest.sum64();
+    to
+}
+
 fn content_index(idx_path: &Path) -> (Index, Schema) {
     let mut schema_builder = Schema::builder();
     schema_builder.add_u64_field("crc", INDEXED | STORED);

@@ -1,5 +1,5 @@
 namespace LuffaSDK {
-
+  u64 public_key_to_id(sequence<u8> public_key);
 };
 
 dictionary ChatSession {
