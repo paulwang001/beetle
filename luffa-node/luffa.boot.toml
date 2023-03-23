@@ -1,3 +1,4 @@
+push_api = "https://luffa.putdev.com/post/sendMessage"
 [store]
 path = "../.local/boot/store"
 [p2p]

@@ -1,5 +1,6 @@
 #![feature(poll_ready)]
 use anyhow::Result;
+use bip39::{Mnemonic, MnemonicType, Language};
 use futures::pending;
 use libp2p::PeerId;
 use libp2p::identity::PublicKey;
@@ -70,9 +71,9 @@ fn main() -> Result<()> {
         let mut x = 0;
         let mut code = String::new();
         loop {
-            std::thread::sleep(Duration::from_secs(10));
+            std::thread::sleep(Duration::from_secs(30));
             let peer_id = client.get_local_id();
-            tracing::info!("peer id: {peer_id:?}");
+            tracing::warn!("peer id: {peer_id:?}");
             let peers = client.relay_list();
             // client.send_msg(to, msg)
             tracing::debug!("{:?}", peers);
@@ -83,7 +84,18 @@ fn main() -> Result<()> {
                             x += 1;
                             tracing::warn!("is man");
                           
-                            let msg = Message::WebRtc { stream_id: 1000, action: RtcAction::Push { audio_id: 2, video_id: 3 } };
+                            // let msg = Message::WebRtc { stream_id: 1000, action: RtcAction::Push { audio_id: 2, video_id: 3 } };
+                            let mnemonic = Mnemonic::new(MnemonicType::Words24, Language::English);
+                            let msg = Message::Chat {
+                                content: luffa_rpc_types::ChatContent::Send {
+                                    data: luffa_rpc_types::ContentData::Text {
+                                        source: luffa_rpc_types::DataSource::Text {
+                                            content: mnemonic.into_phrase(),
+                                        },
+                                        reference: None,
+                                    },
+                                },
+                            };
                             let msg = message_to(msg).unwrap();
                             match client.send_msg(to_id, msg) {
                                 Ok(crc) => {
@@ -97,7 +109,7 @@ fn main() -> Result<()> {
                         None => {
                             match scan.as_ref() {
                                 Some(scan)=>{
-                                    client.contacts_offer(scan);
+                                    client.contacts_offer(scan).expect("msg");
                                 }
                                 None=>{
                                     if code.is_empty() {
@@ -119,10 +131,15 @@ fn main() -> Result<()> {
                 None=>{
                     match scan.as_ref() {
                         Some(scan)=>{
-                            client.contacts_offer(scan);
+                            if let Err(e) = client.contacts_offer(scan) {
+                                tracing::error!("{e:?}");
+                            }
                         }
                         None=>{
-                            
+                            if code.is_empty() {
+                                code = client.show_code().unwrap();
+                            }
+                            tracing::warn!("scan me :{}",code);
                             let list = client.contacts_list(0);
                             for c in list {
                                 
@@ -140,6 +157,9 @@ fn main() -> Result<()> {
                                                 }
                                                 Message::WebRtc { stream_id, action }=>{
             
+                                                }
+                                                Message::ContactsExchange { exchange }=>{
+
                                                 }
                                                 _=>{
                                                     tracing::warn!("[{msg_len}] {:?}",msg);
@@ -188,23 +208,32 @@ fn main() -> Result<()> {
                     let mut digest = crc64fast::Digest::new();
                     digest.write(&peer.to_bytes());
                     let to = digest.sum64();
+                    if let Err(e) =
                     client_t
-                        .contacts_anwser(to, secret_key.clone());
-                }
-                ContactsEvent::Answer { token } => {
+                    .contacts_anwser(to, from_id,secret_key.clone()) {
+                        tracing::warn!("{e:?}");
+                    }
+            }
+            ContactsEvent::Answer { token } => {
+                    let ContactsToken { public_key, create_at, sign, secret_key, contacts_type, comment } = token;
+                    let pk = PublicKey::from_protobuf_encoding(public_key).unwrap();
+                    let peer = PeerId::from_public_key(&pk);
+                    let mut digest = crc64fast::Digest::new();
+                    digest.write(&peer.to_bytes());
+                    let to = digest.sum64();
                     let msg = Message::Chat {
                         content: luffa_rpc_types::ChatContent::Send {
                             data: luffa_rpc_types::ContentData::Text {
                                 source: luffa_rpc_types::DataSource::Text {
-                                    content: "Ok".to_owned(),
+                                    content: format!("Hello {}",comment.clone().unwrap_or_default()),
                                 },
                                 reference: None,
                             },
                         },
                     };
                     let msg = message_to(msg).unwrap();
-                    tracing::warn!("Answer from:{}", from_id);
-                    client_t.send_msg(from_id, msg).unwrap();
+                    tracing::warn!("Answer from:offer_id {} ,did {}", from_id, to);
+                    client_t.send_msg(to, msg).unwrap();
                 }
             },
             _ => {

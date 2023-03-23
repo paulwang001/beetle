@@ -386,7 +386,7 @@ impl ContactsToken {
         let public_key = local_key.public().to_protobuf_encoding();
         let mut buf = vec![];
         buf.extend_from_slice(&create_at.to_be_bytes());
-        buf.extend_from_slice(&secret_key);
+        // buf.extend_from_slice(&secret_key);
         let tp = contacts_type.clone() as u8;
         buf.extend_from_slice(&[tp]);
         if let Some(c) = comment.as_ref() {
@@ -408,13 +408,13 @@ impl ContactsToken {
             public_key,
             create_at,
             sign,
-            secret_key,
             contacts_type,
             comment,
+            ..
         } = self;
         let mut buf = vec![];
         buf.write(&create_at.to_be_bytes())?;
-        buf.write(secret_key)?;
+        // buf.write(secret_key)?;
         let tp = contacts_type.clone() as u8;
         buf.write(&[tp])?;
         if let Some(c) = comment {

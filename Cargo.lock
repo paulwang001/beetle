@@ -3528,6 +3528,7 @@ dependencies = [
  "sled",
  "tantivy",
  "thiserror",
+ "tiny-bip39",
  "tokio",
  "tracing",
  "uniffi",

@@ -126,47 +126,59 @@ async fn main() -> Result<()> {
                 }
             }
         }
+        let mut count = 0u64;
         loop {
-            tokio::time::sleep(Duration::from_secs(30)).await;
-            if let Ok(_) = tokio::time::timeout(Duration::from_secs(5), async {
-                tracing::info!("client publicsh relay.");
-                let msg = luffa_rpc_types::Message::RelayNode { did: my_id };
-                let event = luffa_rpc_types::Event::new(0, &msg, None, my_id);
-                let event = event.encode().unwrap();
-                if let Err(e) = client_t
-                    .gossipsub_publish(TopicHash::from_raw(TOPIC_RELAY), bytes::Bytes::from(event))
-                    .await
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            if count % 6 == 0 {
+                if let Ok(_) = tokio::time::timeout(Duration::from_secs(10), async {
+                    tracing::info!("client publicsh relay.");
+                    let msg = luffa_rpc_types::Message::RelayNode { did: my_id };
+                    let event = luffa_rpc_types::Event::new(0, &msg, None, my_id);
+                    let event = event.encode().unwrap();
+                    if let Err(e) = client_t
+                        .gossipsub_publish(TopicHash::from_raw(TOPIC_RELAY), bytes::Bytes::from(event))
+                        .await
+                    {
+                        tracing::warn!("{e:?}");
+                    }
+                })
+                .await
                 {
-                    tracing::warn!("{e:?}");
-                }
-            })
-            .await
-            {
-                tracing::info!("relay successfully.");
-                if let Ok(peers) = client_t.gossipsub_mesh_peers(TopicHash::from_raw(TOPIC_RELAY)).await {
-                    tracing::warn!("mesh peers:{:?}",peers);
-                }
-                let tasks = {
-                    let notice = notice_queue_t.read().await;
-                    notice.iter().filter(|(_k,(t,f,c))| *t + 30000 < get_now()).map(|(k,_)| *k).collect::<Vec<_>>()
-                };
-                let mut notice = notice_queue_t.write().await;
-                for task in tasks {
-                    if let Some((t,f,c)) = notice.remove(&task) {
-                        if let Some(api) = push_api.as_ref() {
-                            let nb = NoticeBody {
-                                id:format!("{task}"),
-                                title:format!("luffa://open/chat?id={f}&type={c}"),
-                                body:format!("{}",t),
-                                current_key:format!("AIzaSyCG7wT4KYvbSf_HYU6xAmn7g5bgKOdGb0s")
-                            };
-                            if let Err(e) = post.post(api).json(&nb).send().await {
-                                tracing::warn!("{e:?}");
-                            }                        
-                        }
+                    tracing::info!("relay successfully.");
+                    if let Ok(peers) = client_t.gossipsub_mesh_peers(TopicHash::from_raw(TOPIC_RELAY)).await {
+                        tracing::warn!("mesh peers:{:?}",peers);
                     }
                 }
-                
+            }
+            count += 1;
+            let tasks = {
+                let notice = notice_queue_t.read().await;
+                // notice.iter().filter(|(_k,(t,f,c))| *t + 5000 < get_now()).map(|(k,_)| *k).collect::<Vec<_>>()
+                notice.iter().map(|(k,_)| *k).collect::<Vec<_>>()
+            };
+            let mut notice = notice_queue_t.write().await;
+            if tasks.is_empty() {
+                tracing::warn!("notice task is empty!");
+            }
+            for task in tasks {
+                if let Some((t,f,c)) = notice.remove(&task) {
+                    if let Some(api) = push_api.as_ref() {
+                        let nb = NoticeBody {
+                            id:format!("{task}"),
+                            title:format!("luffa://open/chat?id={task}&type={c}"),
+                            body:format!("{}",t),
+                            current_key:format!("AIzaSyCG7wT4KYvbSf_HYU6xAmn7g5bgKOdGb0s")
+                        };
+
+                        tracing::warn!("post:{nb:?}");
+                        if let Err(e) = post.post(api).json(&nb).send().await {
+                            tracing::warn!("{e:?}");
+                        }                        
+                    }
+                    else{
+                        tracing::warn!("post api not found!!!!");
+                    }
+                }
             }
         }
     });
@@ -174,7 +186,7 @@ async fn main() -> Result<()> {
         while let Some(evt) = events.recv().await {
             match evt {
                 NetworkEvent::RequestResponse(rsp)=>{
-                    tracing::warn!("request>>> {rsp:?}");
+                    // tracing::warn!("request>>> {rsp:?}");
                     match rsp {
                         ChatEvent::Request(data)=>{
                             match Event::decode_uncheck(&data) {
@@ -190,6 +202,7 @@ async fn main() -> Result<()> {
                                     let mut queue = notice.write().await;
                                     let (time,count,_) = queue.entry(to).or_insert((get_now(),from_id,0));
                                     *time = get_now();
+                                    *count += 1;
                                     tracing::warn!("TODO: offline notify");
 
                                 }
