@@ -192,7 +192,15 @@ impl Client {
                 }
             }
         }
-        None
+        match chain.create_ed25519_key_bip39("", true).await {
+            Ok((_p,key))=>{
+                let key:Keypair = key.into();
+                Some(key)
+            }
+            Err(e)=>{
+                None
+            }
+        }
     }
     /// show code
     pub fn show_code(&self) -> Option<String> {

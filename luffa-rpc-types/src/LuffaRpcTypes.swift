@@ -19,13 +19,13 @@ fileprivate extension RustBuffer {
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
-        try! rustCall { ffi_LuffaRpcTypes_7e1b_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
+        try! rustCall { ffi_LuffaRpcTypes_df87_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
     // Frees the buffer in place.
     // The buffer must not be used after this is called.
     func deallocate() {
-        try! rustCall { ffi_LuffaRpcTypes_7e1b_rustbuffer_free(self, $0) }
+        try! rustCall { ffi_LuffaRpcTypes_df87_rustbuffer_free(self, $0) }
     }
 }
 
@@ -1265,7 +1265,7 @@ public enum RtcAction {
     case `push`(`audioId`: UInt32, `videoId`: UInt32)
     case `pull`(`audioId`: UInt32, `videoId`: UInt32)
     case `reject`(`audioId`: UInt32, `videoId`: UInt32)
-    case `status`(`timestamp`: UInt64, `code`: String)
+    case `status`(`timestamp`: UInt64, `code`: UInt32, `info`: String)
     case `offer`(`dsp`: String)
     case `answer`(`dsp`: String)
 }
@@ -1294,7 +1294,8 @@ public struct FfiConverterTypeRtcAction: FfiConverterRustBuffer {
         
         case 4: return .`status`(
             `timestamp`: try FfiConverterUInt64.read(from: &buf), 
-            `code`: try FfiConverterString.read(from: &buf)
+            `code`: try FfiConverterUInt32.read(from: &buf), 
+            `info`: try FfiConverterString.read(from: &buf)
         )
         
         case 5: return .`offer`(
@@ -1331,10 +1332,11 @@ public struct FfiConverterTypeRtcAction: FfiConverterRustBuffer {
             FfiConverterUInt32.write(`videoId`, into: &buf)
             
         
-        case let .`status`(`timestamp`,`code`):
+        case let .`status`(`timestamp`,`code`,`info`):
             writeInt(&buf, Int32(4))
             FfiConverterUInt64.write(`timestamp`, into: &buf)
-            FfiConverterString.write(`code`, into: &buf)
+            FfiConverterUInt32.write(`code`, into: &buf)
+            FfiConverterString.write(`info`, into: &buf)
             
         
         case let .`offer`(`dsp`):
@@ -1498,7 +1500,7 @@ public func `messageFrom`(`msg`: [UInt8])  -> Message? {
     
     rustCall() {
     
-    LuffaRpcTypes_7e1b_message_from(
+    LuffaRpcTypes_df87_message_from(
         FfiConverterSequenceUInt8.lower(`msg`), $0)
 }
     )
@@ -1512,7 +1514,7 @@ public func `messageTo`(`msg`: Message)  -> [UInt8]? {
     
     rustCall() {
     
-    LuffaRpcTypes_7e1b_message_to(
+    LuffaRpcTypes_df87_message_to(
         FfiConverterTypeMessage.lower(`msg`), $0)
 }
     )

@@ -46,27 +46,27 @@ typedef struct RustCallStatus {
 // ⚠️ increment the version suffix in all instances of UNIFFI_SHARED_HEADER_V4 in this file.           ⚠️
 #endif // def UNIFFI_SHARED_H
 
-RustBuffer LuffaRpcTypes_7e1b_message_from(
+RustBuffer LuffaRpcTypes_df87_message_from(
       RustBuffer msg,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaRpcTypes_7e1b_message_to(
+RustBuffer LuffaRpcTypes_df87_message_to(
       RustBuffer msg,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer ffi_LuffaRpcTypes_7e1b_rustbuffer_alloc(
+RustBuffer ffi_LuffaRpcTypes_df87_rustbuffer_alloc(
       int32_t size,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer ffi_LuffaRpcTypes_7e1b_rustbuffer_from_bytes(
+RustBuffer ffi_LuffaRpcTypes_df87_rustbuffer_from_bytes(
       ForeignBytes bytes,
     RustCallStatus *_Nonnull out_status
     );
-void ffi_LuffaRpcTypes_7e1b_rustbuffer_free(
+void ffi_LuffaRpcTypes_df87_rustbuffer_free(
       RustBuffer buf,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer ffi_LuffaRpcTypes_7e1b_rustbuffer_reserve(
+RustBuffer ffi_LuffaRpcTypes_df87_rustbuffer_reserve(
       RustBuffer buf,int32_t additional,
     RustCallStatus *_Nonnull out_status
     );
