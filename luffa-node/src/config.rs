@@ -17,9 +17,10 @@ pub const ENV_PREFIX: &str = "LUFFA_";
 /// Default bootstrap nodes
 ///
 pub const DEFAULT_BOOTSTRAP: &[&str] = &[
-    "/ip4/206.238.220.40/udp/8899/quic-v1/p2p/12D3KooWLm17MWN8mq1XkiUmt74t12pqk2B3fMAYTww1Fq9Z8j7N",
+    // "/ip4/206.238.220.40/udp/8899/quic-v1/p2p/12D3KooWLm17MWN8mq1XkiUmt74t12pqk2B3fMAYTww1Fq9Z8j7N",
     // "/ip4/192.168.2.124/udp/8899/quic-v1/p2p/12D3KooWRxHCJhGZMpUvfVHGx2iK6NMtPSCtC3AVrvQ7B8rAnuYL",
-    "/ip4/206.238.123.19/tcp/8666/p2p/12D3KooWLGbsiDzVZYu21ZM32KQuaivesBRwYvtR1m2KT2WQCFac",
+    // "/ip4/206.238.123.19/tcp/8666/p2p/12D3KooWLGbsiDzVZYu21ZM32KQuaivesBRwYvtR1m2KT2WQCFac",
+    "/ip4/182.140.244.156/udp/8899/quic-v1/p2p/12D3KooWAvfMdfWBxu2Td8K9Cn1nsVRjAq3zfVBmMd7rgSv4Tcn1"
 ];
 // no udp support yet
 
@@ -205,7 +206,6 @@ impl Default for Libp2pConfig {
 
         Self {
             listening_multiaddrs: vec![
-                "/ip4/0.0.0.0/tcp/8866".parse().unwrap(),
                 "/ip4/0.0.0.0/udp/8889/quic-v1".parse().unwrap(),
             ],
             bootstrap_peers,
