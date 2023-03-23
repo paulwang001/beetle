@@ -150,6 +150,7 @@ pub struct Client {
     schema: Schema,
     writer: Arc<RwLock<IndexWriter>>,
     filter:Arc<RwLock<Option<KeyFilter>>>,
+    config:Arc<RwLock<Option<Config>>>,
 }
 
 impl Client {
@@ -163,6 +164,7 @@ impl Client {
         Client {
             key: Arc::new(RwLock::new(None)),
             filter: Arc::new(RwLock::new(None)),
+            config: Arc::new(RwLock::new(None)),
             sender: Arc::new(RwLock::new(None)),
             db,
             client: Arc::new(RwLock::new(None)),
@@ -1081,10 +1083,7 @@ impl Client {
             None,
         ).unwrap();
     }
-
-    pub fn start(&self, cfg_path: Option<String>,key:Option<String>,tag:Option<String>, cb: Box<dyn Callback>) -> std::result::Result<bool, ClientError>
-    
-    {
+    pub fn init(&self,cfg_path: Option<String>,key:Option<String>,tag:Option<String>) -> u64 {
         #[cfg(unix)]
         {
             match luffa_util::increase_fd_limit() {
@@ -1092,13 +1091,11 @@ impl Client {
                 Err(err) => tracing::error!("Error increasing NOFILE limit: {}", err),
             }
         }
-
         let args: HashMap<String, String> = HashMap::new();
         let dft_path = luffa_config_path(CONFIG_FILE_NAME).unwrap();
-        debug!("cfg_path:{cfg_path:?}");
         let cfg_path = cfg_path.map(|p| PathBuf::from(p));
         let cfg_path = cfg_path.unwrap_or(dft_path);
-        debug!("cfg_path:{cfg_path:?}");
+        println!("cfg_path:{cfg_path:?}");
 
         let sources = [Some(cfg_path.as_path())];
         let config = make_config(
@@ -1113,43 +1110,58 @@ impl Client {
         )
         .unwrap();
 
-        debug!("config--->{config:?}");
+        println!("config--->{config:?}");
         let filter = key.map(|k| KeyFilter::Name(format!("{}",k)));
-        // let keychain = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone());
-        let kc = RUNTIME.block_on(async {
+
+        RUNTIME.block_on(async {
             let kc = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone())
                 .await
                 .unwrap();
-            let mut m_key = self.key.write().await;
-            *m_key = Some(kc.clone());
             let mut f = self.filter.write().await;
             *f = filter.clone();
-            kc
+
+            let mut m_key = self.key.write().await;
+            *m_key = Some(kc.clone());
+            let mut m_cfg = self.config.write().await;
+            *m_cfg = Some(config);
+        });
+
+        let my_id = self.get_local_id();
+        if my_id.is_none() {
+            return 0;
+        }
+        let my_id = my_id.unwrap();
+        self.update_contacts_tag(my_id, tag.unwrap_or(format!("{}",my_id)).to_string());
+        my_id
+
+    }
+    
+    pub fn start(&self, cb: Box<dyn Callback>)
+    {
+        // let keychain = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone());
+        let (kc,config,filter) = RUNTIME.block_on(async {
+            
+            let f = self.filter.read().await;
+            let m_key = self.key.read().await;
+            let cfg = self.config.read().await;
+            (m_key.clone().unwrap(),cfg.clone().unwrap(),f.clone())
         });
 
         let (tx, rx) = tokio::sync::mpsc::channel(4096);
         let db = self.db.clone();
-        let my_id = self.get_local_id();
-        if my_id.is_none() {
-            return Err(ClientError::StartFailed);
-        }
-        let my_id = my_id.unwrap();
-        self.update_contacts_tag(my_id, tag.unwrap_or(format!("{}",my_id)).to_string());
+       
         let client = self.client.clone();
         let idx_writer = self.writer.clone();
         let schema = self.schema.clone();
         RUNTIME.block_on(async {
             let mut sender = self.sender.write().await;
             *sender = Some(tx);
-            // let cb = Arc::new(cb);
-            // let cb_t = cb.clone();
             tokio::spawn(async move {
                 debug!("runing...");
                 Self::run(db, config, kc, cb, client, rx, idx_writer, schema,filter).await;
                 debug!("run exit!....");
             });
         });
-        Ok(true)
     }
     async fn run(
         db: Arc<Db>,

@@ -64,8 +64,8 @@ interface Client {
 
     boolean connect(string peer_id);
 
-    [Throws=ClientError]
-    boolean start(string? cfg_path,string? key,string? tag,Callback cb);
+    u32 init(string? cfg_path,string? key,string? tag);
+    void start(Callback cb);
 
     void stop();
 
