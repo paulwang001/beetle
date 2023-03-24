@@ -7,7 +7,6 @@ use luffa_util::luffa_cache_path;
 use std::collections::BTreeSet;
 use std::io::{stdout, Write};
 use std::ops::Deref;
-use std::time::SystemTime;
 use sysinfo::PidExt;
 use tracing::info;
 

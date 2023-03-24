@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use ahash::AHashMap;
 use anyhow::{anyhow, bail, Context, Result};
+use chrono::Utc;
 use cid::Cid;
 use futures_util::stream::StreamExt;
 use libipld::{
@@ -511,9 +512,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     let to_id = digest.sum64();
                     let f = self.get_peer_index(my_id);
                     let t = self.get_peer_index(to_id);
-                    let time = std::time::SystemTime::now();
-                    let time = time.duration_since(std::time::UNIX_EPOCH).unwrap();
-                    let time = time.as_millis() as u64;
+                    // let time = Utc::now().timestamp_millis() as u64;
                     self.connections.update_edge(f, t, ConnectionEdge::Local(peer_id.clone()));
                     
                     self.emit_network_event(NetworkEvent::PeerConnected(peer_id));
@@ -996,9 +995,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     let t = self.get_peer_index(to);
                                                     match status {
                                                         AppStatus::Active | AppStatus::Connected =>{
-                                                            let time = std::time::SystemTime::now();
-                                                            let time = time.duration_since(std::time::UNIX_EPOCH).unwrap();
-                                                            let time = time.as_millis() as u64;
+                                                            let time = Utc::now().timestamp_millis() as u64;
                                                             self.connections.update_edge(f, t, ConnectionEdge::Remote(time));
                                                         }
                                                         _=>{
@@ -1523,8 +1520,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         tracing::warn!("save cache crc:{crc}  {from_id}-> {to}");
         let from = self.get_node_index(from_id);
         let to = self.get_node_index(to);
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap();
-        self.cache.add_edge(from, to, (crc,now.as_millis() as u64))
+        let now = Utc::now().timestamp_millis() as u64;
+        self.cache.add_edge(from, to, (crc, now))
     }
     fn put_to_dht(&mut self,crc:u64,data:Vec<u8>) -> anyhow::Result<QueryId>{
         if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
@@ -1539,8 +1536,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
     fn load_cache_crc(&mut self,did:u64,have_time:Option<u64>) -> Vec<(u64,u64)>{
         let to = self.get_node_index(did);
         let mut cached_crc = vec![];
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap();
-        let now = now.as_millis() as u64;
+        let now = Utc::now().timestamp_millis() as u64;
         let have_time = have_time.unwrap_or(0);
         let mut remove_edges = vec![];
         if let Some(mut e) = self.cache.first_edge(to, Direction::Incoming) {

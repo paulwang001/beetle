@@ -27,6 +27,7 @@ serde_cbor.workspace = true
 tracing.workspace = true
 tokio = { workspace = true, default-features = false }
 uniffi = { version = "0.23.0", features = ["cli"] }
+chrono.workspace = true
 
 [build-dependencies]
 uniffi = { version = "0.23.0", features = ["build"] }
