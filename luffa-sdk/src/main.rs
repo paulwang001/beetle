@@ -98,19 +98,13 @@ fn main() -> Result<()> {
                                 },
                             };
                             let msg = message_to(msg).unwrap();
-                            match client.send_msg(to_id, msg) {
-                                Ok(crc) => {
-                                    tracing::info!("send seccess {crc}");
-                                }
-                                Err(e) => {
-                                    error!("{e:?}");
-                                }
-                            }
-                        }
+                            let crc = client.send_msg(to_id, msg);
+                            tracing::info!("send seccess {crc}");
+                                                    }
                         None => {
                             match scan.as_ref() {
                                 Some(scan)=>{
-                                    client.contacts_offer(scan).expect("msg");
+                                    client.contacts_offer(scan);
                                 }
                                 None=>{
                                     if code.is_empty() {
@@ -132,9 +126,8 @@ fn main() -> Result<()> {
                 None=>{
                     match scan.as_ref() {
                         Some(scan)=>{
-                            if let Err(e) = client.contacts_offer(scan) {
-                                tracing::error!("{e:?}");
-                            }
+                            let crc = client.contacts_offer(scan);
+
                         }
                         None=>{
                             if code.is_empty() {
@@ -209,11 +202,9 @@ fn main() -> Result<()> {
                     let mut digest = crc64fast::Digest::new();
                     digest.write(&peer.to_bytes());
                     let to = digest.sum64();
-                    if let Err(e) =
+                    let crc =
                     client_t
-                    .contacts_anwser(to, from_id,secret_key.clone()) {
-                        tracing::warn!("{e:?}");
-                    }
+                    .contacts_anwser(to, from_id,secret_key.clone());
             }
             ContactsEvent::Answer { token } => {
                     let ContactsToken { public_key, create_at, sign, secret_key, contacts_type, comment } = token;
@@ -233,8 +224,8 @@ fn main() -> Result<()> {
                         },
                     };
                     let msg = message_to(msg).unwrap();
-                    tracing::warn!("Answer from:offer_id {} ,did {}", from_id, to);
-                    client_t.send_msg(to, msg).unwrap();
+                    let crc = client_t.send_msg(to, msg);
+                    tracing::warn!("Answer from:offer_id {} ,did {}  ==> {}", from_id, to,crc);
                 }
             },
             _ => {

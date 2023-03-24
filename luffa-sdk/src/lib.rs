@@ -233,7 +233,7 @@ impl Client {
     }
 
     ///Offer contacts 
-    pub fn contacts_offer(&self,code:&String) ->std::result::Result<u64, ClientError>{
+    pub fn contacts_offer(&self,code:&String) ->u64{
         let mut tmp = code.split('/');
         let _from_tag = tmp.next_back();
         let key = tmp.next_back();
@@ -249,16 +249,15 @@ impl Client {
         let mut digest = crc64fast::Digest::new();
         digest.write(&key);
         let from_id = digest.sum64();
+
+        let secret_key = key.to_vec();
+        let mut digest = crc64fast::Digest::new();
+        digest.write(&secret_key);
+        let offer_id = digest.sum64();
         let msg =
         {
             let offer_key = Aes256Gcm::generate_key(&mut OsRng);
             let offer_key = offer_key.to_vec();
-    
-            let secret_key = key.to_vec();
-            let mut digest = crc64fast::Digest::new();
-            digest.write(&secret_key);
-            let offer_id = digest.sum64();
-
             tracing::warn!("secret_key::: {}",secret_key.len());
             let token = RUNTIME.block_on(async {
                 let filter = self.filter.read().await;
@@ -277,20 +276,41 @@ impl Client {
             
             tracing::warn!("gen offer id:{}",offer_id);
             self.save_contacts_offer(offer_id, secret_key);
+            
             Message::ContactsExchange {
                 exchange: ContactsEvent::Offer { token },
             }
         };
-
-        self.send_to(to, msg, from_id,Some(key)).map_err(|e| {
+        
+        match self.send_to(to, msg, from_id,Some(key)).map_err(|e| {
             tracing::warn!("send_to failed:{e:?}");
             ClientError::SendFailed
         })
+        {
+            Ok(crc)=>{
+                let table = format!("offer_{my_id}");
+                let status = vec![0u8;1];
+                let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap();
+                Self::save_to_tree(
+                    self.db.clone(),
+                    offer_id,
+                    &table,
+                    status,
+                    now.as_millis() as u64,
+                ); 
+                crc
+            }
+            Err(_)=>{
+                0
+            }
+        }
         
     } 
 
     /// answer an offer and send it to from 
-    pub fn contacts_anwser(&self, to:u64,offer_id: u64,secret_key:Vec<u8>) ->std::result::Result<u64, ClientError>{
+    pub fn contacts_anwser(&self, to:u64,offer_id: u64,secret_key:Vec<u8>) -> u64{
         let offer_key = Self::get_offer_by_offer_id(self.db.clone(), offer_id);
         
         let my_id = self.get_local_id().unwrap();
@@ -325,10 +345,30 @@ impl Client {
             }
         };
 
-        self.send_to(to, msg, offer_id,offer_key).map_err(|e| {
+        match self.send_to(to, msg, offer_id,offer_key).map_err(|e| {
             tracing::warn!("send_to failed:{e:?}");
             ClientError::SendFailed
-        })
+        }){
+            Ok(crc)=>{
+                let table = 
+                format!("offer_{my_id}");
+                let status = vec![11u8;1];
+                let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap();
+                Self::save_to_tree(
+                    self.db.clone(),
+                    offer_id,
+                    &table,
+                    status,
+                    now.as_millis() as u64,
+                );
+                crc
+            }
+            Err(_)=>{
+                0
+            }
+        }
         
     }
 
@@ -451,17 +491,19 @@ impl Client {
     }
 
     /// Send msg to peer
-    pub fn send_msg(&self, to: u64, msg: Vec<u8>) -> std::result::Result<u64, ClientError> {
+    pub fn send_msg(&self, to: u64, msg: Vec<u8>) -> u64 {
         match message_from(msg) {
             Some(msg) => {
                 
-                let crc = self.send_to(to, msg, 0,None).map_err(|e| {
+                match self.send_to(to, msg, 0,None).map_err(|e| {
                     tracing::warn!("{e:?}");
                     ClientError::SendFailed
-                })?;
-                Ok(crc)
+                }){
+                    Ok(crc)=> crc,
+                    Err(_e)=> 0
+                }
             }
-            None => Err(ClientError::SendFailed),
+            None => 0,
         }
     }
 
@@ -582,8 +624,8 @@ impl Client {
                                             let msg = Message::Chat { content: ChatContent::Feedback { crc, status: luffa_rpc_types::FeedbackStatus::Read } };
                                             if let Some(msg) = message_to(msg) {
 
-                                                if let Err(e) = self.send_msg(did, msg) {
-                                                    tracing::warn!("send read feedback failed:{e:?}");
+                                                if self.send_msg(did, msg) == 0 {
+                                                    tracing::warn!("send read feedback failed");
                                                 }
                                             }
                                         }
@@ -2077,7 +2119,7 @@ impl Client {
                                 Message::ContactsExchange { exchange }=>{
                                     match exchange{
                                         ContactsEvent::Answer { token }=>{
-                                            tracing::warn!("Answer>>>>>{token:?}");
+                                            tracing::info!("Answer>>>>>{token:?}");
                                             let pk = PublicKey::from_protobuf_encoding(&token.public_key).unwrap();
                                             let peer = PeerId::from_public_key(&pk);
                                             let mut digest = crc64fast::Digest::new();
@@ -2091,6 +2133,17 @@ impl Client {
                                                 crc,
                                                 &table,
                                                 data.clone(),
+                                                event_time,
+                                            );
+                                            // update offer which I has send
+                                            let table = 
+                                                format!("offer_{my_id}");
+                                            let status = vec![1u8;1];
+                                            Self::save_to_tree(
+                                                db_t.clone(),
+                                                from_id,
+                                                &table,
+                                                status,
                                                 event_time,
                                             );
                                             offer_or_answer(token).await;
@@ -2116,6 +2169,17 @@ impl Client {
                                                 crc,
                                                 &table,
                                                 data.clone(),
+                                                event_time,
+                                            );
+                                            // add a pending answer for this offer which is received
+                                            let table = 
+                                                format!("offer_{my_id}");
+                                            let status = vec![10u8;1];
+                                            Self::save_to_tree(
+                                                db_t.clone(),
+                                                from_id,
+                                                &table,
+                                                status,
                                                 event_time,
                                             );
                                             offer_or_answer(token).await;

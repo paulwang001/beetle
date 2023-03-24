@@ -160,10 +160,13 @@ async fn main() -> Result<()> {
             if tasks.is_empty() {
                 tracing::warn!("notice task is empty!");
             }
+            
             for task in tasks {
                 if let Some((t,f,c)) = notice.remove(&task) {
                     if let Some(api) = push_api.as_ref() {
                         let nb = NoticeBody {
+
+
                             id:format!("{task}"),
                             title:format!("luffa://open/chat?id={task}&type={c}"),
                             body:format!("{}",t),

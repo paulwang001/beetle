@@ -44,7 +44,7 @@ open class RustBuffer : Structure() {
 
     companion object {
         internal fun alloc(size: Int = 0) = rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaSDK_a0be_rustbuffer_alloc(size, status).also {
+            _UniFFILib.INSTANCE.ffi_LuffaSDK_3a64_rustbuffer_alloc(size, status).also {
                 if(it.data == null) {
                    throw RuntimeException("RustBuffer.alloc() returned null data pointer (size=${size})")
                }
@@ -52,7 +52,7 @@ open class RustBuffer : Structure() {
         }
 
         internal fun free(buf: RustBuffer.ByValue) = rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaSDK_a0be_rustbuffer_free(buf, status)
+            _UniFFILib.INSTANCE.ffi_LuffaSDK_3a64_rustbuffer_free(buf, status)
         }
     }
 
@@ -264,135 +264,139 @@ internal interface _UniFFILib : Library {
         }
     }
 
-    fun ffi_LuffaSDK_a0be_Client_object_free(`ptr`: Pointer,
+    fun ffi_LuffaSDK_3a64_Client_object_free(`ptr`: Pointer,
     _uniffi_out_err: RustCallStatus
     ): Unit
 
-    fun LuffaSDK_a0be_Client_new(
+    fun LuffaSDK_3a64_Client_new(
     _uniffi_out_err: RustCallStatus
     ): Pointer
 
-    fun LuffaSDK_a0be_Client_show_code(`ptr`: Pointer,
+    fun LuffaSDK_3a64_Client_show_code(`ptr`: Pointer,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaSDK_a0be_Client_contacts_offer(`ptr`: Pointer,`code`: RustBuffer.ByValue,
+    fun LuffaSDK_3a64_Client_contacts_offer(`ptr`: Pointer,`code`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): Long
 
-    fun LuffaSDK_a0be_Client_contacts_anwser(`ptr`: Pointer,`to`: Long,`offerId`: Long,`secretKey`: RustBuffer.ByValue,
+    fun LuffaSDK_3a64_Client_contacts_anwser(`ptr`: Pointer,`to`: Long,`offerId`: Long,`secretKey`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): Long
 
-    fun LuffaSDK_a0be_Client_send_msg(`ptr`: Pointer,`to`: Long,`msg`: RustBuffer.ByValue,
+    fun LuffaSDK_3a64_Client_send_msg(`ptr`: Pointer,`to`: Long,`msg`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): Long
 
-    fun LuffaSDK_a0be_Client_get_local_id(`ptr`: Pointer,
+    fun LuffaSDK_3a64_Client_get_local_id(`ptr`: Pointer,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaSDK_a0be_Client_get_peer_id(`ptr`: Pointer,
+    fun LuffaSDK_3a64_Client_get_peer_id(`ptr`: Pointer,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaSDK_a0be_Client_get_did(`ptr`: Pointer,
+    fun LuffaSDK_3a64_Client_get_did(`ptr`: Pointer,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaSDK_a0be_Client_relay_list(`ptr`: Pointer,
+    fun LuffaSDK_3a64_Client_relay_list(`ptr`: Pointer,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaSDK_a0be_Client_keys(`ptr`: Pointer,
+    fun LuffaSDK_3a64_Client_keys(`ptr`: Pointer,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaSDK_a0be_Client_connect(`ptr`: Pointer,`peerId`: RustBuffer.ByValue,
+    fun LuffaSDK_3a64_Client_connect(`ptr`: Pointer,`peerId`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): Byte
 
-    fun LuffaSDK_a0be_Client_start(`ptr`: Pointer,`cfgPath`: RustBuffer.ByValue,`key`: RustBuffer.ByValue,`tag`: RustBuffer.ByValue,`cb`: Long,
-    _uniffi_out_err: RustCallStatus
-    ): Byte
-
-    fun LuffaSDK_a0be_Client_stop(`ptr`: Pointer,
-    _uniffi_out_err: RustCallStatus
-    ): Unit
-
-    fun LuffaSDK_a0be_Client_save_session(`ptr`: Pointer,`did`: Long,`tag`: RustBuffer.ByValue,`read`: RustBuffer.ByValue,`reach`: RustBuffer.ByValue,`msg`: RustBuffer.ByValue,
-    _uniffi_out_err: RustCallStatus
-    ): Unit
-
-    fun LuffaSDK_a0be_Client_session_list(`ptr`: Pointer,`top`: Int,
-    _uniffi_out_err: RustCallStatus
-    ): RustBuffer.ByValue
-
-    fun LuffaSDK_a0be_Client_contacts_list(`ptr`: Pointer,`cType`: Byte,
-    _uniffi_out_err: RustCallStatus
-    ): RustBuffer.ByValue
-
-    fun LuffaSDK_a0be_Client_search(`ptr`: Pointer,`query`: RustBuffer.ByValue,`offet`: Int,`limit`: Int,
-    _uniffi_out_err: RustCallStatus
-    ): RustBuffer.ByValue
-
-    fun LuffaSDK_a0be_Client_read_msg(`ptr`: Pointer,`did`: Long,`crc`: Long,
-    _uniffi_out_err: RustCallStatus
-    ): RustBuffer.ByValue
-
-    fun LuffaSDK_a0be_Client_recent_messages(`ptr`: Pointer,`did`: Long,`top`: Int,
-    _uniffi_out_err: RustCallStatus
-    ): RustBuffer.ByValue
-
-    fun LuffaSDK_a0be_Client_find_contacts_tag(`ptr`: Pointer,`did`: Long,
-    _uniffi_out_err: RustCallStatus
-    ): RustBuffer.ByValue
-
-    fun LuffaSDK_a0be_Client_meta_msg(`ptr`: Pointer,`data`: RustBuffer.ByValue,
-    _uniffi_out_err: RustCallStatus
-    ): RustBuffer.ByValue
-
-    fun LuffaSDK_a0be_Client_read_msg_with_meta(`ptr`: Pointer,`did`: Long,`crc`: Long,
-    _uniffi_out_err: RustCallStatus
-    ): RustBuffer.ByValue
-
-    fun LuffaSDK_a0be_Client_gen_key(`ptr`: Pointer,`password`: RustBuffer.ByValue,`store`: Byte,
-    _uniffi_out_err: RustCallStatus
-    ): RustBuffer.ByValue
-
-    fun LuffaSDK_a0be_Client_import_key(`ptr`: Pointer,`phrase`: RustBuffer.ByValue,`password`: RustBuffer.ByValue,
-    _uniffi_out_err: RustCallStatus
-    ): RustBuffer.ByValue
-
-    fun LuffaSDK_a0be_Client_save_key(`ptr`: Pointer,`name`: RustBuffer.ByValue,
-    _uniffi_out_err: RustCallStatus
-    ): Byte
-
-    fun LuffaSDK_a0be_Client_read_key_phrase(`ptr`: Pointer,`name`: RustBuffer.ByValue,
-    _uniffi_out_err: RustCallStatus
-    ): RustBuffer.ByValue
-
-    fun ffi_LuffaSDK_a0be_Callback_init_callback(`callbackStub`: ForeignCallback,
-    _uniffi_out_err: RustCallStatus
-    ): Unit
-
-    fun LuffaSDK_a0be_public_key_to_id(`publicKey`: RustBuffer.ByValue,
+    fun LuffaSDK_3a64_Client_init(`ptr`: Pointer,`cfgPath`: RustBuffer.ByValue,`key`: RustBuffer.ByValue,`tag`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): Long
 
-    fun ffi_LuffaSDK_a0be_rustbuffer_alloc(`size`: Int,
-    _uniffi_out_err: RustCallStatus
-    ): RustBuffer.ByValue
-
-    fun ffi_LuffaSDK_a0be_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,
-    _uniffi_out_err: RustCallStatus
-    ): RustBuffer.ByValue
-
-    fun ffi_LuffaSDK_a0be_rustbuffer_free(`buf`: RustBuffer.ByValue,
+    fun LuffaSDK_3a64_Client_start(`ptr`: Pointer,`cb`: Long,
     _uniffi_out_err: RustCallStatus
     ): Unit
 
-    fun ffi_LuffaSDK_a0be_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,
+    fun LuffaSDK_3a64_Client_stop(`ptr`: Pointer,
+    _uniffi_out_err: RustCallStatus
+    ): Unit
+
+    fun LuffaSDK_3a64_Client_save_session(`ptr`: Pointer,`did`: Long,`tag`: RustBuffer.ByValue,`read`: RustBuffer.ByValue,`reach`: RustBuffer.ByValue,`msg`: RustBuffer.ByValue,
+    _uniffi_out_err: RustCallStatus
+    ): Unit
+
+    fun LuffaSDK_3a64_Client_session_list(`ptr`: Pointer,`top`: Int,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun LuffaSDK_3a64_Client_contacts_list(`ptr`: Pointer,`cType`: Byte,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun LuffaSDK_3a64_Client_search(`ptr`: Pointer,`query`: RustBuffer.ByValue,`offet`: Int,`limit`: Int,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun LuffaSDK_3a64_Client_read_msg(`ptr`: Pointer,`did`: Long,`crc`: Long,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun LuffaSDK_3a64_Client_recent_messages(`ptr`: Pointer,`did`: Long,`top`: Int,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun LuffaSDK_3a64_Client_find_contacts_tag(`ptr`: Pointer,`did`: Long,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun LuffaSDK_3a64_Client_meta_msg(`ptr`: Pointer,`data`: RustBuffer.ByValue,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun LuffaSDK_3a64_Client_read_msg_with_meta(`ptr`: Pointer,`did`: Long,`crc`: Long,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun LuffaSDK_3a64_Client_gen_key(`ptr`: Pointer,`password`: RustBuffer.ByValue,`store`: Byte,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun LuffaSDK_3a64_Client_import_key(`ptr`: Pointer,`phrase`: RustBuffer.ByValue,`password`: RustBuffer.ByValue,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun LuffaSDK_3a64_Client_save_key(`ptr`: Pointer,`name`: RustBuffer.ByValue,
+    _uniffi_out_err: RustCallStatus
+    ): Byte
+
+    fun LuffaSDK_3a64_Client_read_key_phrase(`ptr`: Pointer,`name`: RustBuffer.ByValue,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun ffi_LuffaSDK_3a64_Callback_init_callback(`callbackStub`: ForeignCallback,
+    _uniffi_out_err: RustCallStatus
+    ): Unit
+
+    fun LuffaSDK_3a64_public_key_to_id(`publicKey`: RustBuffer.ByValue,
+    _uniffi_out_err: RustCallStatus
+    ): Long
+
+    fun ffi_LuffaSDK_3a64_rustbuffer_alloc(`size`: Int,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun ffi_LuffaSDK_3a64_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,
+    _uniffi_out_err: RustCallStatus
+    ): RustBuffer.ByValue
+
+    fun ffi_LuffaSDK_3a64_rustbuffer_free(`buf`: RustBuffer.ByValue,
+    _uniffi_out_err: RustCallStatus
+    ): Unit
+
+    fun ffi_LuffaSDK_3a64_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
@@ -695,13 +699,10 @@ public interface ClientInterface {
     
     fun `showCode`(): String?
     
-    @Throws(ClientException::class)
     fun `contactsOffer`(`code`: String): ULong
     
-    @Throws(ClientException::class)
     fun `contactsAnwser`(`to`: ULong, `offerId`: ULong, `secretKey`: List<UByte>): ULong
     
-    @Throws(ClientException::class)
     fun `sendMsg`(`to`: ULong, `msg`: List<UByte>): ULong
     
     fun `getLocalId`(): ULong?
@@ -716,8 +717,9 @@ public interface ClientInterface {
     
     fun `connect`(`peerId`: String): Boolean
     
-    @Throws(ClientException::class)
-    fun `start`(`cfgPath`: String?, `key`: String?, `tag`: String?, `cb`: Callback): Boolean
+    fun `init`(`cfgPath`: String?, `key`: String?, `tag`: String?): ULong
+    
+    fun `start`(`cb`: Callback)
     
     fun `stop`()
     
@@ -756,7 +758,7 @@ class Client(
     constructor() :
         this(
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_new( _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_new( _status)
 })
 
     /**
@@ -769,41 +771,38 @@ class Client(
      */
     override protected fun freeRustArcPtr() {
         rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaSDK_a0be_Client_object_free(this.pointer, status)
+            _UniFFILib.INSTANCE.ffi_LuffaSDK_3a64_Client_object_free(this.pointer, status)
         }
     }
 
     override fun `showCode`(): String? =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_show_code(it,  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_show_code(it,  _status)
 }
         }.let {
             FfiConverterOptionalString.lift(it)
         }
-    
-    @Throws(ClientException::class)override fun `contactsOffer`(`code`: String): ULong =
+    override fun `contactsOffer`(`code`: String): ULong =
         callWithPointer {
-    rustCallWithError(ClientException) { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_contacts_offer(it, FfiConverterString.lower(`code`),  _status)
+    rustCall() { _status ->
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_contacts_offer(it, FfiConverterString.lower(`code`),  _status)
 }
         }.let {
             FfiConverterULong.lift(it)
         }
-    
-    @Throws(ClientException::class)override fun `contactsAnwser`(`to`: ULong, `offerId`: ULong, `secretKey`: List<UByte>): ULong =
+    override fun `contactsAnwser`(`to`: ULong, `offerId`: ULong, `secretKey`: List<UByte>): ULong =
         callWithPointer {
-    rustCallWithError(ClientException) { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_contacts_anwser(it, FfiConverterULong.lower(`to`), FfiConverterULong.lower(`offerId`), FfiConverterSequenceUByte.lower(`secretKey`),  _status)
+    rustCall() { _status ->
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_contacts_anwser(it, FfiConverterULong.lower(`to`), FfiConverterULong.lower(`offerId`), FfiConverterSequenceUByte.lower(`secretKey`),  _status)
 }
         }.let {
             FfiConverterULong.lift(it)
         }
-    
-    @Throws(ClientException::class)override fun `sendMsg`(`to`: ULong, `msg`: List<UByte>): ULong =
+    override fun `sendMsg`(`to`: ULong, `msg`: List<UByte>): ULong =
         callWithPointer {
-    rustCallWithError(ClientException) { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_send_msg(it, FfiConverterULong.lower(`to`), FfiConverterSequenceUByte.lower(`msg`),  _status)
+    rustCall() { _status ->
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_send_msg(it, FfiConverterULong.lower(`to`), FfiConverterSequenceUByte.lower(`msg`),  _status)
 }
         }.let {
             FfiConverterULong.lift(it)
@@ -811,7 +810,7 @@ class Client(
     override fun `getLocalId`(): ULong? =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_get_local_id(it,  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_get_local_id(it,  _status)
 }
         }.let {
             FfiConverterOptionalULong.lift(it)
@@ -819,7 +818,7 @@ class Client(
     override fun `getPeerId`(): String? =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_get_peer_id(it,  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_get_peer_id(it,  _status)
 }
         }.let {
             FfiConverterOptionalString.lift(it)
@@ -827,7 +826,7 @@ class Client(
     override fun `getDid`(): String? =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_get_did(it,  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_get_did(it,  _status)
 }
         }.let {
             FfiConverterOptionalString.lift(it)
@@ -835,7 +834,7 @@ class Client(
     override fun `relayList`(): List<String> =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_relay_list(it,  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_relay_list(it,  _status)
 }
         }.let {
             FfiConverterSequenceString.lift(it)
@@ -843,7 +842,7 @@ class Client(
     override fun `keys`(): List<String> =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_keys(it,  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_keys(it,  _status)
 }
         }.let {
             FfiConverterSequenceString.lift(it)
@@ -851,38 +850,44 @@ class Client(
     override fun `connect`(`peerId`: String): Boolean =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_connect(it, FfiConverterString.lower(`peerId`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_connect(it, FfiConverterString.lower(`peerId`),  _status)
 }
         }.let {
             FfiConverterBoolean.lift(it)
+        }
+    override fun `init`(`cfgPath`: String?, `key`: String?, `tag`: String?): ULong =
+        callWithPointer {
+    rustCall() { _status ->
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_init(it, FfiConverterOptionalString.lower(`cfgPath`), FfiConverterOptionalString.lower(`key`), FfiConverterOptionalString.lower(`tag`),  _status)
+}
+        }.let {
+            FfiConverterULong.lift(it)
+        }
+    override fun `start`(`cb`: Callback) =
+        callWithPointer {
+    rustCall() { _status ->
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_start(it, FfiConverterTypeCallback.lower(`cb`),  _status)
+}
         }
     
-    @Throws(ClientException::class)override fun `start`(`cfgPath`: String?, `key`: String?, `tag`: String?, `cb`: Callback): Boolean =
-        callWithPointer {
-    rustCallWithError(ClientException) { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_start(it, FfiConverterOptionalString.lower(`cfgPath`), FfiConverterOptionalString.lower(`key`), FfiConverterOptionalString.lower(`tag`), FfiConverterTypeCallback.lower(`cb`),  _status)
-}
-        }.let {
-            FfiConverterBoolean.lift(it)
-        }
     override fun `stop`() =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_stop(it,  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_stop(it,  _status)
 }
         }
     
     override fun `saveSession`(`did`: ULong, `tag`: String, `read`: ULong?, `reach`: ULong?, `msg`: String?) =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_save_session(it, FfiConverterULong.lower(`did`), FfiConverterString.lower(`tag`), FfiConverterOptionalULong.lower(`read`), FfiConverterOptionalULong.lower(`reach`), FfiConverterOptionalString.lower(`msg`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_save_session(it, FfiConverterULong.lower(`did`), FfiConverterString.lower(`tag`), FfiConverterOptionalULong.lower(`read`), FfiConverterOptionalULong.lower(`reach`), FfiConverterOptionalString.lower(`msg`),  _status)
 }
         }
     
     override fun `sessionList`(`top`: UInt): List<ChatSession> =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_session_list(it, FfiConverterUInt.lower(`top`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_session_list(it, FfiConverterUInt.lower(`top`),  _status)
 }
         }.let {
             FfiConverterSequenceTypeChatSession.lift(it)
@@ -890,7 +895,7 @@ class Client(
     override fun `contactsList`(`cType`: UByte): List<ContactsView> =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_contacts_list(it, FfiConverterUByte.lower(`cType`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_contacts_list(it, FfiConverterUByte.lower(`cType`),  _status)
 }
         }.let {
             FfiConverterSequenceTypeContactsView.lift(it)
@@ -899,7 +904,7 @@ class Client(
     @Throws(ClientException::class)override fun `search`(`query`: String, `offet`: UInt, `limit`: UInt): List<String> =
         callWithPointer {
     rustCallWithError(ClientException) { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_search(it, FfiConverterString.lower(`query`), FfiConverterUInt.lower(`offet`), FfiConverterUInt.lower(`limit`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_search(it, FfiConverterString.lower(`query`), FfiConverterUInt.lower(`offet`), FfiConverterUInt.lower(`limit`),  _status)
 }
         }.let {
             FfiConverterSequenceString.lift(it)
@@ -907,7 +912,7 @@ class Client(
     override fun `readMsg`(`did`: ULong, `crc`: ULong): List<UByte>? =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_read_msg(it, FfiConverterULong.lower(`did`), FfiConverterULong.lower(`crc`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_read_msg(it, FfiConverterULong.lower(`did`), FfiConverterULong.lower(`crc`),  _status)
 }
         }.let {
             FfiConverterOptionalSequenceUByte.lift(it)
@@ -915,7 +920,7 @@ class Client(
     override fun `recentMessages`(`did`: ULong, `top`: UInt): List<ULong> =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_recent_messages(it, FfiConverterULong.lower(`did`), FfiConverterUInt.lower(`top`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_recent_messages(it, FfiConverterULong.lower(`did`), FfiConverterUInt.lower(`top`),  _status)
 }
         }.let {
             FfiConverterSequenceULong.lift(it)
@@ -923,7 +928,7 @@ class Client(
     override fun `findContactsTag`(`did`: ULong): String? =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_find_contacts_tag(it, FfiConverterULong.lower(`did`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_find_contacts_tag(it, FfiConverterULong.lower(`did`),  _status)
 }
         }.let {
             FfiConverterOptionalString.lift(it)
@@ -931,7 +936,7 @@ class Client(
     override fun `metaMsg`(`data`: List<UByte>): EventMeta =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_meta_msg(it, FfiConverterSequenceUByte.lower(`data`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_meta_msg(it, FfiConverterSequenceUByte.lower(`data`),  _status)
 }
         }.let {
             FfiConverterTypeEventMeta.lift(it)
@@ -939,7 +944,7 @@ class Client(
     override fun `readMsgWithMeta`(`did`: ULong, `crc`: ULong): EventMeta? =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_read_msg_with_meta(it, FfiConverterULong.lower(`did`), FfiConverterULong.lower(`crc`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_read_msg_with_meta(it, FfiConverterULong.lower(`did`), FfiConverterULong.lower(`crc`),  _status)
 }
         }.let {
             FfiConverterOptionalTypeEventMeta.lift(it)
@@ -947,7 +952,7 @@ class Client(
     override fun `genKey`(`password`: String, `store`: Boolean): String? =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_gen_key(it, FfiConverterString.lower(`password`), FfiConverterBoolean.lower(`store`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_gen_key(it, FfiConverterString.lower(`password`), FfiConverterBoolean.lower(`store`),  _status)
 }
         }.let {
             FfiConverterOptionalString.lift(it)
@@ -955,7 +960,7 @@ class Client(
     override fun `importKey`(`phrase`: String, `password`: String): String? =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_import_key(it, FfiConverterString.lower(`phrase`), FfiConverterString.lower(`password`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_import_key(it, FfiConverterString.lower(`phrase`), FfiConverterString.lower(`password`),  _status)
 }
         }.let {
             FfiConverterOptionalString.lift(it)
@@ -963,7 +968,7 @@ class Client(
     override fun `saveKey`(`name`: String): Boolean =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_save_key(it, FfiConverterString.lower(`name`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_save_key(it, FfiConverterString.lower(`name`),  _status)
 }
         }.let {
             FfiConverterBoolean.lift(it)
@@ -971,7 +976,7 @@ class Client(
     override fun `readKeyPhrase`(`name`: String): String? =
         callWithPointer {
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_Client_read_key_phrase(it, FfiConverterString.lower(`name`),  _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_Client_read_key_phrase(it, FfiConverterString.lower(`name`),  _status)
 }
         }.let {
             FfiConverterOptionalString.lift(it)
@@ -1341,7 +1346,7 @@ public object FfiConverterTypeCallback: FfiConverterCallbackInterface<Callback>(
 ) {
     override fun register(lib: _UniFFILib) {
         rustCall() { status ->
-            lib.ffi_LuffaSDK_a0be_Callback_init_callback(this.foreignCallback, status)
+            lib.ffi_LuffaSDK_3a64_Callback_init_callback(this.foreignCallback, status)
         }
     }
 }
@@ -1590,7 +1595,7 @@ public object FfiConverterSequenceTypeContactsView: FfiConverterRustBuffer<List<
 fun `publicKeyToId`(`publicKey`: List<UByte>): ULong {
     return FfiConverterULong.lift(
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaSDK_a0be_public_key_to_id(FfiConverterSequenceUByte.lower(`publicKey`), _status)
+    _UniFFILib.INSTANCE.LuffaSDK_3a64_public_key_to_id(FfiConverterSequenceUByte.lower(`publicKey`), _status)
 })
 }
 

@@ -44,13 +44,10 @@ interface Client {
 
     string? show_code();
 
-    [Throws=ClientError]
     u64 contacts_offer([ByRef] string code);
 
-    [Throws=ClientError]
     u64 contacts_anwser(u64 to,u64 offer_id,sequence<u8> secret_key);
 
-    [Throws=ClientError] 
     u64 send_msg(u64 to,sequence<u8> msg);
 
     u64? get_local_id();
