@@ -126,7 +126,7 @@ pub(crate) async fn build_swarm(
         .with_max_established_incoming(Some(config.max_conns_in))
         .with_max_established_outgoing(Some(config.max_conns_out))
         .with_max_established_per_peer(Some(config.max_conns_per_peer));
-    let swarm = SwarmBuilder::with_executor(transport, behaviour, peer_id, Tokio)
+    let swarm = SwarmBuilder::with_tokio_executor(transport, behaviour, peer_id)
         .connection_limits(limits)
         
         .notify_handler_buffer_size(config.notify_handler_buffer_size.try_into()?)
@@ -137,9 +137,9 @@ pub(crate) async fn build_swarm(
     Ok(swarm)
 }
 
-struct Tokio;
-impl Executor for Tokio {
-    fn exec(&self, fut: std::pin::Pin<Box<dyn futures::Future<Output = ()> + Send>>) {
-        tokio::task::spawn(fut);
-    }
-}
+// struct Tokio;
+// impl Executor for Tokio {
+//     fn exec(&self, fut: std::pin::Pin<Box<dyn futures::Future<Output = ()> + Send>>) {
+//         tokio::task::spawn(fut);
+//     }
+// }
