@@ -64,6 +64,15 @@ fn main() -> Result<()> {
     // let msg_t = msg.clone();
     tracing::info!("starting");
     client.init(cfg_path);
+    let keys = client.keys().len();
+    tracing::info!("keys  >>{keys}.");
+    for x in 0..100 {
+        
+        let kk = client.gen_key("", false);
+        tracing::info!("key  >>{kk:?}.");
+
+    }
+
     client.start(None,tag,msg);
     tracing::info!("started.");
     let client = Arc::new(client);

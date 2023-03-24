@@ -1158,7 +1158,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         }
                         match message {
                             RequestResponseMessage::Request { request_id, request, channel }=>{
-                                let event =  luffa_rpc_types::Event::decode(request.data()).unwrap();
+                                let event =  luffa_rpc_types::Event::decode(request.data())?;
                                 let luffa_rpc_types::Event {
                                     crc,
                                     from_id,

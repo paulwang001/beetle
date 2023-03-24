@@ -63,7 +63,7 @@ lazy_static! {
     static ref RUNTIME: tokio::runtime::Runtime = create_runtime();
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize,Clone)]
 pub struct ChatSession {
     pub did: u64,
     pub session_type:u8,
@@ -738,22 +738,30 @@ impl Client {
         chats.truncate(top as usize);
         chats
     }
-    fn db_session_list(db: Arc<Db>, page: u32,page_size:u32) -> Vec<ChatSession> {
+
+    /// pagination session
+    pub fn session_page(&self,page:u32,size:u32) ->Option<Vec<ChatSession>> {
+        Self::db_session_list(self.db.clone(), page, size)
+    }
+    /// pagination session list
+    fn db_session_list(db: Arc<Db>, page: u32,page_size:u32) -> Option<Vec<ChatSession>> {
         let tree = db.open_tree(KVDB_CHAT_SESSION_TREE).unwrap();
 
         let mut chats = tree
             .into_iter()
             .map(|item| {
-                let (key, val) = item.unwrap();
+                let (_key, val) = item.unwrap();
                 let chat:ChatSession = serde_cbor::from_slice(&val[..]).unwrap();
                 chat
             })
             .collect::<Vec<_>>();
         chats.sort_by(|a, b| a.last_time.partial_cmp(&b.last_time).unwrap());
         chats.reverse();
-        // let page = chats.windows(page_size as usize).nth(page as usize);
-        // if 
-        chats
+        let page = chats.windows(page_size as usize).nth(page as usize);
+        page.map(|ls| ls.into_iter().map(|s| {
+            s.clone()
+
+        } ).collect::<Vec<_>>())
     }
 
     pub fn keys(&self) -> Vec<String>{
@@ -1262,6 +1270,7 @@ impl Client {
         let db_t = db.clone();
         tokio::spawn(async move {
             let mut timer = std::time::Instant::now();
+            let mut count = 0_u64;
             loop {
                 let peers =match client_t.get_peers().await {
                     Ok(peers)=>peers,
@@ -1279,56 +1288,94 @@ impl Client {
                 }
                 timer = std::time::Instant::now();
 
-                tracing::warn!("subscribed all as client,status sync");
-                let msg = luffa_rpc_types::Message::StatusSync {
-                    to: 0,
-                    status: AppStatus::Active,
-                    from_id: my_id,
-                };
-                let key: Option<Vec<u8>> = None;
-                let event = Event::new(0, &msg, key, my_id);
-                let data = event.encode().unwrap();
-               
-                if let Err(e) = client_t
-                    .gossipsub_publish(
-                        TopicHash::from_raw(format!("{}", TOPIC_STATUS)),
-                        bytes::Bytes::from(data),
-                    )
-                    .await
-                {
-                    tracing::warn!("status sync pub>> {e:?}");
+                count += 1;
+                if count % 30 == 1 {
+                    tracing::warn!("subscribed all as client,status sync");
+                    let msg = luffa_rpc_types::Message::StatusSync {
+                        to: 0,
+                        status: AppStatus::Active,
+                        from_id: my_id,
+                    };
+                    let key: Option<Vec<u8>> = None;
+                    let event = Event::new(0, &msg, key, my_id);
+                    let data = event.encode().unwrap();
+                   
+                    if let Err(e) = client_t
+                        .gossipsub_publish(
+                            TopicHash::from_raw(format!("{}", TOPIC_STATUS)),
+                            bytes::Bytes::from(data),
+                        )
+                        .await
+                    {
+                        tracing::warn!("status sync pub>> {e:?}");
+                    }
                 }
-                let tree = db_t.open_tree(KVDB_CONTACTS_TREE).unwrap();
-
-                let tag_prefix = format!("TAG-");
-                let itr = tree.scan_prefix(tag_prefix);
-                let contacts = itr.map(|item| {
-                    let (k, _v) = item.unwrap();
-                    // let tag = String::from_utf8(v.to_vec()).unwrap();
-                    let key = String::from_utf8(k.to_vec()).unwrap();
-                    let parts = key.split('-');
-
-                    let to = parts.last().unwrap();
-                    let to: u64 = to.parse().unwrap();
-                    let c_type = Self::get_contacts_type(db_t.clone(), to).unwrap_or(ContactsTypes::Private);
-                    let c_type: u8 = c_type as u8;
-                    let c_type = if c_type == 0 {ContactsTypes::Private}  else { ContactsTypes::Group};
-                    let have_time = Self::get_contacts_have_time(db_t.clone(), to);
-                    Contacts {
-                        did: to,
-                        r#type:c_type,
-                        have_time,
-                        wants:vec![],
-                    }  
-                })
-                .collect::<Vec<_>>();
-                
-                let sync = Message::ContactsSync { did: my_id, contacts };
-                let event = Event::new(0, &sync, None, my_id);
-                let data = event.encode().unwrap();
-                if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
-                    tracing::warn!("pub contacts sync status >>> {e:?}");
+                let page = count % 8;
+                let mut contacts = vec![];
+                for lvl in 0..8 {
+                    if page <= lvl && count % 120 > 0{
+                        if let Some(lvl_0) = Self::db_session_list(db_t.clone(), lvl as u32, 4) {
+                            let lvl_contacts = 
+                            lvl_0.into_iter().map(|cs| {
+                                let to = cs.did;
+                                let c_type = Self::get_contacts_type(db_t.clone(), to).unwrap_or(ContactsTypes::Private);
+                                let c_type: u8 = c_type as u8;
+                                let c_type = if c_type == 0 {ContactsTypes::Private}  else { ContactsTypes::Group};
+                                let have_time = Self::get_contacts_have_time(db_t.clone(), to);
+                                Contacts {
+                                    did: to,
+                                    r#type:c_type,
+                                    have_time,
+                                    wants:vec![],
+                                }  
+                            }).collect::<Vec<_>>();
+                            contacts.extend_from_slice(&lvl_contacts[..]);
+                            
+                        }
+                    }
                 }
+                if !contacts.is_empty() {
+                    let sync = Message::ContactsSync { did: my_id, contacts };
+                    let event = Event::new(0, &sync, None, my_id);
+                    let data = event.encode().unwrap();
+                    if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
+                        tracing::warn!("pub contacts sync status >>> {e:?}");
+                    }
+                }
+                if count % 120 == 0 {
+
+                    let tree = db_t.open_tree(KVDB_CONTACTS_TREE).unwrap();
+    
+                    let tag_prefix = format!("TAG-");
+                    let itr = tree.scan_prefix(tag_prefix);
+                    let contacts = itr.map(|item| {
+                        let (k, _v) = item.unwrap();
+                        // let tag = String::from_utf8(v.to_vec()).unwrap();
+                        let key = String::from_utf8(k.to_vec()).unwrap();
+                        let parts = key.split('-');
+    
+                        let to = parts.last().unwrap();
+                        let to: u64 = to.parse().unwrap();
+                        let c_type = Self::get_contacts_type(db_t.clone(), to).unwrap_or(ContactsTypes::Private);
+                        let c_type: u8 = c_type as u8;
+                        let c_type = if c_type == 0 {ContactsTypes::Private}  else { ContactsTypes::Group};
+                        let have_time = Self::get_contacts_have_time(db_t.clone(), to);
+                        Contacts {
+                            did: to,
+                            r#type:c_type,
+                            have_time,
+                            wants:vec![],
+                        }  
+                    })
+                    .collect::<Vec<_>>();
+                    
+                    let sync = Message::ContactsSync { did: my_id, contacts };
+                    let event = Event::new(0, &sync, None, my_id);
+                    let data = event.encode().unwrap();
+                    if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
+                        tracing::warn!("pub contacts sync status >>> {e:?}");
+                    }
+                } 
                 // if let Err(e) = client_t
                 //     .gossipsub_publish(
                 //         TopicHash::from_raw(format!("{}", TOPIC_STATUS)),
@@ -1339,7 +1386,7 @@ impl Client {
                 //     tracing::warn!("pub contacts sync status >>> {e:?}");
                 // }
                 // break;
-                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
         });
 
@@ -2130,7 +2177,7 @@ impl Client {
                                 {
                                     error!("{e:?}");
                                 }
-                                Self::update_session(db_tt.clone(), from_id, comment.clone(), None, None, None, event_time);
+                                
                                 
                             };
                             match msg_t {
@@ -2138,6 +2185,7 @@ impl Client {
                                     match exchange{
                                         ContactsEvent::Answer { token }=>{
                                             tracing::info!("Answer>>>>>{token:?}");
+                                            let comment = &token.comment;
                                             let pk = PublicKey::from_protobuf_encoding(&token.public_key).unwrap();
                                             let peer = PeerId::from_public_key(&pk);
                                             let mut digest = crc64fast::Digest::new();
@@ -2164,6 +2212,7 @@ impl Client {
                                                 status,
                                                 event_time,
                                             );
+                                            Self::update_session(db_t.clone(), did, comment.clone(), None, None, None, event_time);
                                             offer_or_answer(token).await;
                                         }
                                         ContactsEvent::Offer { mut token }=>{

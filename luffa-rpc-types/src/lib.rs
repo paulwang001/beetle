@@ -103,7 +103,7 @@ impl Event {
             .unwrap()
             .as_millis() as u64;
         if self.event_time < now - 60 * 1000{
-            return Err(anyhow::anyhow!("event time is invalid."));
+            //return Err(anyhow::anyhow!("event time is invalid."));
         }
         let mut digest = crc64fast::Digest::new();
         digest.write(self.msg.as_ref());
