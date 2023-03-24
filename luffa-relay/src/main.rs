@@ -158,7 +158,7 @@ async fn main() -> Result<()> {
             if tasks.is_empty() {
                 tracing::warn!("notice task is empty!");
             }
-            
+
             for task in tasks {
                 if let Some((t,f,c)) = notice.remove(&task) {
                     if let Some(api) = push_api.as_ref() {
@@ -284,15 +284,18 @@ async fn main() -> Result<()> {
                     };
                     let event = luffa_rpc_types::Event::new(0, &msg, None, u_id);
                     let event = event.encode().unwrap();
-                    if let Err(e) = client
-                        .gossipsub_publish(
-                            TopicHash::from_raw(TOPIC_STATUS),
-                            bytes::Bytes::from(event),
-                        )
-                        .await
-                    {
-                        tracing::warn!("{e:?}");
-                    }
+                    let client = client.clone();
+                    tokio::spawn(async move{
+                        if let Err(e) = client
+                            .gossipsub_publish(
+                                TopicHash::from_raw(TOPIC_STATUS),
+                                bytes::Bytes::from(event),
+                            )
+                            .await
+                        {
+                            tracing::warn!("{e:?}");
+                        }
+                    });
                     
                 }
                 NetworkEvent::PeerDisconnected(peer_id) => {
@@ -308,15 +311,18 @@ async fn main() -> Result<()> {
                     };
                     let event = luffa_rpc_types::Event::new(0, &msg, None, u_id);
                     let event = event.encode().unwrap();
-                    if let Err(e) = client
-                        .gossipsub_publish(
-                            TopicHash::from_raw(TOPIC_STATUS),
-                            bytes::Bytes::from(event),
-                        )
-                        .await
-                    {
-                        tracing::warn!("{e:?}");
-                    }
+                    let client = client.clone();
+                    tokio::spawn(async move{
+                        if let Err(e) = client
+                            .gossipsub_publish(
+                                TopicHash::from_raw(TOPIC_STATUS),
+                                bytes::Bytes::from(event),
+                            )
+                            .await
+                        {
+                            tracing::warn!("{e:?}");
+                        }
+                    });
                     
                 }
                 NetworkEvent::CancelLookupQuery(peer_id) => {

@@ -1291,16 +1291,18 @@ impl Client {
                     let key: Option<Vec<u8>> = None;
                     let event = Event::new(0, &msg, key, my_id);
                     let data = event.encode().unwrap();
-                   
-                    if let Err(e) = client_t
-                        .gossipsub_publish(
-                            TopicHash::from_raw(format!("{}", TOPIC_STATUS)),
-                            bytes::Bytes::from(data),
-                        )
-                        .await
-                    {
-                        tracing::warn!("status sync pub>> {e:?}");
-                    }
+                    let client_t = client_t.clone();
+                    tokio::spawn(async move{
+                        if let Err(e) = client_t
+                            .gossipsub_publish(
+                                TopicHash::from_raw(format!("{}", TOPIC_STATUS)),
+                                bytes::Bytes::from(data),
+                            )
+                            .await
+                        {
+                            tracing::warn!("status sync pub>> {e:?}");
+                        }
+                    });
                 }
                 let page = count % 8;
                 let mut contacts = vec![];
@@ -1330,9 +1332,13 @@ impl Client {
                     let sync = Message::ContactsSync { did: my_id, contacts };
                     let event = Event::new(0, &sync, None, my_id);
                     let data = event.encode().unwrap();
-                    if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
-                        tracing::warn!("pub contacts sync status >>> {e:?}");
-                    }
+                    let client_t = client_t.clone();
+                    tokio::spawn(async move {
+                        
+                        if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
+                            tracing::warn!("pub contacts sync status >>> {e:?}");
+                        }
+                    });
                 }
                 if count % 120 == 0 {
 
@@ -1364,9 +1370,12 @@ impl Client {
                     let sync = Message::ContactsSync { did: my_id, contacts };
                     let event = Event::new(0, &sync, None, my_id);
                     let data = event.encode().unwrap();
-                    if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
-                        tracing::warn!("pub contacts sync status >>> {e:?}");
-                    }
+                    let client_t = client_t.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
+                            tracing::warn!("pub contacts sync status >>> {e:?}");
+                        }
+                    });
                 } 
                 // if let Err(e) = client_t
                 //     .gossipsub_publish(
@@ -1427,11 +1436,9 @@ impl Client {
                                                     }
                                                     for ctt in contacts {
                                                         let did = ctt.did;
-                                                        let table = format!("message_{}",ctt.did);
                                                         for crc in ctt.wants {
-                                                            if Self::have_in_tree(db_t.clone(), crc, &table) {
-                                                                continue;
-                                                            }
+                                                            let table = format!("message_{}",ctt.did);
+                                                            
                                                             let clt = client_t.clone();
                                                             let db_tt = db_t.clone();
                                                             // add to wants crc of contacts
@@ -1439,58 +1446,60 @@ impl Client {
                                                             let scm= schema_tt.clone();
                                                             let idx = idx_tt.clone();
                                                             tokio::spawn(async move {
-                                                                match clt.get_crc_record(crc).await {
-                                                                    Ok(res)=>{
-                                                                        let data = res.data;
-                                                                        // TODO remove crc from wants and update want_time
-                                                                        tracing::warn!("get record: {crc}");
-                                                                        Self::set_contacts_have_time(db_tt.clone(), did,event_time);
-                                                                        let data = data.to_vec();
-                                                                        Self::process_event(
-                                                                            db_tt.clone(),
-                                                                            cb_t.clone(),
-                                                                            clt.clone(),
-                                                                            idx.clone(),
-                                                                            scm,
-                                                                            &data,
-                                                                            my_id,
-                                                                        ).await;
-                                                                        if let Ok(im) = Event::decode_uncheck(&data) {
-                                                                            let Event {
-                                                                                msg,
-                                                                                event_time,
-                                                                                nonce,
-                                                                                ..
-                                                                            } = im;
-                                                                            if let Some(key) = Self::get_aes_key_from_contacts(db_tt.clone(), did) {
-                                                                                if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), Some(key), nonce) {
-                                                                                    let feedback = msg.chat_feedback();
-                                                                                    match feedback {
-                                                                                        Some((crc,status))=>{
-                                                                                            match status {
-                                                                                                FeedbackStatus::Read=>{
-                                                                                                    
-                                                                                                    // Self::update_session(db_tt.clone(),did,None,Some(crc),None,None,event_time);
-                                                                                                }
-                                                                                                FeedbackStatus::Reach=>{
-
-                                                                                                }
-                                                                                                _=>{
-
+                                                                if !Self::have_in_tree(db_tt.clone(), crc, &table) {
+                                                                    match clt.get_crc_record(crc).await {
+                                                                        Ok(res)=>{
+                                                                            let data = res.data;
+                                                                            // TODO remove crc from wants and update want_time
+                                                                            tracing::warn!("get record: {crc}");
+                                                                            Self::set_contacts_have_time(db_tt.clone(), did,event_time);
+                                                                            let data = data.to_vec();
+                                                                            Self::process_event(
+                                                                                db_tt.clone(),
+                                                                                cb_t.clone(),
+                                                                                clt.clone(),
+                                                                                idx.clone(),
+                                                                                scm,
+                                                                                &data,
+                                                                                my_id,
+                                                                            ).await;
+                                                                            if let Ok(im) = Event::decode_uncheck(&data) {
+                                                                                let Event {
+                                                                                    msg,
+                                                                                    event_time,
+                                                                                    nonce,
+                                                                                    ..
+                                                                                } = im;
+                                                                                if let Some(key) = Self::get_aes_key_from_contacts(db_tt.clone(), did) {
+                                                                                    if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), Some(key), nonce) {
+                                                                                        let feedback = msg.chat_feedback();
+                                                                                        match feedback {
+                                                                                            Some((crc,status))=>{
+                                                                                                match status {
+                                                                                                    FeedbackStatus::Read=>{
+                                                                                                        
+                                                                                                        // Self::update_session(db_tt.clone(),did,None,Some(crc),None,None,event_time);
+                                                                                                    }
+                                                                                                    FeedbackStatus::Reach=>{
+    
+                                                                                                    }
+                                                                                                    _=>{
+    
+                                                                                                    }
                                                                                                 }
                                                                                             }
-                                                                                        }
-                                                                                        None=>{
-                                                                                            
+                                                                                            None=>{
+                                                                                                
+                                                                                            }
                                                                                         }
                                                                                     }
                                                                                 }
+    
                                                                             }
-
                                                                         }
-                                                                    }
-                                                                    Err(e)=>{
-                                                                        tracing::warn!("get crc record failed:{e:?}");
+                                                                        Err(e)=>{
+                                                                            tracing::warn!("get crc record failed:{e:?}");
+                                                                        }
                                                                     }
                                                                 }
                                                             });
@@ -1506,17 +1515,24 @@ impl Client {
                                     else{
                                         let did = if to == my_id { from_id } else {to};
                                         let table = format!("message_{}",did);
-                                        if !Self::have_in_tree(db_t.clone(), crc, &table) {
-                                            Self::process_event(
-                                                db_t.clone(),
-                                                cb.clone(),
-                                                client_t.clone(),
-                                                idx.clone(),
-                                                schema_tt.clone(),
-                                                &data,
-                                                my_id,
-                                            ).await;
-                                        }
+                                        let idx = idx.clone();
+                                        let db_t = db_t.clone();
+                                        let schema_tt = schema_tt.clone();
+                                        let client_t = client_t.clone();
+                                        let cb = cb.clone();
+                                        tokio::spawn(async move {
+                                            if !Self::have_in_tree(db_t.clone(), crc, &table) {
+                                                Self::process_event(
+                                                    db_t,
+                                                    cb,
+                                                    client_t,
+                                                    idx,
+                                                    schema_tt,
+                                                    &data,
+                                                    my_id,
+                                                ).await;
+                                            }
+                                        });
                                     } 
                                 }
                             },
@@ -1531,17 +1547,25 @@ impl Client {
                                     } = im;
                                     let did = if to == my_id { from_id } else {to};
                                     let table = format!("message_{}",did);
-                                    if !Self::have_in_tree(db_t.clone(), crc, &table) {
-                                        Self::process_event(
-                                            db_t.clone(),
-                                            cb.clone(),
-                                            client_t.clone(),
-                                            idx.clone(),
-                                            schema_tt.clone(),
-                                            &data,
-                                            my_id,
-                                        ).await;
-                                    }
+                                    let db_t = db_t.clone();
+                                    let cb = cb.clone();
+                                    let client_t = client_t.clone();
+                                    let idx = idx.clone();
+                                    let schema_tt = schema_tt.clone();
+                                    tokio::spawn(async move {
+
+                                        if !Self::have_in_tree(db_t.clone(), crc, &table) {
+                                            Self::process_event(
+                                                db_t,
+                                                cb,
+                                                client_t,
+                                                idx,
+                                                schema_tt,
+                                                &data,
+                                                my_id,
+                                            ).await;
+                                        }
+                                    });
                                     
                                 }
                             },
@@ -1584,15 +1608,18 @@ impl Client {
                         };
                         let event = luffa_rpc_types::Event::new(0, &msg, None, u_id);
                         let event = event.encode().unwrap();
-                        if let Err(e) = client_t
+                        let client_t = client_t.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = client_t
                             .gossipsub_publish(
                                 TopicHash::from_raw(TOPIC_STATUS),
                                 bytes::Bytes::from(event),
                             )
                             .await
-                        {
-                            error!("{e:?}");
-                        }
+                            {
+                                error!("{e:?}");
+                            }
+                        });
                     }
                     NetworkEvent::PeerDisconnected(peer_id) => {
                         tracing::debug!("---------PeerDisconnected-----------{:?}", peer_id);
@@ -1607,15 +1634,18 @@ impl Client {
                         };
                         let event = luffa_rpc_types::Event::new(0, &msg, None, u_id);
                         let event = event.encode().unwrap();
-                        if let Err(e) = client_t
-                            .gossipsub_publish(
-                                TopicHash::from_raw(TOPIC_STATUS),
-                                bytes::Bytes::from(event),
-                            )
-                            .await
-                        {
-                            error!("{e:?}");
-                        }
+                        let client_t = client_t.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = client_t
+                                .gossipsub_publish(
+                                    TopicHash::from_raw(TOPIC_STATUS),
+                                    bytes::Bytes::from(event),
+                                )
+                                .await
+                            {
+                                error!("{e:?}");
+                            }
+                        });
                     }
                     NetworkEvent::CancelLookupQuery(peer_id) => {
                         tracing::debug!("---------CancelLookupQuery-----------{:?}", peer_id);
@@ -1687,15 +1717,18 @@ impl Client {
                         }
                     };
                     if to != my_id {
-                        
-                        match client.chat_request(bytes::Bytes::from(data.clone())).await {
-                            Ok(res)=>{
-                                tracing::info!("{res:?}");
+                        let client = client.clone();
+                        let data = data.clone();
+                        tokio::spawn(async move {
+                            match client.chat_request(bytes::Bytes::from(data)).await {
+                                Ok(res)=>{
+                                    tracing::info!("{res:?}");
+                                }
+                                Err(e)=>{
+                                    tracing::error!("{e:?}");
+                                }
                             }
-                            Err(e)=>{
-                                tracing::error!("{e:?}");
-                            }
-                        }
+                        });
                     }
                     else{
                         tracing::warn!("is to me---->");
@@ -1713,98 +1746,103 @@ impl Client {
                         if let Err(e) = channel.send(Ok(crc)) {
                             tracing::warn!("channel send failed");
                         }
-                        let table =  {
-                            format!("message_{to}")
-                        };
-                        tracing::info!("send......");
-                        if to != my_id && !msg.is_contacts_exchange() {
-                            Self::save_to_tree(
-                                db_t.clone(),
-                                e.crc,
-                                &table,
-                                data.clone(),
-                                event_time,
-                            );
-                        }
-                        match msg {
-                            Message::Chat { content } => {
-                                // TODO index content search engine
-                                match content {
-                                    ChatContent::Burn { crc, expires } => {
-                                        let p_table = format!("message_{to}");
-                                        Self::burn_from_tree(db_t.clone(), crc, p_table);
-
-                                        let fld_crc = schema_t.get_field("crc").unwrap();
-                                        let mut wr = idx_t.write().await;
-                                        let del = Term::from_field_u64(fld_crc, crc);
-                                        wr.delete_term(del);
-                                        wr.commit().unwrap();
-                                    }
-                                    ChatContent::Send { data } => {
-                                        let (title, body) = match data {
-                                            luffa_rpc_types::ContentData::Text {
-                                                source,
-                                                reference,
-                                            } => match source {
-                                                luffa_rpc_types::DataSource::Cid { cid } => {
-                                                    let t = multibase::encode(multibase::Base::Base58Btc, cid);
-                                                    let body = format!("{:?}",reference);
-                                                    (t, body)
-                                                }
-                                                luffa_rpc_types::DataSource::Raw { data } => {
-                                                    let t = format!("");
-                                                    let body = multibase::encode(
-                                                        multibase::Base::Base64,
-                                                        data,
-                                                    );
-                                                    (t, body)
-                                                }
-                                                luffa_rpc_types::DataSource::Text { content } => {
-                                                    let t = format!("");
-
-                                                    (t, content)
-                                                }
-                                            },
-                                            luffa_rpc_types::ContentData::Link {
-                                                txt,
-                                                url,
-                                                reference,
-                                            } => (txt, url),
-                                            luffa_rpc_types::ContentData::Media {
-                                                title,
-                                                m_type,
-                                                source,
-                                            } => (title, format!("{:?}",m_type)),
-                                        };
-                                        
-                                        
-                                        
-                                        let schema = schema_t.clone();
-                                        let fld_crc = schema.get_field("crc").unwrap();
-                                        let fld_from = schema.get_field("from_id").unwrap();
-                                        let fld_to = schema.get_field("to_id").unwrap();
-                                        let fld_time = schema.get_field("event_time").unwrap();
-                                        let fld_title = schema.get_field("title").unwrap();
-                                        let fld_body = schema.get_field("body").unwrap();
-                                        let fld_type = schema.get_field("msg_type").unwrap();
-                                        let doc = doc!(
-                                            fld_crc => crc,
-                                            fld_from => from_id,
-                                            fld_to => to,
-                                            fld_time => event_time,
-                                            fld_type => msg_type,
-                                            fld_title => title,
-                                            fld_body => body,
-                                        );
-                                        let mut wr = idx_t.write().await;
-                                        wr.add_document(doc).unwrap();
-                                        wr.commit().unwrap();
-                                    }
-                                    _ => {}
-                                }
+                        let db_t = db_t.clone();
+                        let schema_t = schema_t.clone();
+                        let idx_t = idx_t.clone();
+                        tokio::spawn(async move {
+                            let table =  {
+                                format!("message_{to}")
+                            };
+                            tracing::info!("send......");
+                            if to != my_id && !msg.is_contacts_exchange() {
+                                Self::save_to_tree(
+                                    db_t.clone(),
+                                    e.crc,
+                                    &table,
+                                    data.clone(),
+                                    event_time,
+                                );
                             }
-                            _ => {}
-                        }
+                            match msg {
+                                Message::Chat { content } => {
+                                    // TODO index content search engine
+                                    match content {
+                                        ChatContent::Burn { crc, expires } => {
+                                            let p_table = format!("message_{to}");
+                                            Self::burn_from_tree(db_t.clone(), crc, p_table);
+    
+                                            let fld_crc = schema_t.get_field("crc").unwrap();
+                                            let mut wr = idx_t.write().await;
+                                            let del = Term::from_field_u64(fld_crc, crc);
+                                            wr.delete_term(del);
+                                            wr.commit().unwrap();
+                                        }
+                                        ChatContent::Send { data } => {
+                                            let (title, body) = match data {
+                                                luffa_rpc_types::ContentData::Text {
+                                                    source,
+                                                    reference,
+                                                } => match source {
+                                                    luffa_rpc_types::DataSource::Cid { cid } => {
+                                                        let t = multibase::encode(multibase::Base::Base58Btc, cid);
+                                                        let body = format!("{:?}",reference);
+                                                        (t, body)
+                                                    }
+                                                    luffa_rpc_types::DataSource::Raw { data } => {
+                                                        let t = format!("");
+                                                        let body = multibase::encode(
+                                                            multibase::Base::Base64,
+                                                            data,
+                                                        );
+                                                        (t, body)
+                                                    }
+                                                    luffa_rpc_types::DataSource::Text { content } => {
+                                                        let t = format!("");
+    
+                                                        (t, content)
+                                                    }
+                                                },
+                                                luffa_rpc_types::ContentData::Link {
+                                                    txt,
+                                                    url,
+                                                    reference,
+                                                } => (txt, url),
+                                                luffa_rpc_types::ContentData::Media {
+                                                    title,
+                                                    m_type,
+                                                    source,
+                                                } => (title, format!("{:?}",m_type)),
+                                            };
+                                            
+                                            
+                                            
+                                            let schema = schema_t.clone();
+                                            let fld_crc = schema.get_field("crc").unwrap();
+                                            let fld_from = schema.get_field("from_id").unwrap();
+                                            let fld_to = schema.get_field("to_id").unwrap();
+                                            let fld_time = schema.get_field("event_time").unwrap();
+                                            let fld_title = schema.get_field("title").unwrap();
+                                            let fld_body = schema.get_field("body").unwrap();
+                                            let fld_type = schema.get_field("msg_type").unwrap();
+                                            let doc = doc!(
+                                                fld_crc => crc,
+                                                fld_from => from_id,
+                                                fld_to => to,
+                                                fld_time => event_time,
+                                                fld_type => msg_type,
+                                                fld_title => title,
+                                                fld_body => body,
+                                            );
+                                            let mut wr = idx_t.write().await;
+                                            wr.add_document(doc).unwrap();
+                                            wr.commit().unwrap();
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                _ => {}
+                            }
+                        });
                     }
                     else{
                         if let Err(e) = channel.send(Ok(0)) {
@@ -2161,16 +2199,16 @@ impl Client {
                                     offer_id,
                                 );
                                 let event = event.encode().unwrap();
-                                if let Err(e) = client_t
-                                    .chat_request(
-                                        bytes::Bytes::from(event),
-                                    )
-                                    .await
-                                {
-                                    error!("{e:?}");
-                                }
-                                
-                                
+                                tokio::spawn(async move {
+                                    if let Err(e) = client_t
+                                        .chat_request(
+                                            bytes::Bytes::from(event),
+                                        )
+                                        .await
+                                    {
+                                        error!("{e:?}");
+                                    }
+                                }); 
                             };
                             match msg_t {
                                 Message::ContactsExchange { exchange }=>{
