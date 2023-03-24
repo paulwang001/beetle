@@ -724,27 +724,31 @@ impl Client {
 
     pub fn session_list(&self, top: u32) -> Vec<ChatSession> {
         let tree = self.db.open_tree(KVDB_CHAT_SESSION_TREE).unwrap();
-
+        let my_id = self.get_local_id().unwrap_or_default();
         let mut chats = tree
             .into_iter()
             .map(|item| {
-                let (key, val) = item.unwrap();
+                let (_key, val) = item.unwrap();
                 let chat:ChatSession = serde_cbor::from_slice(&val[..]).unwrap();
                 chat
             })
+            .filter(|c| c.did != my_id )
             .collect::<Vec<_>>();
+        
         chats.sort_by(|a, b| a.last_time.partial_cmp(&b.last_time).unwrap());
         chats.reverse();
+        
         chats.truncate(top as usize);
         chats
     }
 
     /// pagination session
     pub fn session_page(&self,page:u32,size:u32) ->Option<Vec<ChatSession>> {
-        Self::db_session_list(self.db.clone(), page, size)
+        let my_id = self.get_local_id().unwrap_or_default();
+        Self::db_session_list(self.db.clone(), page, size,my_id)
     }
     /// pagination session list
-    fn db_session_list(db: Arc<Db>, page: u32,page_size:u32) -> Option<Vec<ChatSession>> {
+    fn db_session_list(db: Arc<Db>, page: u32,page_size:u32,my_id:u64) -> Option<Vec<ChatSession>> {
         let tree = db.open_tree(KVDB_CHAT_SESSION_TREE).unwrap();
 
         let mut chats = tree
@@ -754,6 +758,7 @@ impl Client {
                 let chat:ChatSession = serde_cbor::from_slice(&val[..]).unwrap();
                 chat
             })
+            .filter(|c| c.did != my_id )
             .collect::<Vec<_>>();
         chats.sort_by(|a, b| a.last_time.partial_cmp(&b.last_time).unwrap());
         chats.reverse();
@@ -1314,7 +1319,7 @@ impl Client {
                 let mut contacts = vec![];
                 for lvl in 0..8 {
                     if page <= lvl && count % 120 > 0{
-                        if let Some(lvl_0) = Self::db_session_list(db_t.clone(), lvl as u32, 4) {
+                        if let Some(lvl_0) = Self::db_session_list(db_t.clone(), lvl as u32, 4,my_id) {
                             let lvl_contacts = 
                             lvl_0.into_iter().map(|cs| {
                                 let to = cs.did;
