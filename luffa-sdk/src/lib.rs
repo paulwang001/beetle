@@ -738,6 +738,23 @@ impl Client {
         chats.truncate(top as usize);
         chats
     }
+    fn db_session_list(db: Arc<Db>, page: u32,page_size:u32) -> Vec<ChatSession> {
+        let tree = db.open_tree(KVDB_CHAT_SESSION_TREE).unwrap();
+
+        let mut chats = tree
+            .into_iter()
+            .map(|item| {
+                let (key, val) = item.unwrap();
+                let chat:ChatSession = serde_cbor::from_slice(&val[..]).unwrap();
+                chat
+            })
+            .collect::<Vec<_>>();
+        chats.sort_by(|a, b| a.last_time.partial_cmp(&b.last_time).unwrap());
+        chats.reverse();
+        // let page = chats.windows(page_size as usize).nth(page as usize);
+        // if 
+        chats
+    }
 
     pub fn keys(&self) -> Vec<String>{
         // luffa_node::Keychain::keys(&self)
@@ -1125,7 +1142,7 @@ impl Client {
             None,
         ).unwrap();
     }
-    pub fn init(&self,cfg_path: Option<String>,key:Option<String>,tag:Option<String>) -> u64 {
+    pub fn init(&self,cfg_path: Option<String>) {
         #[cfg(unix)]
         {
             match luffa_util::increase_fd_limit() {
@@ -1153,19 +1170,31 @@ impl Client {
         .unwrap();
 
         println!("config--->{config:?}");
-        let filter = key.map(|k| KeyFilter::Name(format!("{}",k)));
+        
 
         RUNTIME.block_on(async {
             let kc = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone())
                 .await
                 .unwrap();
-            let mut f = self.filter.write().await;
-            *f = filter.clone();
 
             let mut m_key = self.key.write().await;
             *m_key = Some(kc.clone());
             let mut m_cfg = self.config.write().await;
             *m_cfg = Some(config);
+        });
+
+    }
+    
+    pub fn start(&self,key:Option<String>,tag:Option<String>, cb: Box<dyn Callback>) -> u64
+    {
+        // let keychain = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone());
+        let filter = key.map(|k| KeyFilter::Name(format!("{}",k)));
+        let (kc,config) = RUNTIME.block_on(async {
+            let mut f = self.filter.write().await;
+            *f = filter.clone();
+            let m_key = self.key.read().await;
+            let cfg = self.config.read().await;
+            (m_key.clone().unwrap(),cfg.clone().unwrap())
         });
 
         let my_id = self.get_local_id();
@@ -1174,20 +1203,6 @@ impl Client {
         }
         let my_id = my_id.unwrap();
         self.update_contacts_tag(my_id, tag.unwrap_or(format!("{}",my_id)).to_string());
-        my_id
-
-    }
-    
-    pub fn start(&self, cb: Box<dyn Callback>)
-    {
-        // let keychain = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone());
-        let (kc,config,filter) = RUNTIME.block_on(async {
-            
-            let f = self.filter.read().await;
-            let m_key = self.key.read().await;
-            let cfg = self.config.read().await;
-            (m_key.clone().unwrap(),cfg.clone().unwrap(),f.clone())
-        });
 
         let (tx, rx) = tokio::sync::mpsc::channel(4096);
         let db = self.db.clone();
@@ -1204,7 +1219,10 @@ impl Client {
                 debug!("run exit!....");
             });
         });
+        my_id
     }
+
+    /// run
     async fn run(
         db: Arc<Db>,
         mut config: Config,

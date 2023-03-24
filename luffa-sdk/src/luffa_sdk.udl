@@ -61,8 +61,8 @@ interface Client {
 
     boolean connect(string peer_id);
 
-    u64 init(string? cfg_path,string? key,string? tag);
-    void start(Callback cb);
+    void init(string? cfg_path);
+    u64 start(string? key,string? tag,Callback cb);
 
     void stop();
 

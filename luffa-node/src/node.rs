@@ -1188,37 +1188,19 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 // let p_idx = self.get_node_index(from_id);
                                                 // let mut ls_remove = vec![];
                                                 for ctt in contacts.iter_mut() {
+                                                    
                                                     let ls_crc = self.load_cache_crc(ctt.did,Some(ctt.have_time));
                                                     let ls_crc = ls_crc.into_iter().map(|(x,_f)|x).collect::<Vec<_>>();
                                                     ctt.wants.extend_from_slice(&ls_crc);
-                                                    // if ctt.r#type == ContactsTypes::Group {
-                                                    //     let ls_crc = self.load_cache_crc(ctt.did,Some(ctt.have_time));
-                                                    //     let ls_crc = ls_crc.into_iter().map(|(x,_f)|x).collect::<Vec<_>>();
-                                                    //     ctt.wants.extend_from_slice(&ls_crc);
-                                                    // }
-                                                    // else{
-                                                    //     let a = self.get_node_index(ctt.did);
-                                                    //     self.cache.find_edge(a, p_idx);
-                                                    //     let mut itr = self.cache.edges_connecting(a, p_idx);
-                                                    //     let mut ls_crc = vec![];
-                                                    //     while let Some(e_ref) = itr.next() {
-                                                    //         let (crc,time) = e_ref.weight();
-                                                    //         if *time > ctt.have_time {
-                                                    //             ls_crc.push((crc,ctt.did));
-                                                    //         }
-                                                    //         else{
-                                                    //            ls_remove.push(e_ref.id());  
-                                                    //         } 
-                                                    //     }
-                                                        
-                                                    //     let ls_crc = ls_crc.into_iter().map(|(x,_)|*x).collect::<Vec<_>>();
-                                                    //     ctt.wants.extend_from_slice(&ls_crc);
-                                                    // }
-
+                                                    
                                                 }
-                                                // for rm in ls_remove {
-                                                //     self.cache.remove_edge(rm);
-                                                // }
+                                                
+                                                let f =  self.get_contacts_index(from_id);
+                                                for ctt in contacts.iter() {
+                                                    let t =  self.get_contacts_index(ctt.did);
+                                                    let tp = ctt.r#type as u8;
+                                                    self.contacts.update_edge(f,t,tp);
+                                                }
                                                 contacts.retain(|c| !c.wants.is_empty());
                                                 tracing::warn!("ContactsSync:{contacts:?}  to {did}");
                                                 let feed = Message::ContactsSync { did, contacts };
