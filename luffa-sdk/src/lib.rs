@@ -40,6 +40,7 @@ use tantivy::Index;
 use tantivy::ReloadPolicy;
 use tantivy::{schema::*, IndexWriter};
 use anyhow::Result;
+use chrono::Utc;
 use tokio::sync::oneshot::{Sender as ShotSender};
 
 mod api;
@@ -290,15 +291,13 @@ impl Client {
             Ok(crc)=>{
                 let table = format!("offer_{my_id}");
                 let status = vec![0u8;1];
-                let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap();
+                let now = Utc::now().timestamp_millis() as u64;
                 Self::save_to_tree(
                     self.db.clone(),
                     offer_id,
                     &table,
                     status,
-                    now.as_millis() as u64,
+                    now,
                 ); 
                 crc
             }
@@ -353,15 +352,13 @@ impl Client {
                 let table = 
                 format!("offer_{my_id}");
                 let status = vec![11u8;1];
-                let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap();
+                let now = Utc::now().timestamp_millis() as u64;
                 Self::save_to_tree(
                     self.db.clone(),
                     offer_id,
                     &table,
                     status,
-                    now.as_millis() as u64,
+                    now,
                 );
                 crc
             }
@@ -562,10 +559,8 @@ impl Client {
                                         let (title,body) = Self::extra_content(data);
                                         if let Some((_tag,tp)) = Self::get_contacts_tag(db_t.clone(), to) {
                                             let did = if tp == 0 {from_id} else {to};
-                                            let now = std::time::SystemTime::now()
-                                            .duration_since(std::time::UNIX_EPOCH)
-                                            .unwrap();
-                                            Self::update_session(db_t, did, None, Some(crc), None, Some(body), now.as_millis() as u64);
+                                            let now = Utc::now().timestamp_millis() as u64;
+                                            Self::update_session(db_t, did, None, Some(crc), None, Some(body), now);
                                         }
                                     }
                                     _=>{
@@ -611,16 +606,14 @@ impl Client {
                     if key.is_none() {
                         key = Self::get_offer_by_offer_id(db_t.clone(), from_id);
                     }
-                    let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap();
+                    let now = Utc::now().timestamp_millis() as u64;
                     if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg.clone()), key, nonce.clone()) {
                         match &msg {
                             Message::Chat { content }=>{
                                 match content {
                                     ChatContent::Send { data }=>{
                                         let (_title,body) = Self::extra_content(data);
-                                        if Self::update_session(db_t.clone(), did, None, Some(crc), None, Some(body), now.as_millis() as u64) {
+                                        if Self::update_session(db_t.clone(), did, None, Some(crc), None, Some(body), now) {
                                             let msg = Message::Chat { content: ChatContent::Feedback { crc, status: luffa_rpc_types::FeedbackStatus::Read } };
                                             if let Some(msg) = message_to(msg) {
 
@@ -632,12 +625,12 @@ impl Client {
                                         
                                     }
                                     _=>{
-                                        Self::update_session(db_t.clone(), did, None, Some(crc), None, None, now.as_millis() as u64);
+                                        Self::update_session(db_t.clone(), did, None, Some(crc), None, None, now);
                                     }
                                 }
                             }
                             _=>{
-                                Self::update_session(db_t.clone(), did, None, Some(crc), None, None, now.as_millis() as u64);
+                                Self::update_session(db_t.clone(), did, None, Some(crc), None, None, now);
                             }
                         }
                         
@@ -660,7 +653,7 @@ impl Client {
                     else{
                         if let Some(key) = Self::get_offer_by_offer_id(db_t.clone(), from_id) {
                             if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), Some(key), nonce) {
-                                Self::update_session(db_t.clone(), did, None, Some(crc), None, None, now.as_millis() as u64);
+                                Self::update_session(db_t.clone(), did, None, Some(crc), None, None, now);
                                 let (to_tag,_) = Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
                                 let (from_tag,_) = Self::get_contacts_tag(db_t.clone(), from_id).unwrap_or_default();
                                 match message_to(msg) {
@@ -861,10 +854,8 @@ impl Client {
     }
 
     pub fn save_session(&self, did: u64, tag: String,read:Option<u64>,reach:Option<u64>,msg:Option<String>) {
-        let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap();
-        Self::update_session(self.db.clone(), did, Some(tag), read, reach, msg, now.as_millis() as u64);
+        let now = Utc::now().timestamp_millis() as u64;
+        Self::update_session(self.db.clone(), did, Some(tag), read, reach, msg, now);
     }
     pub fn update_session(db:Arc<Db>,did:u64,tag:Option<String>,read:Option<u64>,reach:Option<u64>,msg:Option<String>,event_time:u64) -> bool{
         let tree = db.open_tree(KVDB_CHAT_SESSION_TREE).unwrap();
@@ -982,14 +973,10 @@ impl Client {
             0
         }
     }
-    fn set_contacts_have_time(db:Arc<Db>,did:u64,now:u64) {
+    fn set_contacts_have_time(db:Arc<Db>,did:u64, now:u64) {
 
         let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
         let tag_key = format!("H-TIME-{}" ,did);
-        // let now = std::time::SystemTime::now()
-        // .duration_since(std::time::UNIX_EPOCH)
-        // .unwrap();
-        // let now = now.as_secs();
         tree.fetch_and_update(tag_key.as_bytes(), |old|{
             match old {
                 Some(old)=>{

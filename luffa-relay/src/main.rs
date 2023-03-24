@@ -2,6 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 #[allow(unused_imports)]
 use anyhow::{anyhow, Result};
+use chrono::Utc;
 use clap::Parser;
 use libp2p::gossipsub::{GossipsubMessage, TopicHash};
 use luffa_node::{GossipsubEvent, NetworkEvent, ChatEvent};
@@ -34,10 +35,7 @@ struct NoticeBody {
 }
 
 fn get_now() -> u64 {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap();
-    now.as_millis() as u64
+    Utc::now().timestamp_millis() as u64
 }
 
 #[tokio::main(flavor = "multi_thread")]

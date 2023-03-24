@@ -19,6 +19,7 @@ use aes_gcm::{
     aead::{ Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
+use chrono::Utc;
 
 pub trait NamedService {
     const NAME: &'static str;
@@ -74,10 +75,7 @@ pub struct Event {
 impl Event {
     pub fn new(to: u64, msg: &Message, key: Option<Vec<u8>>, from_id: u64) -> Self
     {
-        let event_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let event_time = Utc::now().timestamp_millis() as u64;
         let (msg, nonce) = msg.encrypt(key).unwrap();
 
         let mut digest = crc64fast::Digest::new();
@@ -98,10 +96,7 @@ impl Event {
     }
 
     fn validate(&self) -> Result<()> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let now = Utc::now().timestamp_millis() as u64;
         if self.event_time < now - 60 * 1000{
             //return Err(anyhow::anyhow!("event time is invalid."));
         }
@@ -378,11 +373,7 @@ impl ContactsToken {
         secret_key: Vec<u8>,
         contacts_type: ContactsTypes,
     ) -> Result<Self> {
-        let create_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-
+        let create_at = Utc::now().timestamp_millis() as u64;
         let public_key = local_key.public().to_protobuf_encoding();
         let mut buf = vec![];
         buf.extend_from_slice(&create_at.to_be_bytes());
