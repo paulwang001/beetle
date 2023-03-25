@@ -1013,6 +1013,7 @@ impl Client {
                 None=>{
                     let (dft,tp) = Self::get_contacts_tag(db.clone(), did).unwrap_or((format!("{did}"),3));
                     if tp == 3 {
+                        tracing::error!("update session failed:{did}");
                         return None;
                     }
                     let mut reach_crc = vec![];
@@ -1423,7 +1424,7 @@ impl Client {
                 let page = count % 8;
                 let mut contacts = vec![];
                 for lvl in 0..8 {
-                    if page <= lvl && count % 120 > 0{
+                    if page <= lvl && count % 60 > 0{
                         if let Some(lvl_0) = Self::db_session_list(db_t.clone(), lvl as u32, 4,my_id) {
                             let lvl_contacts = 
                             lvl_0.into_iter().map(|cs| {
@@ -1445,18 +1446,18 @@ impl Client {
                     }
                 }
                 if !contacts.is_empty() {
+                    tracing::error!("recent seesion sync:{}",contacts.len());
                     let sync = Message::ContactsSync { did: my_id, contacts };
                     let event = Event::new(0, &sync, None, my_id);
                     let data = event.encode().unwrap();
                     let client_t = client_t.clone();
                     tokio::spawn(async move {
-                        
                         if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
                             tracing::warn!("pub contacts sync status >>> {e:?}");
                         }
                     });
                 }
-                if count % 120 == 0 {
+                if count % 60 == 0 {
 
                     let tree = db_t.open_tree(KVDB_CONTACTS_TREE).unwrap();
     
@@ -1604,10 +1605,10 @@ impl Client {
                                                                                                 match status {
                                                                                                     FeedbackStatus::Read=>{
                                                                                                         
-                                                                                                        // Self::update_session(db_tt.clone(),did,None,Some(crc),None,None,event_time);
+                                                                                                        Self::update_session(db_tt.clone(),did,None,Some(crc),None,None,event_time);
                                                                                                     }
                                                                                                     FeedbackStatus::Reach=>{
-    
+                                                                                                        Self::update_session(db_tt.clone(),did,None,None,Some(crc),None,event_time);
                                                                                                     }
                                                                                                     _=>{
     
@@ -2259,14 +2260,6 @@ impl Client {
                                 match exchange {
                                     ContactsEvent::Answer { token }=>{
                                         tracing::error!("G> Answer>>>>>{token:?}");
-                                        let comment = &token.comment;
-                                        let pk = PublicKey::from_protobuf_encoding(&token.public_key).unwrap();
-                                        let peer = PeerId::from_public_key(&pk);
-                                        let mut digest = crc64fast::Digest::new();
-                                        digest.write(&peer.to_bytes());
-                                        let did = digest.sum64();
-                                        
-                                        Self::update_session(db_t.clone(), did, comment.clone(), None, None, None, event_time);
                                         token
                                     }
                                     ContactsEvent::Offer { mut token }=>{
@@ -2281,8 +2274,6 @@ impl Client {
                                             tracing::warn!("change contacts to old s key");
                                             token.secret_key = key;
                                         }
-                                        let comment = &token.comment;
-                                        Self::update_session(db_t.clone(), did, comment.clone(), None, None, None, event_time);
                                         token
                                     }
                                      
@@ -2316,7 +2307,10 @@ impl Client {
                                     status,
                                     event_time,
                                 );
+                                let comment = token.comment.clone();
                                 Self::offer_or_answer(crc,from_id,offer_key.clone(),did,event_time,idx.clone(),schema.clone(),token,db_t.clone(),client_t.clone()).await;
+                                
+                                Self::update_session(db_t.clone(), did, comment.clone(), None, None, None, event_time);
                             }
                             _ => {}
                         }
@@ -2334,7 +2328,7 @@ impl Client {
                     if let Some(key) =
                         Self::get_offer_by_offer_id(db_t.clone(), from_id)
                     {
-                        tracing::warn!("offer is:{}  nonce:{:?} key: {:?}",from_id,nonce,key);
+                        tracing::error!("offer is:{}  nonce:{:?} key: {:?}",from_id,nonce,key);
                         let msg_data = msg.clone();
                         if let Ok(msg) = luffa_rpc_types::Message::decrypt(
                             bytes::Bytes::from(msg),
@@ -2346,19 +2340,11 @@ impl Client {
                             let offer_key = key.clone();
                             match msg_t {
                                 Message::ContactsExchange { exchange }=>{
-                                    let token =
+                                    let (token,is_answer) =
                                     match exchange{
                                         ContactsEvent::Answer { token }=>{
                                             tracing::error!("P>Answer>>>>>{token:?}");
-                                            let comment = &token.comment;
-                                            let pk = PublicKey::from_protobuf_encoding(&token.public_key).unwrap();
-                                            let peer = PeerId::from_public_key(&pk);
-                                            let mut digest = crc64fast::Digest::new();
-                                            digest.write(&peer.to_bytes());
-                                            let did = digest.sum64();
-                                            
-                                            Self::update_session(db_t.clone(), did, comment.clone(), None, None, None, event_time);
-                                            token
+                                            (token,true)
                                         }
                                         ContactsEvent::Offer { mut token }=>{
                                             tracing::error!("Offer>>>>>{token:?}");
@@ -2372,7 +2358,7 @@ impl Client {
                                                 tracing::warn!("change contacts to old s key");
                                                 token.secret_key = key;
                                             }
-                                            token
+                                            (token,false)
                                         }
 
                                     };
@@ -2402,7 +2388,11 @@ impl Client {
                                         status,
                                         event_time,
                                     );
+                                    let comment = token.comment.clone();
                                     Self::offer_or_answer(crc,offer_id,offer_key,to,event_time,idx.clone(),schema.clone(),token,db_t.clone(),client_t.clone()).await;
+                                    if is_answer {
+                                        Self::update_session(db_t.clone(), did, comment.clone(), None, None, None, event_time);
+                                    }
                                 }
                                 _=>{
                                     tracing::error!("from offer msg {msg:?}");
