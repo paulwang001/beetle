@@ -33,6 +33,7 @@ rand.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_cbor.workspace = true
 sled.workspace = true
+ssh-key = { workspace = true, features = ["ed25519", "std", "rand_core"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process"] }
 tracing.workspace = true
 libp2p = { workspace = true, features = ["gossipsub"] }

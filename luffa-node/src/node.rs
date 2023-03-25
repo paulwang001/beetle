@@ -52,6 +52,7 @@ use crate::providers::Providers;
 use crate::rpc::{self, ProviderRequestKey,RpcMessage};
 use crate::swarm::build_swarm;
 
+const TOPIC_STATUS: &str = "luffa_status";
 const TOPIC_CHAT: &str = "luffa_chat";
 
 #[allow(clippy::large_enum_variant)]
@@ -1182,8 +1183,16 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         match msg {
                                             Message::ContactsSync { did,mut contacts }=>{
 
-                                                // let p_idx = self.get_node_index(from_id);
-                                                // let mut ls_remove = vec![];
+                                                let contacts_t = contacts.clone();
+                                                let status = Message::ContactsSync { did, contacts:contacts_t };
+                                                let evnt = luffa_rpc_types::Event::new(0,&status,None,from_id);
+                                                let sts = evnt.encode().unwrap();
+                                                if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
+                                                    if let Err(e) = go.publish(TopicHash::from_raw(TOPIC_STATUS), sts) {
+                                                        tracing::error!("{e:?}");
+                                                    }
+                                                }
+
                                                 for ctt in contacts.iter_mut() {
                                                     
                                                     let ls_crc = self.load_cache_crc(ctt.did,Some(ctt.have_time));
@@ -1199,10 +1208,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     self.contacts.update_edge(f,t,tp);
                                                 }
                                                 contacts.retain(|c| !c.wants.is_empty());
-                                                tracing::warn!("ContactsSync:{contacts:?}  to {did}");
+                                                tracing::debug!("ContactsSync:{contacts:?}  to {did}");
                                                 let feed = Message::ContactsSync { did, contacts };
                                                 let evnt = luffa_rpc_types::Event::new(from_id,&feed,None,0);
                                                 let res = evnt.encode().unwrap();
+                                                
                                                 let res = crate::behaviour::chat::Response(res);
                                                 let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
                                                     

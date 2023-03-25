@@ -3533,6 +3533,7 @@ dependencies = [
  "serde",
  "serde_cbor",
  "sled",
+ "ssh-key",
  "tantivy",
  "thiserror",
  "tiny-bip39",

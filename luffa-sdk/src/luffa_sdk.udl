@@ -45,7 +45,8 @@ interface Client {
     string? show_code();
 
     u64 contacts_offer([ByRef] string code);
-
+    string gen_offer_code(u64 did);
+    u64 contacts_group_create(sequence<u64> invitee,string? tag);
     u64 contacts_anwser(u64 to,u64 offer_id,sequence<u8> secret_key);
 
     u64 send_msg(u64 to,sequence<u8> msg);
@@ -69,6 +70,9 @@ interface Client {
     void save_session(u64 did,string tag,u64? read,u64? reach,string? msg);
 
     sequence<ChatSession> session_list(u32 top);
+    sequence<ChatSession> session_page(u32 page,u32 size);
+
+
 
     sequence<ContactsView> contacts_list(u8 c_type);
 
