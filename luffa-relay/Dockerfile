@@ -1,15 +1,16 @@
 FROM rust:latest AS builder
 WORKDIR /app
-COPY ./luffa-relay .
+COPY . .
 #RUN apt-get update
 #RUN apt-get install curl git gcc g++ libssl-dev pkg-config -y
 #RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-#COPY config $HOME/.cargo/config
-RUN cargo build --bin main --release
+COPY config $HOME/.cargo/config
+RUN cargo build --release
 
 FROM debian
-ENV PARAMS=dev
+ENV PARAMS=luffa.boot.toml
 WORKDIR /app
+COPY --from=builder /app/luffa.boot.toml .
 COPY --from=builder /app/target/release/main .
 COPY --from=builder /app/cfg cfg
-CMD ["sh", "-c", "./main", "-e", "$PARAMS"]
+CMD ["sh", "-c", "./main", "--cfg", "$PARAMS"]
