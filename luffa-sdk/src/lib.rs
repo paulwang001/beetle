@@ -957,6 +957,28 @@ impl Client {
             }
         })
     }
+
+    pub fn remove_key(&self,name:&str) -> bool {
+        RUNTIME.block_on(async {
+            let tree = self.db.open_tree("bip39_keys").unwrap();
+            let k_pair = format!("pair-{}",name);
+            if let Ok(Some(_)) = tree.remove(k_pair) {
+                let mut keychain = self.key.write().await;
+                let chain = keychain.as_mut().unwrap();
+                match chain.remove(name).await {
+                    Ok(_)=>{
+                        true
+                    }
+                    Err(_e)=>{
+                        false
+                    }
+                }
+            }
+            else {
+                false
+            }
+        })
+    }
     pub fn read_key_phrase(&self,name:&str) -> Option<String> {
         
         let tree = self.db.open_tree("bip39_keys").unwrap();

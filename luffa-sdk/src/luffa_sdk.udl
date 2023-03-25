@@ -93,6 +93,7 @@ interface Client {
     string? import_key([ByRef] string phrase,[ByRef] string password);
 
     boolean save_key([ByRef] string name);
+    boolean remove_key([ByRef] string name);
 
     string? read_key_phrase([ByRef] string name);
 

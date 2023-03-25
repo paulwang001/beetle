@@ -149,6 +149,9 @@ impl<S: Storage> Keychain<S> {
     pub async fn len(&self) -> Result<usize> {
         self.storage.len().await
     }
+    pub async fn remove(&mut self,name:&str) -> Result<()> {
+        self.storage.remove(name).await
+    }
 
     /// Returns true if there are no keys stored.
     pub async fn is_empty(&self) -> Result<bool> {
@@ -259,6 +262,7 @@ impl DiskStorage {
 #[async_trait]
 pub trait Storage: std::fmt::Debug {
     async fn put(&mut self, keypair: Keypair) -> Result<()>;
+    async fn remove(&mut self, name:&str) -> Result<()>;
     async fn len(&self) -> Result<usize>;
 
     async fn names(&self) -> Result<Vec<String>>;
@@ -272,7 +276,9 @@ impl Storage for MemoryStorage {
         self.keys.push(keypair);
         Ok(())
     }
-
+    async fn remove(&mut self,name:&str) ->Result<()> {
+        Ok(())
+    }
     async fn len(&self) -> Result<usize> {
         Ok(self.keys.len())
     }
@@ -302,6 +308,14 @@ impl Storage for DiskStorage {
         
         let encoded_keypair = keypair.to_private_openssh()?;
         fs::write(path, encoded_keypair.as_bytes()).await?;
+
+        Ok(())
+    }
+    async fn remove(&mut self, name:&str) -> Result<()> {
+        let name = format!("id_{}",name);
+        let path = self.path.join(name);
+        
+        fs::remove_file(&path).await.map_err(|e|anyhow!("{e:?}"))?;
 
         Ok(())
     }
