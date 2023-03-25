@@ -70,7 +70,9 @@ impl PeerManager {
     pub fn info_for_peer(&self, peer_id: &PeerId) -> Option<&Info> {
         self.info.get(peer_id)
     }
-
+    pub fn peers(&self) -> usize {
+        self.info.len()
+    }
     pub fn supported_protocols(&self) -> Vec<String> {
         self.supported_protocols.clone()
     }

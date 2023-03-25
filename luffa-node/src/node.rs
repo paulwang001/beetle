@@ -29,17 +29,19 @@ use libp2p::mdns;
 use libp2p::metrics::Recorder;
 use libp2p::multiaddr::Protocol;
 use libp2p::ping::Result as PingResult;
-use libp2p::request_response::{RequestResponseEvent, RequestResponseMessage, RequestId, InboundFailure, OutboundFailure};
+use libp2p::request_response::{
+    InboundFailure, OutboundFailure, RequestId, RequestResponseEvent, RequestResponseMessage,
+};
 use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::{ConnectionHandler, IntoConnectionHandler, NetworkBehaviour, SwarmEvent};
 use libp2p::{PeerId, Swarm};
 use luffa_bitswap::{BitswapEvent, Block};
 use luffa_metrics::{core::MRecorder, inc, libp2p_metrics, p2p::P2PMetrics};
-use luffa_rpc_types::p2p::{ChatResponse, ChatRequest};
-use luffa_rpc_types::{Message, ContactsTypes, AppStatus, ChatContent};
+use luffa_rpc_types::p2p::{ChatRequest, ChatResponse};
+use luffa_rpc_types::{AppStatus, ChatContent, ContactsTypes, Message};
 use multihash::MultihashDigest;
-use petgraph::prelude::*;
 use petgraph::algo::astar;
+use petgraph::prelude::*;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot::{self, Sender as OneShotSender};
 use tokio::task::JoinHandle;
@@ -47,9 +49,9 @@ use tracing::{debug, error, info, trace, warn};
 
 use crate::behaviour::{Event, NodeBehaviour};
 use crate::config::Config;
-use crate::keys::{Keychain, Storage, KeyFilter};
+use crate::keys::{KeyFilter, Keychain, Storage};
 use crate::providers::Providers;
-use crate::rpc::{self, ProviderRequestKey,RpcMessage};
+use crate::rpc::{self, ProviderRequestKey, RpcMessage};
 use crate::swarm::build_swarm;
 
 const TOPIC_STATUS: &str = "luffa_status";
@@ -65,16 +67,16 @@ pub enum NetworkEvent {
     CancelLookupQuery(PeerId),
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 enum ConnectionEdge {
     Local(PeerId),
     Remote(u64),
 }
 
 /// The events emitted by a [`RequestResponse`] protocol.
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub enum ChatEvent {
-    Request (Vec<u8>),
+    Request(Vec<u8>),
     Response {
         request_id: RequestId,
         data: Vec<u8>,
@@ -128,16 +130,24 @@ pub enum GossipsubEvent {
 
 pub struct Node<KeyStorage: Storage> {
     swarm: Swarm<NodeBehaviour>,
-    net_receiver_in:Receiver<rpc::RpcMessage>,
-    chat_receiver:Receiver<(crate::behaviour::chat::Response,libp2p::request_response::ResponseChannel<crate::behaviour::chat::Response>)>,
-    chat_sender:Arc<Sender<(crate::behaviour::chat::Response,libp2p::request_response::ResponseChannel<crate::behaviour::chat::Response>)>>,
+    net_receiver_in: Receiver<rpc::RpcMessage>,
+    chat_receiver: Receiver<(
+        crate::behaviour::chat::Response,
+        libp2p::request_response::ResponseChannel<crate::behaviour::chat::Response>,
+    )>,
+    chat_sender: Arc<
+        Sender<(
+            crate::behaviour::chat::Response,
+            libp2p::request_response::ResponseChannel<crate::behaviour::chat::Response>,
+        )>,
+    >,
     dial_queries: AHashMap<PeerId, Vec<OneShotSender<Result<()>>>>,
     lookup_queries: AHashMap<PeerId, Vec<oneshot::Sender<Result<IdentifyInfo>>>>,
     // TODO(ramfox): use new providers queue instead
     find_on_dht_queries: AHashMap<Vec<u8>, DHTQuery>,
     record_on_dht_queries: AHashMap<Vec<u8>, (QueryId, Vec<OneShotSender<Result<Option<Record>>>>)>,
     provider_on_dht_queries: AHashMap<Vec<u8>, (QueryId, Vec<OneShotSender<Result<QueryId>>>)>,
-    pending_request: AHashMap<RequestId,OneShotSender<Result<Option<ChatResponse>>>>,
+    pending_request: AHashMap<RequestId, OneShotSender<Result<Option<ChatResponse>>>>,
     network_events: Vec<Sender<NetworkEvent>>,
     _keychain: Keychain<KeyStorage>,
     #[allow(dead_code)]
@@ -146,11 +156,11 @@ pub struct Node<KeyStorage: Storage> {
     bitswap_sessions: BitswapSessions,
     providers: Providers,
     listen_addrs: Vec<Multiaddr>,
-    store:Arc<luffa_store::Store>,
-    cache:DiGraph<u64,(u64,u64)>,
-    connections:UnGraph<u64,ConnectionEdge>,
-    contacts:UnGraph<u64,u8>,
-    agent:Option<String>,
+    store: Arc<luffa_store::Store>,
+    cache: DiGraph<u64, (u64, u64)>,
+    connections: UnGraph<u64, ConnectionEdge>,
+    contacts: UnGraph<u64, u8>,
+    agent: Option<String>,
 }
 
 impl<T: Storage> fmt::Debug for Node<T> {
@@ -183,15 +193,14 @@ const NICE_INTERVAL: Duration = Duration::from_secs(6);
 const BOOTSTRAP_INTERVAL: Duration = Duration::from_secs(30);
 const EXPIRY_INTERVAL: Duration = Duration::from_secs(1);
 
-
 impl<KeyStorage: Storage> Node<KeyStorage> {
     pub async fn new(
         config: Config,
         mut keychain: Keychain<KeyStorage>,
-        db:Arc<luffa_store::Store>,
-        agent:Option<String>,
-        filter:Option<KeyFilter>,
-    ) -> Result<(Self,Sender<rpc::RpcMessage>)> {
+        db: Arc<luffa_store::Store>,
+        agent: Option<String>,
+        filter: Option<KeyFilter>,
+    ) -> Result<(Self, Sender<rpc::RpcMessage>)> {
         let (network_sender_in, net_receiver_in) = channel(1024); // TODO: configurable
         let (chat_sender, chat_receiver) = channel(1024); // TODO: configurable
         let chat_sender = Arc::new(chat_sender);
@@ -199,42 +208,45 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             libp2p: libp2p_config,
             ..
         } = config;
-      
-        let keypair = load_identity(&mut keychain,filter).await?;
-        let mut swarm = build_swarm(&libp2p_config, &keypair,db.clone(),agent.clone()).await?;
+
+        let keypair = load_identity(&mut keychain, filter).await?;
+        let mut swarm = build_swarm(&libp2p_config, &keypair, db.clone(), agent.clone()).await?;
         let mut listen_addrs = vec![];
         for addr in &libp2p_config.listening_multiaddrs {
             Swarm::listen_on(&mut swarm, addr.clone())?;
             listen_addrs.push(addr.clone());
         }
-        let cache = DiGraph::<u64,(u64,u64)>::new();
-        let connections = UnGraph::<u64,ConnectionEdge>::with_capacity(1024, 1024);
-        let contacts = UnGraph::<u64,u8>::with_capacity(1024, 1024);
-        Ok((Node {
-            swarm,
-            net_receiver_in,
-            chat_receiver,
-            chat_sender,
-            dial_queries: Default::default(),
-            lookup_queries: Default::default(),
-            // TODO(ramfox): use new providers queue instead
-            find_on_dht_queries: Default::default(),
-            record_on_dht_queries: Default::default(),
-            provider_on_dht_queries: Default::default(),
-            pending_request: Default::default(),
-            network_events: Vec::new(),
-            _keychain: keychain,
-            kad_last_range: None,
-            use_dht: libp2p_config.kademlia,
-            bitswap_sessions: Default::default(),
-            providers: Providers::new(4),
-            listen_addrs,
-            store:db,
-            cache,
-            connections,
-            contacts,
-            agent,
-        },network_sender_in))
+        let cache = DiGraph::<u64, (u64, u64)>::new();
+        let connections = UnGraph::<u64, ConnectionEdge>::with_capacity(1024, 1024);
+        let contacts = UnGraph::<u64, u8>::with_capacity(1024, 1024);
+        Ok((
+            Node {
+                swarm,
+                net_receiver_in,
+                chat_receiver,
+                chat_sender,
+                dial_queries: Default::default(),
+                lookup_queries: Default::default(),
+                // TODO(ramfox): use new providers queue instead
+                find_on_dht_queries: Default::default(),
+                record_on_dht_queries: Default::default(),
+                provider_on_dht_queries: Default::default(),
+                pending_request: Default::default(),
+                network_events: Vec::new(),
+                _keychain: keychain,
+                kad_last_range: None,
+                use_dht: libp2p_config.kademlia,
+                bitswap_sessions: Default::default(),
+                providers: Providers::new(4),
+                listen_addrs,
+                store: db,
+                cache,
+                connections,
+                contacts,
+                agent,
+            },
+            network_sender_in,
+        ))
     }
 
     pub fn listen_addrs(&self) -> &Vec<Multiaddr> {
@@ -250,7 +262,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         tracing::info!("Listen addrs: {:?}", self.listen_addrs());
         tracing::info!("Local Peer ID: {}", self.local_peer_id());
 
-        let mut nice_interval = self.use_dht.then(|| tokio::time::interval(NICE_INTERVAL * 10));
+        let mut nice_interval = self
+            .use_dht
+            .then(|| tokio::time::interval(NICE_INTERVAL * 10));
         let mut bootstrap_interval = tokio::time::interval(BOOTSTRAP_INTERVAL);
         let mut expiry_interval = tokio::time::interval(EXPIRY_INTERVAL);
 
@@ -443,10 +457,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         mut chan: OneShotSender<Result<Block, String>>,
     ) -> Result<()> {
         if let Some(bs) = self.swarm.behaviour().bitswap.as_ref() {
-            
             let client = bs.client().clone();
             let (closer_s, closer_r) = oneshot::channel();
-            
+
             let entry = self.bitswap_sessions.entry(ctx).or_default();
 
             let providers: Vec<_> = providers.into_iter().collect();
@@ -514,10 +527,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     let f = self.get_peer_index(my_id);
                     let t = self.get_peer_index(to_id);
                     // let time = Utc::now().timestamp_millis() as u64;
-                    self.connections.update_edge(f, t, ConnectionEdge::Local(peer_id.clone()));
-                    
+                    self.connections
+                        .update_edge(f, t, ConnectionEdge::Local(peer_id.clone()));
+
                     self.emit_network_event(NetworkEvent::PeerConnected(peer_id));
-                    
                 }
                 debug!("ConnectionEstablished: {:}", peer_id);
                 Ok(())
@@ -563,10 +576,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 }
                 Ok(())
             }
-            _ => {
-                
-                Ok(())
-            },
+            _ => Ok(()),
         }
     }
 
@@ -843,9 +853,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 }
                             }
                         }
-                        
-                    }
-                    else{
+                    } else {
                         //TODO only in my contacts
                         for protocol in &info.protocols {
                             let p = protocol.as_bytes();
@@ -853,14 +861,16 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 // TODO: expose protocol name on `libp2p::autonat`.
                                 // TODO: should we remove them at some point?
                                 for addr in &info.listen_addrs {
-                                    if let Some(autonat) = self.swarm.behaviour_mut().autonat.as_mut() {
+                                    if let Some(autonat) =
+                                        self.swarm.behaviour_mut().autonat.as_mut()
+                                    {
                                         autonat.add_server(peer_id, Some(addr.clone()));
                                     }
                                 }
                             }
                         }
                     }
-                    
+
                     //TODO only in my contacts or my white list of relay
                     if let Some(bitswap) = self.swarm.behaviour().bitswap.as_ref() {
                         bitswap.on_identify(&peer_id, &info.protocols);
@@ -912,11 +922,15 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     message,
                 } = e
                 {
-                    if self.agent == Some(format!("Relay")){
+                    if self.agent == Some(format!("Relay")) {
                         match &message {
-                            GossipsubMessage { source, data, sequence_number, topic }=>{
-
-                                let event =  luffa_rpc_types::Event::decode(data)?;
+                            GossipsubMessage {
+                                source,
+                                data,
+                                sequence_number,
+                                topic,
+                            } => {
+                                let event = luffa_rpc_types::Event::decode(data)?;
                                 let luffa_rpc_types::Event {
                                     crc,
                                     from_id,
@@ -929,14 +943,16 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     if to > 0 {
                                         return Ok(());
                                     }
-                                    if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), None, nonce) {
+                                    if let Ok(msg) =
+                                        Message::decrypt(bytes::Bytes::from(msg), None, nonce)
+                                    {
                                         match msg {
-                                            Message::ContactsSync { did,contacts }=>{
-                                                let f =  self.get_contacts_index(did);
+                                            Message::ContactsSync { did, contacts } => {
+                                                let f = self.get_contacts_index(did);
                                                 for ctt in contacts.iter() {
-                                                    let t =  self.get_contacts_index(ctt.did);
+                                                    let t = self.get_contacts_index(ctt.did);
                                                     let tp = ctt.r#type as u8;
-                                                    self.contacts.update_edge(f,t,tp);
+                                                    self.contacts.update_edge(f, t, tp);
                                                 }
                                                 // let p_idx = self.get_node_index(from_id);
                                                 // let mut ls_remove = vec![];
@@ -957,10 +973,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 //                 ls_crc.push((crc,ctt.did));
                                                 //             }
                                                 //             else{
-                                                //                 ls_remove.push(e_ref.id());  
-                                                //             } 
+                                                //                 ls_remove.push(e_ref.id());
+                                                //             }
                                                 //         }
-                                                        
+
                                                 //         let ls_crc = ls_crc.into_iter().map(|(x,_)|*x).collect::<Vec<_>>();
                                                 //         ctt.wants.extend_from_slice(&ls_crc);
                                                 //     }
@@ -987,33 +1003,40 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 //         }
                                                 //     }
                                                 // }
-                                                
                                             }
-                                            Message::StatusSync { to, from_id, status }=>{
+                                            Message::StatusSync {
+                                                to,
+                                                from_id,
+                                                status,
+                                            } => {
                                                 if to > 0 && from_id > 0 {
-
                                                     let f = self.get_peer_index(from_id);
                                                     let t = self.get_peer_index(to);
                                                     match status {
-                                                        AppStatus::Active | AppStatus::Connected =>{
-                                                            let time = Utc::now().timestamp_millis() as u64;
-                                                            self.connections.update_edge(f, t, ConnectionEdge::Remote(time));
+                                                        AppStatus::Active
+                                                        | AppStatus::Connected => {
+                                                            let time = Utc::now().timestamp_millis()
+                                                                as u64;
+                                                            self.connections.update_edge(
+                                                                f,
+                                                                t,
+                                                                ConnectionEdge::Remote(time),
+                                                            );
                                                         }
-                                                        _=>{
-                                                            if let Some(i) = self.connections.find_edge(f,t) {
+                                                        _ => {
+                                                            if let Some(i) =
+                                                                self.connections.find_edge(f, t)
+                                                            {
                                                                 self.connections.remove_edge(i);
                                                             }
                                                         }
                                                     }
                                                 }
                                             }
-                                            _=>{
-                                            }
+                                            _ => {}
                                         }
                                     }
-                                }
-                                else{
-                                    
+                                } else {
                                     let f = self.get_contacts_index(from_id);
                                     let t = self.get_contacts_index(to);
                                     // check that from and to was in any contacts ?
@@ -1026,39 +1049,53 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                             let f = self.get_peer_index(my_id);
                                             let t = self.get_peer_index(to);
 
-                                            if let Ok(Some(rx)) = self.local_send_if_connected(t, data) {
+                                            if let Ok(Some(rx)) =
+                                                self.local_send_if_connected(t, data)
+                                            {
                                                 rx_any = Some(rx);
                                             }
                                             if rx_any.is_none() {
-                                                if let Some((cost,paths)) = astar(&self.connections, f, |f| f == t, |_e| 1,|_| 0){
-                                                    
+                                                if let Some((cost, paths)) = astar(
+                                                    &self.connections,
+                                                    f,
+                                                    |f| f == t,
+                                                    |_e| 1,
+                                                    |_| 0,
+                                                ) {
                                                     println!("[{cost}] paths 3>>>>>> {paths:?}");
                                                     //route this message to shortest node and then break if the node is connected.
                                                     for r in paths {
                                                         if r != f {
-                                                            match self.local_send_if_connected(r, data) {
-                                                                Ok(Some(rx))=>{
+                                                            match self
+                                                                .local_send_if_connected(r, data)
+                                                            {
+                                                                Ok(Some(rx)) => {
                                                                     rx_any = Some(rx);
                                                                     break;
                                                                 }
-                                                                _=>{
-            
-                                                                }
+                                                                _ => {}
                                                             }
                                                         }
                                                     }
                                                 }
-                                            } 
-                                            
-
-                                        }
-                                        else{
-                                           
+                                            }
+                                        } else {
                                             let g_idx = self.get_contacts_index(to);
                                             let members = self.contacts.edges(g_idx);
-                                            let targets = members.into_iter().map(|m| if m.source() == g_idx { m.target() } else { m.source()}).collect::<Vec<_>>();
+                                            let targets = members
+                                                .into_iter()
+                                                .map(|m| {
+                                                    if m.source() == g_idx {
+                                                        m.target()
+                                                    } else {
+                                                        m.source()
+                                                    }
+                                                })
+                                                .collect::<Vec<_>>();
                                             for t in targets {
-                                                if let Ok(Some(rx)) = self.local_send_if_connected(t, data) {
+                                                if let Ok(Some(rx)) =
+                                                    self.local_send_if_connected(t, data)
+                                                {
                                                     tokio::spawn(async move {
                                                         if let Ok(res) = rx.await {
                                                             if let Ok(Some(cr)) = res {
@@ -1068,44 +1105,44 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         }
                                                     });
                                                 }
-                                                
                                             }
-                                            
                                         }
 
-                                        if let Some(rx) =  rx_any {
+                                        if let Some(rx) = rx_any {
                                             tokio::spawn(async move {
                                                 if let Ok(res) = rx.await {
                                                     if let Ok(Some(cr)) = res {
-                                                        let res = crate::behaviour::chat::Response(cr.data);
+                                                        let res = crate::behaviour::chat::Response(
+                                                            cr.data,
+                                                        );
                                                         tracing::info!("{res:?}");
                                                     };
                                                 }
                                             });
                                         }
-                                    
-                                    }
-                                    else{
+                                    } else {
                                         // offer or answer
-                                        self.emit_network_event(NetworkEvent::Gossipsub(GossipsubEvent::Message {
-                                            from: propagation_source,
-                                            id: message_id,
-                                            message,
-                                        }));
+                                        self.emit_network_event(NetworkEvent::Gossipsub(
+                                            GossipsubEvent::Message {
+                                                from: propagation_source,
+                                                id: message_id,
+                                                message,
+                                            },
+                                        ));
                                     }
                                 }
-                            },
-                            _=>{
-                                self.emit_network_event(NetworkEvent::Gossipsub(GossipsubEvent::Message {
-                                    from: propagation_source,
-                                    id: message_id,
-                                    message,
-                                }));
+                            }
+                            _ => {
+                                self.emit_network_event(NetworkEvent::Gossipsub(
+                                    GossipsubEvent::Message {
+                                        from: propagation_source,
+                                        id: message_id,
+                                        message,
+                                    },
+                                ));
                             }
                         }
-                    }
-                    else{
-
+                    } else {
                         self.emit_network_event(NetworkEvent::Gossipsub(GossipsubEvent::Message {
                             from: propagation_source,
                             id: message_id,
@@ -1143,20 +1180,22 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 }
                 mdns::Event::Expired(_) => {}
             },
-            Event::Bitswap(_e)=>{
-                
-            }
-            Event::Chat(chat)=>{
+            Event::Bitswap(_e) => {}
+            Event::Chat(chat) => {
                 match chat {
-                    RequestResponseEvent::Message { peer, message }=>{
+                    RequestResponseEvent::Message { peer, message } => {
                         tracing::info!("Chat Req>>> {peer:?}");
                         if &peer == self.local_peer_id() {
                             eprintln!("from me");
                             return Ok(());
                         }
                         match message {
-                            RequestResponseMessage::Request { request_id, request, channel }=>{
-                                let event =  luffa_rpc_types::Event::decode(request.data())?;
+                            RequestResponseMessage::Request {
+                                request_id,
+                                request,
+                                channel,
+                            } => {
+                                let event = luffa_rpc_types::Event::decode(request.data())?;
                                 let luffa_rpc_types::Event {
                                     crc,
                                     from_id,
@@ -1171,7 +1210,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 //     let res = evnt.encode().unwrap();
                                 //     let res = crate::behaviour::chat::Response(res);
                                 //     let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
-                                        
+
                                 //     if let Err(e) = chat.send_response(channel, res) {
                                 //         tracing::warn!("chat response failed: >>{e:?}");
                                 //     }
@@ -1179,88 +1218,128 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 //     return Ok(());
                                 // }
                                 if nonce.is_none() {
-                                    if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), None, nonce) {
+                                    if let Ok(msg) =
+                                        Message::decrypt(bytes::Bytes::from(msg), None, nonce)
+                                    {
                                         match msg {
-                                            Message::ContactsSync { did,mut contacts }=>{
-
+                                            Message::ContactsSync { did, mut contacts } => {
                                                 let contacts_t = contacts.clone();
-                                                let status = Message::ContactsSync { did, contacts:contacts_t };
-                                                let evnt = luffa_rpc_types::Event::new(0,&status,None,from_id);
+                                                let status = Message::ContactsSync {
+                                                    did,
+                                                    contacts: contacts_t,
+                                                };
+                                                let evnt = luffa_rpc_types::Event::new(
+                                                    0, &status, None, from_id,
+                                                );
                                                 let sts = evnt.encode().unwrap();
-                                                if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
-                                                    if let Err(e) = go.publish(TopicHash::from_raw(TOPIC_STATUS), sts) {
+                                                if let Some(go) =
+                                                    self.swarm.behaviour_mut().gossipsub.as_mut()
+                                                {
+                                                    if let Err(e) = go.publish(
+                                                        TopicHash::from_raw(TOPIC_STATUS),
+                                                        sts,
+                                                    ) {
                                                         tracing::error!("{e:?}");
                                                     }
                                                 }
 
                                                 for ctt in contacts.iter_mut() {
-                                                    
-                                                    let ls_crc = self.load_cache_crc(ctt.did,Some(ctt.have_time));
-                                                    let ls_crc = ls_crc.into_iter().map(|(x,_f)|x).collect::<Vec<_>>();
+                                                    let ls_crc = self.load_cache_crc(
+                                                        ctt.did,
+                                                        Some(ctt.have_time),
+                                                    );
+                                                    let ls_crc = ls_crc
+                                                        .into_iter()
+                                                        .map(|(x, _f)| x)
+                                                        .collect::<Vec<_>>();
                                                     ctt.wants.extend_from_slice(&ls_crc);
-                                                    
                                                 }
-                                                
-                                                let f =  self.get_contacts_index(from_id);
+
+                                                let f = self.get_contacts_index(from_id);
                                                 for ctt in contacts.iter() {
-                                                    let t =  self.get_contacts_index(ctt.did);
+                                                    let t = self.get_contacts_index(ctt.did);
                                                     let tp = ctt.r#type as u8;
-                                                    self.contacts.update_edge(f,t,tp);
+                                                    self.contacts.update_edge(f, t, tp);
                                                 }
                                                 contacts.retain(|c| !c.wants.is_empty());
-                                                tracing::debug!("ContactsSync:{contacts:?}  to {did}");
+                                                tracing::debug!(
+                                                    "ContactsSync:{contacts:?}  to {did}"
+                                                );
                                                 let feed = Message::ContactsSync { did, contacts };
-                                                let evnt = luffa_rpc_types::Event::new(from_id,&feed,None,0);
+                                                let evnt = luffa_rpc_types::Event::new(
+                                                    from_id, &feed, None, 0,
+                                                );
                                                 let res = evnt.encode().unwrap();
-                                                
+
                                                 let res = crate::behaviour::chat::Response(res);
-                                                let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
-                                                    
+                                                let chat = self
+                                                    .swarm
+                                                    .behaviour_mut()
+                                                    .chat
+                                                    .as_mut()
+                                                    .unwrap();
+
                                                 if let Err(e) = chat.send_response(channel, res) {
                                                     tracing::warn!("chat response failed: >>{e:?}");
                                                 }
                                             }
-                                            _=>{
-                                                let msg = Message::Feedback { crc, status: luffa_rpc_types::FeedbackStatus::Reach };
-                                                let evnt = luffa_rpc_types::Event::new(from_id,&msg,None,0);
+                                            _ => {
+                                                let msg = Message::Feedback {
+                                                    crc,
+                                                    status: luffa_rpc_types::FeedbackStatus::Reach,
+                                                };
+                                                let evnt = luffa_rpc_types::Event::new(
+                                                    from_id, &msg, None, 0,
+                                                );
                                                 let res = evnt.encode().unwrap();
                                                 let res = crate::behaviour::chat::Response(res);
-                                                let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
-                                                    
+                                                let chat = self
+                                                    .swarm
+                                                    .behaviour_mut()
+                                                    .chat
+                                                    .as_mut()
+                                                    .unwrap();
+
                                                 if let Err(e) = chat.send_response(channel, res) {
                                                     tracing::warn!("chat response failed: >>{e:?}");
                                                 }
                                             }
                                         }
-                                    }
-                                    else{
+                                    } else {
                                         tracing::warn!("this message can not decrypt.");
-                                        let msg = Message::Feedback { crc, status: luffa_rpc_types::FeedbackStatus::Fetch };
-                                        let evnt = luffa_rpc_types::Event::new(from_id,&msg,None,0);
+                                        let msg = Message::Feedback {
+                                            crc,
+                                            status: luffa_rpc_types::FeedbackStatus::Fetch,
+                                        };
+                                        let evnt =
+                                            luffa_rpc_types::Event::new(from_id, &msg, None, 0);
                                         let res = evnt.encode().unwrap();
                                         let res = crate::behaviour::chat::Response(res);
-                                        let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
-                                            
+                                        let chat =
+                                            self.swarm.behaviour_mut().chat.as_mut().unwrap();
+
                                         if let Err(e) = chat.send_response(channel, res) {
                                             tracing::warn!("chat response failed: >>{e:?}");
                                         }
                                     }
-                                    
-                                }
-                                else if to == my_id {
+                                } else if to == my_id {
                                     // this node is a client and the message is send to it.
-                                    self.emit_network_event(NetworkEvent::RequestResponse(ChatEvent::Request(request.data().to_vec())));
-                                    let msg = Message::Feedback {  crc, status: luffa_rpc_types::FeedbackStatus::Reach  };
-                                    let evnt = luffa_rpc_types::Event::new(from_id,&msg,None,0);
+                                    self.emit_network_event(NetworkEvent::RequestResponse(
+                                        ChatEvent::Request(request.data().to_vec()),
+                                    ));
+                                    let msg = Message::Feedback {
+                                        crc,
+                                        status: luffa_rpc_types::FeedbackStatus::Reach,
+                                    };
+                                    let evnt = luffa_rpc_types::Event::new(from_id, &msg, None, 0);
                                     let res = evnt.encode().unwrap();
                                     let res = crate::behaviour::chat::Response(res);
                                     let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
-                                        
+
                                     if let Err(e) = chat.send_response(channel, res) {
                                         tracing::warn!("chat response failed: >>{e:?}");
                                     }
-                                }
-                                else{
+                                } else {
                                     let f = self.get_contacts_index(from_id);
                                     let t = self.get_contacts_index(to);
                                     // check that from and to was in any contacts ?
@@ -1271,80 +1350,123 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         if *tp == 0 {
                                             // contact is private
                                             let t = self.get_peer_index(to);
-                                            
-                                            if let Ok(Some(rx)) = self.local_send_if_connected(t, request.data()) {
+
+                                            if let Ok(Some(rx)) =
+                                                self.local_send_if_connected(t, request.data())
+                                            {
                                                 rx_any = Some(rx);
                                             }
                                             if rx_any.is_none() {
                                                 let f = self.get_peer_index(my_id);
-                                                if let Some((cost,paths)) = astar(&self.connections, f, |f| f == t, |_e| 1,|_| 0){
-                                                    
+                                                if let Some((cost, paths)) = astar(
+                                                    &self.connections,
+                                                    f,
+                                                    |f| f == t,
+                                                    |_e| 1,
+                                                    |_| 0,
+                                                ) {
                                                     println!("[{cost}] paths>>>>>> {paths:?}");
                                                     //route this message to shortest node and then break if the node is connected.
                                                     for r in paths {
                                                         if r != f {
-                                                            match self.local_send_if_connected(r, request.data()) {
-                                                                Ok(Some(rx))=>{
+                                                            match self.local_send_if_connected(
+                                                                r,
+                                                                request.data(),
+                                                            ) {
+                                                                Ok(Some(rx)) => {
                                                                     rx_any = Some(rx);
                                                                     break;
                                                                 }
-                                                                _=>{
-            
-                                                                }
+                                                                _ => {}
                                                             }
                                                         }
                                                     }
-                                                }
-                                                else{
+                                                } else {
                                                     tracing::warn!("not connect.");
                                                 }
-
-                                            } 
+                                            }
                                             match rx_any {
-                                                Some(rx)=>{
+                                                Some(rx) => {
                                                     let sender = self.chat_sender.clone();
                                                     tokio::spawn(async move {
                                                         if let Ok(res) = rx.await {
                                                             if let Ok(Some(cr)) = res {
                                                                 let res = crate::behaviour::chat::Response(cr.data);
-                                                                if let Err(e) = sender.send((res,channel)).await {
+                                                                if let Err(e) = sender
+                                                                    .send((res, channel))
+                                                                    .await
+                                                                {
                                                                     tracing::warn!("{e:?}");
                                                                 }
-                                                                
                                                             };
                                                         }
                                                     });
                                                 }
-                                                None=>{
-                                                      // do not route to any other relay node 
-                                                    if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
-                                                        if let Err(e) = go.publish(TopicHash::from_raw(TOPIC_CHAT), request.data().to_vec()) {
+                                                None => {
+                                                    // do not route to any other relay node
+                                                    if let Some(go) = self
+                                                        .swarm
+                                                        .behaviour_mut()
+                                                        .gossipsub
+                                                        .as_mut()
+                                                    {
+                                                        if let Err(e) = go.publish(
+                                                            TopicHash::from_raw(TOPIC_CHAT),
+                                                            request.data().to_vec(),
+                                                        ) {
                                                             tracing::warn!("{e:?}");
                                                         }
                                                     }
                                                     // put record(crc,data)
-                                                    if let Err(e) = self.put_to_dht(crc, request.data().to_vec()) {
+                                                    if let Err(e) = self
+                                                        .put_to_dht(crc, request.data().to_vec())
+                                                    {
                                                         tracing::error!("{e:?}");
                                                     }
-                                                    
-                                                    let msg = Message::Feedback { crc, status: luffa_rpc_types::FeedbackStatus::Reach };
-                                                    let evnt = luffa_rpc_types::Event::new(from_id,&msg,None,0);
+
+                                                    let msg = Message::Feedback {
+                                                        crc,
+                                                        status:
+                                                            luffa_rpc_types::FeedbackStatus::Reach,
+                                                    };
+                                                    let evnt = luffa_rpc_types::Event::new(
+                                                        from_id, &msg, None, 0,
+                                                    );
                                                     let res = evnt.encode().unwrap();
                                                     let res = crate::behaviour::chat::Response(res);
-                                                    let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
-                                                    tracing::warn!("------offline---res [{evnt:?}]--");    
-                                                    if let Err(e) = chat.send_response(channel, res) {
-                                                        tracing::warn!("chat response failed: >>{e:?}");
+                                                    let chat = self
+                                                        .swarm
+                                                        .behaviour_mut()
+                                                        .chat
+                                                        .as_mut()
+                                                        .unwrap();
+                                                    tracing::warn!(
+                                                        "------offline---res [{evnt:?}]--"
+                                                    );
+                                                    if let Err(e) = chat.send_response(channel, res)
+                                                    {
+                                                        tracing::warn!(
+                                                            "chat response failed: >>{e:?}"
+                                                        );
                                                     }
-                                                    // send offline notice 
-                                                    self.emit_network_event(NetworkEvent::RequestResponse(ChatEvent::Request(request.data().to_vec())));
+                                                    // send offline notice
+                                                    self.emit_network_event(
+                                                        NetworkEvent::RequestResponse(
+                                                            ChatEvent::Request(
+                                                                request.data().to_vec(),
+                                                            ),
+                                                        ),
+                                                    );
                                                 }
-                                            } 
-
-                                        }
-                                        else{
-                                            if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
-                                                if let Err(e) = go.publish(TopicHash::from_raw(TOPIC_CHAT), request.data().to_vec()) {
+                                            }
+                                        } else {
+                                            if let Some(go) =
+                                                self.swarm.behaviour_mut().gossipsub.as_mut()
+                                            {
+                                                if let Err(e) = go.publish(
+                                                    TopicHash::from_raw(TOPIC_CHAT),
+                                                    request.data().to_vec(),
+                                                ) {
                                                     tracing::error!("{e:?}");
                                                 }
                                             }
@@ -1352,137 +1474,219 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
                                             let g_idx = self.get_contacts_index(to);
                                             let members = self.contacts.edges(g_idx);
-                                            let targets = members.into_iter().map(|m| if m.source() == g_idx { m.target() } else { m.source()}).collect::<Vec<_>>();
+                                            let targets = members
+                                                .into_iter()
+                                                .map(|m| {
+                                                    if m.source() == g_idx {
+                                                        m.target()
+                                                    } else {
+                                                        m.source()
+                                                    }
+                                                })
+                                                .collect::<Vec<_>>();
                                             for t in targets {
-                                                if let Ok(Some(rx)) = self.local_send_if_connected(t, request.data()) {
+                                                if let Ok(Some(rx)) =
+                                                    self.local_send_if_connected(t, request.data())
+                                                {
                                                     tokio::spawn(async move {
                                                         if let Ok(res) = rx.await {
                                                             if let Ok(Some(cr)) = res {
                                                                 let res = crate::behaviour::chat::Response(cr.data);
-                                                                tracing::info!("group msg to >>> {res:?}");       
+                                                                tracing::info!(
+                                                                    "group msg to >>> {res:?}"
+                                                                );
                                                             };
                                                         }
                                                     });
-                                                }
-                                                else if self.connections.edges(t).count() == 0 {
+                                                } else if self.connections.edges(t).count() == 0 {
                                                     let to = self.contacts[t];
-                                                    let mut e = luffa_rpc_types::Event::decode_uncheck(request.data()).unwrap();
+                                                    let mut e =
+                                                        luffa_rpc_types::Event::decode_uncheck(
+                                                            request.data(),
+                                                        )
+                                                        .unwrap();
                                                     e.to = to;
                                                     // send offline notice
-                                                    self.emit_network_event(NetworkEvent::RequestResponse(ChatEvent::Request(e.encode().unwrap())));
+                                                    self.emit_network_event(
+                                                        NetworkEvent::RequestResponse(
+                                                            ChatEvent::Request(e.encode().unwrap()),
+                                                        ),
+                                                    );
                                                 }
                                             }
-                                       
+
                                             // put record(crc,data)
-                                            if let Err(e) = self.put_to_dht(crc, request.data().to_vec()) {
+                                            if let Err(e) =
+                                                self.put_to_dht(crc, request.data().to_vec())
+                                            {
                                                 tracing::error!("{e:?}");
                                             }
-                                            let msg = Message::Feedback { crc, status: luffa_rpc_types::FeedbackStatus::Reach };
-                                            let evnt = luffa_rpc_types::Event::new(from_id,&msg,None,0);
+                                            let msg = Message::Feedback {
+                                                crc,
+                                                status: luffa_rpc_types::FeedbackStatus::Reach,
+                                            };
+                                            let evnt =
+                                                luffa_rpc_types::Event::new(from_id, &msg, None, 0);
                                             let res = evnt.encode().unwrap();
                                             let res = crate::behaviour::chat::Response(res);
-                                            let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
-                                                
+                                            let chat =
+                                                self.swarm.behaviour_mut().chat.as_mut().unwrap();
+
                                             if let Err(e) = chat.send_response(channel, res) {
                                                 tracing::warn!("chat response failed: >>{e:?}");
                                             }
                                         }
-                                    }
-                                    else{
+                                    } else {
                                         let mut rx_any = None;
                                         let t = self.get_peer_index(to);
-                                        
-                                        if let Ok(Some(rx)) = self.local_send_if_connected(t, request.data()) {
+
+                                        if let Ok(Some(rx)) =
+                                            self.local_send_if_connected(t, request.data())
+                                        {
                                             rx_any = Some(rx);
                                         }
                                         if rx_any.is_none() {
                                             let f = self.get_peer_index(my_id);
-                                            if let Some((cost,paths)) = astar(&self.connections, f, |f| f == t, |_e| 1,|_| 0){
-                                                    
+                                            if let Some((cost, paths)) = astar(
+                                                &self.connections,
+                                                f,
+                                                |f| f == t,
+                                                |_e| 1,
+                                                |_| 0,
+                                            ) {
                                                 println!("[{cost}] paths 2>>>>>> {paths:?}");
                                                 //route this message to shortest node and then break if the node is connected.
                                                 for r in paths {
                                                     if r != f {
-                                                        match self.local_send_if_connected(r, request.data()) {
-                                                            Ok(Some(rx))=>{
+                                                        match self.local_send_if_connected(
+                                                            r,
+                                                            request.data(),
+                                                        ) {
+                                                            Ok(Some(rx)) => {
                                                                 rx_any = Some(rx);
                                                                 break;
                                                             }
-                                                            _=>{
-        
-                                                            }
+                                                            _ => {}
                                                         }
                                                     }
                                                 }
                                             }
-                                        } 
+                                        }
                                         match rx_any {
-                                            Some(rx)=>{
+                                            Some(rx) => {
                                                 let sender = self.chat_sender.clone();
                                                 tokio::spawn(async move {
                                                     if let Ok(res) = rx.await {
                                                         if let Ok(Some(cr)) = res {
-                                                            let res = crate::behaviour::chat::Response(cr.data);
-                                                            if let Err(e) = sender.send((res,channel)).await {
+                                                            let res =
+                                                                crate::behaviour::chat::Response(
+                                                                    cr.data,
+                                                                );
+                                                            if let Err(e) =
+                                                                sender.send((res, channel)).await
+                                                            {
                                                                 tracing::warn!("{e:?}");
                                                             }
-                                                            
                                                         };
                                                     }
                                                 });
                                             }
-                                            None=>{
-                                                if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
-                                                    if let Err(e) = go.publish(TopicHash::from_raw(TOPIC_CHAT), request.data().to_vec()) {
+                                            None => {
+                                                if let Some(go) =
+                                                    self.swarm.behaviour_mut().gossipsub.as_mut()
+                                                {
+                                                    if let Err(e) = go.publish(
+                                                        TopicHash::from_raw(TOPIC_CHAT),
+                                                        request.data().to_vec(),
+                                                    ) {
                                                         tracing::warn!("{e:?}");
                                                     }
                                                 }
                                                 // put record(crc,data)
                                                 self.save_cache_crc(crc, from_id, to);
-                                                if let Err(e) = self.put_to_dht(crc, request.data().to_vec()) {
+                                                if let Err(e) =
+                                                    self.put_to_dht(crc, request.data().to_vec())
+                                                {
                                                     tracing::error!("{e:?}");
                                                 }
-                                                let msg = Message::Feedback { crc, status: luffa_rpc_types::FeedbackStatus::Reach };
-                                                let evnt = luffa_rpc_types::Event::new(from_id,&msg,None,0);
+                                                let msg = Message::Feedback {
+                                                    crc,
+                                                    status: luffa_rpc_types::FeedbackStatus::Reach,
+                                                };
+                                                let evnt = luffa_rpc_types::Event::new(
+                                                    from_id, &msg, None, 0,
+                                                );
                                                 let res = evnt.encode().unwrap();
                                                 let res = crate::behaviour::chat::Response(res);
-                                                let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
-                                                eprintln!("====================");    
+                                                let chat = self
+                                                    .swarm
+                                                    .behaviour_mut()
+                                                    .chat
+                                                    .as_mut()
+                                                    .unwrap();
+                                                eprintln!("====================");
                                                 if let Err(e) = chat.send_response(channel, res) {
                                                     tracing::warn!("chat response failed: >>{e:?}");
                                                 }
-                                                self.emit_network_event(NetworkEvent::RequestResponse(ChatEvent::Request(request.data().to_vec())));
+                                                self.emit_network_event(
+                                                    NetworkEvent::RequestResponse(
+                                                        ChatEvent::Request(request.data().to_vec()),
+                                                    ),
+                                                );
                                             }
                                         }
                                     }
-
-                                }; 
+                                };
                             }
-                            RequestResponseMessage::Response { request_id, response }=>{
+                            RequestResponseMessage::Response {
+                                request_id,
+                                response,
+                            } => {
                                 let data = response.0;
                                 if let Some(channel) = self.pending_request.remove(&request_id) {
-                                    if let Err(_e) = channel.send(Ok(Some(ChatResponse {
-                                        data: data.clone()
-                                    }))) {
+                                    if let Err(_e) =
+                                        channel.send(Ok(Some(ChatResponse { data: data.clone() })))
+                                    {
                                         tracing::warn!("channel response failed");
                                     }
                                 }
-                                self.emit_network_event(NetworkEvent::RequestResponse(ChatEvent::Response { request_id, data }));
-                                
+                                self.emit_network_event(NetworkEvent::RequestResponse(
+                                    ChatEvent::Response { request_id, data },
+                                ));
                             }
                         }
                     }
-                    RequestResponseEvent::ResponseSent { peer, request_id }=>{
-                        tracing::warn!("Chat Response Sent>>{peer:?}  {:?} ",request_id);
-                        self.emit_network_event(NetworkEvent::RequestResponse(ChatEvent::ResponseSent { peer, request_id }));
+                    RequestResponseEvent::ResponseSent { peer, request_id } => {
+                        tracing::warn!("Chat Response Sent>>{peer:?}  {:?} ", request_id);
+                        self.emit_network_event(NetworkEvent::RequestResponse(
+                            ChatEvent::ResponseSent { peer, request_id },
+                        ));
                     }
-                    RequestResponseEvent::InboundFailure { peer, request_id, error }=>{
-                        
-                        self.emit_network_event(NetworkEvent::RequestResponse(ChatEvent::InboundFailure { peer, request_id, error }));
+                    RequestResponseEvent::InboundFailure {
+                        peer,
+                        request_id,
+                        error,
+                    } => {
+                        self.emit_network_event(NetworkEvent::RequestResponse(
+                            ChatEvent::InboundFailure {
+                                peer,
+                                request_id,
+                                error,
+                            },
+                        ));
                     }
-                    RequestResponseEvent::OutboundFailure { peer, request_id, error }=>{
-                        self.emit_network_event(NetworkEvent::RequestResponse(ChatEvent::OutboundFailure { peer, request_id, error }));
-
+                    RequestResponseEvent::OutboundFailure {
+                        peer,
+                        request_id,
+                        error,
+                    } => {
+                        self.emit_network_event(NetworkEvent::RequestResponse(
+                            ChatEvent::OutboundFailure {
+                                peer,
+                                request_id,
+                                error,
+                            },
+                        ));
                     }
                 }
             }
@@ -1493,71 +1697,76 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
         Ok(())
     }
-    
-    fn handle_chat_response(&mut self,res:crate::behaviour::chat::Response,channel:libp2p::request_response::ResponseChannel<crate::behaviour::chat::Response>) {
+
+    fn handle_chat_response(
+        &mut self,
+        res: crate::behaviour::chat::Response,
+        channel: libp2p::request_response::ResponseChannel<crate::behaviour::chat::Response>,
+    ) {
         if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
             if let Err(e) = chat.send_response(channel, res) {
                 tracing::warn!("{e:?}");
             }
         }
     }
-    
-    fn get_node_index(&mut self,did:u64) -> NodeIndex {
+
+    fn get_node_index(&mut self, did: u64) -> NodeIndex {
         match self.cache.node_indices().find(|n| self.cache[*n] == did) {
-            Some(v)=> v,
-            None=>{
-                self.cache.add_node(did)
-            }
+            Some(v) => v,
+            None => self.cache.add_node(did),
         }
     }
-    fn get_peer_index(&mut self,did:u64) -> NodeIndex {
-        match self.connections.node_indices().find(|n| self.connections[*n] == did) {
-            Some(v)=> v,
-            None=>{
-                self.connections.add_node(did)
-            }
+    fn get_peer_index(&mut self, did: u64) -> NodeIndex {
+        match self
+            .connections
+            .node_indices()
+            .find(|n| self.connections[*n] == did)
+        {
+            Some(v) => v,
+            None => self.connections.add_node(did),
         }
     }
-    fn get_contacts_index(&mut self,did:u64) -> NodeIndex {
-        match self.contacts.node_indices().find(|n| self.contacts[*n] == did) {
-            Some(v)=> v,
-            None=>{
-                self.contacts.add_node(did)
-            }
+    fn get_contacts_index(&mut self, did: u64) -> NodeIndex {
+        match self
+            .contacts
+            .node_indices()
+            .find(|n| self.contacts[*n] == did)
+        {
+            Some(v) => v,
+            None => self.contacts.add_node(did),
         }
     }
-    fn save_cache_crc(&mut self,crc:u64,from_id:u64,to:u64) -> EdgeIndex {
+    fn save_cache_crc(&mut self, crc: u64, from_id: u64, to: u64) -> EdgeIndex {
         tracing::warn!("save cache crc:{crc}  {from_id}-> {to}");
         let from = self.get_node_index(from_id);
         let to = self.get_node_index(to);
         let now = Utc::now().timestamp_millis() as u64;
         self.cache.add_edge(from, to, (crc, now))
     }
-    fn put_to_dht(&mut self,crc:u64,data:Vec<u8>) -> anyhow::Result<QueryId>{
+    fn put_to_dht(&mut self, crc: u64, data: Vec<u8>) -> anyhow::Result<QueryId> {
         if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
             let record = Record::new(crc.to_be_bytes().to_vec(), data);
-            kad.put_record(record, Quorum::One).map_err(|e| anyhow!("{e:?}"))
-        }
-        else{
+            kad.put_record(record, Quorum::One)
+                .map_err(|e| anyhow!("{e:?}"))
+        } else {
             Err(anyhow!("put to dht failed"))
         }
-        
     }
-    fn load_cache_crc(&mut self,did:u64,have_time:Option<u64>) -> Vec<(u64,u64)>{
+    fn load_cache_crc(&mut self, did: u64, have_time: Option<u64>) -> Vec<(u64, u64)> {
         let to = self.get_node_index(did);
         let mut cached_crc = vec![];
         let now = Utc::now().timestamp_millis() as u64;
         let have_time = have_time.unwrap_or(0);
         let mut remove_edges = vec![];
         if let Some(mut e) = self.cache.first_edge(to, Direction::Incoming) {
-            let (crc,time) = self.cache.edge_weight(e).unwrap();
+            let (crc, time) = self.cache.edge_weight(e).unwrap();
             if *time > have_time {
-                if let Some((a,_b)) = self.cache.edge_endpoints(e) {
+                if let Some((a, _b)) = self.cache.edge_endpoints(e) {
                     let from_id = self.cache.node_weight(a).unwrap();
-                    cached_crc.push((*crc,*from_id));
-                    
+                    cached_crc.push((*crc, *from_id));
+
                     while let Some(n) = self.cache.next_edge(e, Direction::Incoming) {
-                        let (crc,time) = self.cache.edge_weight(n).unwrap();
+                        let (crc, time) = self.cache.edge_weight(n).unwrap();
                         if now - *time > 24 * 60 * 60 * 1000 {
                             remove_edges.push(n);
                             tracing::warn!("remove edge {time}");
@@ -1571,9 +1780,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             e = n;
                             continue;
                         }
-                        let (a,_b) = self.cache.edge_endpoints(n).unwrap();
+                        let (a, _b) = self.cache.edge_endpoints(n).unwrap();
                         let from_id = self.cache.node_weight(a).unwrap();
-                        cached_crc.push((*crc,*from_id));
+                        cached_crc.push((*crc, *from_id));
                         e = n;
                     }
                 }
@@ -1585,107 +1794,102 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         }
 
         cached_crc
-
     }
 
-    fn local_send_if_connected(&mut self,target:NodeIndex,data:&Vec<u8>) -> Result<Option<tokio::sync::oneshot::Receiver<Result<Option<ChatResponse>,anyhow::Error>>>>{
-        // this node is connected to the target of this message? 
+    fn local_send_if_connected(
+        &mut self,
+        target: NodeIndex,
+        data: &Vec<u8>,
+    ) -> Result<Option<tokio::sync::oneshot::Receiver<Result<Option<ChatResponse>, anyhow::Error>>>>
+    {
+        // this node is connected to the target of this message?
         let mut edges = self.connections.edges(target);
         if let Some(local) = edges.find(|e| match e.weight() {
-            ConnectionEdge::Local(_)=> true,
-            _=> false
-        }) {    
+            ConnectionEdge::Local(_) => true,
+            _ => false,
+        }) {
             match local.weight() {
-                ConnectionEdge::Local(p)=> {
+                ConnectionEdge::Local(p) => {
                     if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-                        let (tx,rx) = tokio::sync::oneshot::channel();
+                        let (tx, rx) = tokio::sync::oneshot::channel();
                         let data = data.to_vec();
                         let req_id = chat.send_request(p, crate::behaviour::chat::Request(data));
                         self.pending_request.insert(req_id, tx);
-                        tracing::info!("chat send. {:?}",req_id);     
-                        
+                        tracing::info!("chat send. {:?}", req_id);
+
                         return Ok(Some(rx));
                     }
-                },
-                _=>{
+                }
+                _ => {
                     unreachable!()
                 }
             }
         }
         Ok(None)
     }
-    
+
     #[tracing::instrument(skip(self))]
     fn handle_rpc_message(&mut self, message: RpcMessage) -> Result<bool> {
         // Inbound messages
         match message {
-            RpcMessage::BackGossipsub(msg)=>{
-                match msg {
-                    crate::rpc::GossipsubMessage::Publish(s,topic,data)=>{
-                        let from = self.local_peer_id().clone();
-                        let id = MessageId::new(&[0]);
-                        let data = data.to_vec();
-                        let message = libp2p::gossipsub::GossipsubMessage {
-                            source:None,
-                            sequence_number:None,
-                            topic,
-                            data,
-                        };
-                        self.emit_network_event(NetworkEvent::Gossipsub(GossipsubEvent::Message { from, id, message }))
-                    }
-                    _=>{
-
-                    }
+            RpcMessage::BackGossipsub(msg) => match msg {
+                crate::rpc::GossipsubMessage::Publish(s, topic, data) => {
+                    let from = self.local_peer_id().clone();
+                    let id = MessageId::new(&[0]);
+                    let data = data.to_vec();
+                    let message = libp2p::gossipsub::GossipsubMessage {
+                        source: None,
+                        sequence_number: None,
+                        topic,
+                        data,
+                    };
+                    self.emit_network_event(NetworkEvent::Gossipsub(GossipsubEvent::Message {
+                        from,
+                        id,
+                        message,
+                    }))
                 }
-            }
-            RpcMessage::Chat(response_channel, data)=>{
-
-                let mut peers = 
-                {
-                    self.swarm.connected_peers().map(|p| {
-                        match self.swarm.behaviour().peer_manager.info_for_peer(p) {
-                            Some(pp)=>{
-                                
-                                match &pp.last_info {
-                                    Some(info)=>{
-                                        Some((p.clone(),info.clone(),pp.last_rtt.clone()))
-                                    }
-                                    None=>{
-                                        None
-                                    }
-                                }
-                            }
-                            None=>{
-                                None
-                            }
-                        }
+                _ => {}
+            },
+            RpcMessage::Chat(response_channel, data) => {
+                let mut peers = {
+                    while self.swarm.behaviour().peer_manager.peers() == 0 {
                         
-                    })
-                    .filter(|item| item.is_some())
-                    .map(|item| item.unwrap())
-                    .filter(|(_p,info,_)|{
-                        
-                        info.agent_version.contains("Relay")                        
-                    })
-                    .collect::<Vec<_>>()
-            };
-
-                peers.sort_by(|(_,_e,a),(_,_f,b)| {
+                    }
+                    self.swarm
+                        .connected_peers()
+                        .map(
+                            |p| match self.swarm.behaviour().peer_manager.info_for_peer(p) {
+                                Some(pp) => match &pp.last_info {
+                                    Some(info) => {
+                                        Some((p.clone(), info.clone(), pp.last_rtt.clone()))
+                                    }
+                                    None => None,
+                                },
+                                None => None,
+                            },
+                        )
+                        .filter(|item| item.is_some())
+                        .map(|item| item.unwrap())
+                        .filter(|(_p, info, _)| info.agent_version.contains("Relay"))
+                        .collect::<Vec<_>>()
+                };
+                
+                peers.sort_by(|(_, _e, a), (_, _f, b)| {
                     let a = a.unwrap_or(Duration::from_secs(5)).as_millis();
                     let b = b.unwrap_or(Duration::from_secs(5)).as_millis();
                     a.partial_cmp(&b).unwrap()
                 });
                 if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-                    
-                    if let Some((peer,_,_)) = peers.first() {
-                        let req_id = chat.send_request(peer, crate::behaviour::chat::Request(data.msg));
+                    if let Some((peer, _, _)) = peers.first() {
+                        let req_id =
+                            chat.send_request(peer, crate::behaviour::chat::Request(data.msg));
                         self.pending_request.insert(req_id, response_channel);
-                        tracing::info!("chat send. {:?}",req_id);     
+                        tracing::info!("chat send. {:?}", req_id);
                         return Ok(false);
                     }
-                    
                 }
-                
+
                 if let Err(_e) = response_channel.send(Err(anyhow!("not peers"))) {
                     tracing::warn!("channel response failed");
                 }
@@ -1716,49 +1920,63 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             } => {
                 tracing::debug!("context:{} bitswap_request", ctx);
                 let store = self.store.clone();
-                let (tx,rx) = std::sync::mpsc::channel();
+                let (tx, rx) = std::sync::mpsc::channel();
                 tokio::spawn(async move {
-                    for (cid, response_channel) in cids.into_iter().zip(response_channels.into_iter()) {
+                    for (cid, response_channel) in
+                        cids.into_iter().zip(response_channels.into_iter())
+                    {
                         match store.get(&cid) {
-                            Ok(Some(blob))=>{
+                            Ok(Some(blob)) => {
                                 let blk = Block::new(blob, cid);
                                 if let Err(e) = response_channel.send(Ok(blk)) {
                                     tracing::error!("{e:?}");
                                 }
                             }
-                            _=>{
-                                tx.send((cid,response_channel)).unwrap();    
+                            _ => {
+                                tx.send((cid, response_channel)).unwrap();
                             }
                         }
-                        
                     }
                 });
                 while let Ok((cid, response_channel)) = rx.recv() {
-                    if let Err(e) = self.want_block(ctx, cid, providers.clone(), response_channel)
-                    .map_err(|err| anyhow!("Failed to send a bitswap want_block: {:?}", err)) {
+                    if let Err(e) = self
+                        .want_block(ctx, cid, providers.clone(), response_channel)
+                        .map_err(|err| anyhow!("Failed to send a bitswap want_block: {:?}", err))
+                    {
                         tracing::error!("{e:?}");
                     }
                 }
             }
-            RpcMessage::PushBitswapRequest { data, response_channels } => {
-                tracing::debug!("PushBitswapRequest:--{}---",data.len());
-                let cid = Cid::new_v1(DagCborCodec.into(), multihash::Code::Sha2_256.digest(&data[..]));
+            RpcMessage::PushBitswapRequest {
+                data,
+                response_channels,
+            } => {
+                tracing::debug!("PushBitswapRequest:--{}---", data.len());
+                let cid = Cid::new_v1(
+                    DagCborCodec.into(),
+                    multihash::Code::Sha2_256.digest(&data[..]),
+                );
 
                 let store = self.store.clone();
                 let blob = data.clone();
                 tokio::spawn(async move {
                     if let Err(e) = store.put(cid, blob, vec![]) {
-                        tracing::warn!("store put> {:?}",e);
+                        tracing::warn!("store put> {:?}", e);
                     }
                 });
                 let ret = cid.clone();
                 if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
                     let key = libp2p::kad::record::Key::new(&ret.hash().to_bytes());
-                    kad.start_providing(key).map_err(|_|anyhow!("Failed to push bitswap") )?;
+                    kad.start_providing(key)
+                        .map_err(|_| anyhow!("Failed to push bitswap"))?;
                 }
-                self.swarm.behaviour().notify_new_blocks(vec![Block {cid,data}]);
+                self.swarm
+                    .behaviour()
+                    .notify_new_blocks(vec![Block { cid, data }]);
                 for channel in response_channels {
-                    channel.send(Ok(ret.clone())).map_err(|_| anyhow!("Failed to push bitswap"))?;
+                    channel
+                        .send(Ok(ret.clone()))
+                        .map_err(|_| anyhow!("Failed to push bitswap"))?;
                 }
             }
             RpcMessage::BitswapNotifyNewBlocks {
@@ -1859,7 +2077,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         .ok();
                 }
             }
-            RpcMessage::PutRecordTo(response_channel,peers, record) => {
+            RpcMessage::PutRecordTo(response_channel, peers, record) => {
                 if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
                     let key = record.key.clone();
                     let peers = peers.chunks_exact(1);
@@ -2019,8 +2237,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             .map_err(|_| anyhow!("sender dropped"))?;
                     }
                     rpc::GossipsubMessage::Publish(response_channel, topic_hash, bytes) => {
-                        let res = gossipsub
-                            .publish(topic_hash, bytes.to_vec());
+                        let res = gossipsub.publish(topic_hash, bytes.to_vec());
                         // tracing::warn!("rpc >> publish. {}",res.is_ok());
                         response_channel
                             .send(res)
@@ -2122,42 +2339,43 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
     }
 }
 
-pub async fn load_identity<S: Storage>(kc: &mut Keychain<S>,filter:Option<KeyFilter>) -> Result<Keypair> {
+pub async fn load_identity<S: Storage>(
+    kc: &mut Keychain<S>,
+    filter: Option<KeyFilter>,
+) -> Result<Keypair> {
     if kc.is_empty().await? {
         tracing::info!("no identity found, creating",);
         match filter.as_ref() {
-            Some(KeyFilter::Phrase(phrase,pwd ))=>{
+            Some(KeyFilter::Phrase(phrase, pwd)) => {
                 let k = kc.create_ed25519_key_from_seed(phrase, pwd).await?;
                 let keypair: Keypair = k.into();
-                return Ok(keypair)
+                return Ok(keypair);
             }
-            _=>{
-                let (p,k) = kc.create_ed25519_key_bip39("",true).await?;
+            _ => {
+                let (p, k) = kc.create_ed25519_key_bip39("", true).await?;
                 let keypair: Keypair = k.into();
-                return Ok(keypair)
+                return Ok(keypair);
             }
         }
     }
-    
+
     match filter.as_ref() {
-        Some(KeyFilter::Phrase(phrase,pwd ))=>{
+        Some(KeyFilter::Phrase(phrase, pwd)) => {
             let k = kc.create_ed25519_key_from_seed(phrase, pwd).await?;
             let keypair: Keypair = k.into();
-            return Ok(keypair)
+            return Ok(keypair);
         }
-        Some(KeyFilter::Name(name))=>{
+        Some(KeyFilter::Name(name)) => {
             while let Some(first_key) = kc.keys().next().await {
                 let k = first_key.unwrap();
                 if &k.name() == name {
-
                     let keypair: Keypair = k.into();
 
-                    return Ok(keypair)
+                    return Ok(keypair);
                 }
-                
             }
         }
-        _=>{
+        _ => {
             // let (p,k) = kc.create_ed25519_key_bip39("",true).await?;
             // let keypair: Keypair = k.into();
             // return Ok(keypair)

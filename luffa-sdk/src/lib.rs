@@ -681,7 +681,7 @@ impl Client {
                         }
                     }
                     else{
-                        eprintln!("c read msg: decrypt failed>>>");
+                        tracing::error!("c read msg: decrypt failed>>>");
                         None
                     }
                 }).unwrap_or_default()
@@ -699,6 +699,7 @@ impl Client {
         let db_t = self.db.clone();
         match tree.get(crc.to_be_bytes()) {
             Ok(v)=>{
+                let vv=
                 v.map(|v| {
                     let data = v.to_vec();
                     let evt:Event = serde_cbor::from_slice(&data[..]).unwrap();
@@ -767,22 +768,33 @@ impl Client {
                                         msg,
                                     }),
                                     None=>{
-                                        eprintln!("read msg 0: decrypt failed>>>");
+                                        error!("read msg 0: decrypt failed>>>");
                                         None
                                     }
                                 }
                             }
                             else{
-                                eprintln!("read msg 1: decrypt failed>>>");
+                                error!("read msg 1: decrypt failed>>>");
                                 None
                             }
                         }
                         else{
-                            eprintln!("read msg 2: decrypt failed>>>");
+                            error!("read msg 2: decrypt failed>>>");
                             None
                         }
                     }
-                }).unwrap_or_default()
+                });
+
+                let vv = vv.unwrap_or_default();
+
+                if vv.is_none() {
+                    let now = Utc::now().timestamp_millis() as u64;
+                    tracing::warn!("crc not found {crc}");
+                    Self::update_session(db_t.clone(), did, None, Some(crc), None, None, now);
+                }
+
+                vv
+
             }
             Err(e)=>{
                 error!("{e:?}");
@@ -856,7 +868,7 @@ impl Client {
             .collect::<Vec<_>>();
         chats.sort_by(|a, b| a.last_time.partial_cmp(&b.last_time).unwrap());
         chats.reverse();
-        let page = chats.windows(page_size as usize).nth(page as usize);
+        let page = chats.chunks(page_size as usize).nth(page as usize);
         page.map(|ls| ls.into_iter().map(|s| {
             s.clone()
 
@@ -977,7 +989,11 @@ impl Client {
         Self::update_session(self.db.clone(), did, Some(tag), read, reach, msg, now);
     }
     pub fn update_session(db:Arc<Db>,did:u64,tag:Option<String>,read:Option<u64>,reach:Option<u64>,msg:Option<String>,event_time:u64) -> bool{
+        if did == 0 {
+            return false;
+        }
         let tree = db.open_tree(KVDB_CHAT_SESSION_TREE).unwrap();
+        // assert!(did > 0,"update_session:{msg:?} ,{tag:?}");
         let mut first_read = false;
         let n_tag = tag.clone();
         if let Err(e) = tree.fetch_and_update(did.to_be_bytes(), |old| {
@@ -1013,7 +1029,7 @@ impl Client {
                 None=>{
                     let (dft,tp) = Self::get_contacts_tag(db.clone(), did).unwrap_or((format!("{did}"),3));
                     if tp == 3 {
-                        tracing::error!("update session failed:{did}");
+                        tracing::error!("update session failed:{did},{dft}");
                         return None;
                     }
                     let mut reach_crc = vec![];
@@ -1424,7 +1440,7 @@ impl Client {
                 let page = count % 8;
                 let mut contacts = vec![];
                 for lvl in 0..8 {
-                    if page <= lvl && count % 60 > 0{
+                    if page >= lvl {
                         if let Some(lvl_0) = Self::db_session_list(db_t.clone(), lvl as u32, 4,my_id) {
                             let lvl_contacts = 
                             lvl_0.into_iter().map(|cs| {
@@ -1440,13 +1456,15 @@ impl Client {
                                     wants:vec![],
                                 }  
                             }).collect::<Vec<_>>();
+                            
                             contacts.extend_from_slice(&lvl_contacts[..]);
                             
                         }
+                        
                     }
                 }
+                // tracing::error!("recent seesion sync:{}",contacts.len());
                 if !contacts.is_empty() {
-                    tracing::error!("recent seesion sync:{}",contacts.len());
                     let sync = Message::ContactsSync { did: my_id, contacts };
                     let event = Event::new(0, &sync, None, my_id);
                     let data = event.encode().unwrap();
@@ -1626,6 +1644,8 @@ impl Client {
                                                                         }
                                                                         Err(e)=>{
                                                                             tracing::warn!("get crc record failed:{e:?}");
+                                                                            Self::set_contacts_have_time(db_tt.clone(), did, event_time);
+                                                                            // Self::update_session(db_tt.clone(),did,None,None,Some(crc),None,event_time);
                                                                         }
                                                                     }
                                                                 }
@@ -1739,54 +1759,54 @@ impl Client {
                         //     tracing::warn!("gossipsub_add_explicit_peer failed");
                         // }
 
-                        let mut digest = crc64fast::Digest::new();
-                        digest.write(&peer_id.to_bytes());
-                        let u_id = digest.sum64();
-                        let msg = luffa_rpc_types::Message::StatusSync {
-                            to: u_id,
-                            from_id: my_id,
-                            status: AppStatus::Connected,
-                        };
-                        let event = luffa_rpc_types::Event::new(0, &msg, None, u_id);
-                        let event = event.encode().unwrap();
-                        let client_t = client_t.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = client_t
-                            .gossipsub_publish(
-                                TopicHash::from_raw(TOPIC_STATUS),
-                                bytes::Bytes::from(event),
-                            )
-                            .await
-                            {
-                                error!("{e:?}");
-                            }
-                        });
+                        // let mut digest = crc64fast::Digest::new();
+                        // digest.write(&peer_id.to_bytes());
+                        // let u_id = digest.sum64();
+                        // let msg = luffa_rpc_types::Message::StatusSync {
+                        //     to: u_id,
+                        //     from_id: my_id,
+                        //     status: AppStatus::Connected,
+                        // };
+                        // let event = luffa_rpc_types::Event::new(0, &msg, None, u_id);
+                        // let event = event.encode().unwrap();
+                        // let client_t = client_t.clone();
+                        // tokio::spawn(async move {
+                        //     if let Err(e) = client_t
+                        //     .gossipsub_publish(
+                        //         TopicHash::from_raw(TOPIC_STATUS),
+                        //         bytes::Bytes::from(event),
+                        //     )
+                        //     .await
+                        //     {
+                        //         error!("{e:?}");
+                        //     }
+                        // });
                     }
                     NetworkEvent::PeerDisconnected(peer_id) => {
                         tracing::debug!("---------PeerDisconnected-----------{:?}", peer_id);
                         
-                        let mut digest = crc64fast::Digest::new();
-                        digest.write(&peer_id.to_bytes());
-                        let u_id = digest.sum64();
-                        let msg = luffa_rpc_types::Message::StatusSync {
-                            to: u_id,
-                            from_id: my_id,
-                            status: AppStatus::Disconnected,
-                        };
-                        let event = luffa_rpc_types::Event::new(0, &msg, None, u_id);
-                        let event = event.encode().unwrap();
-                        let client_t = client_t.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = client_t
-                                .gossipsub_publish(
-                                    TopicHash::from_raw(TOPIC_STATUS),
-                                    bytes::Bytes::from(event),
-                                )
-                                .await
-                            {
-                                error!("{e:?}");
-                            }
-                        });
+                        // let mut digest = crc64fast::Digest::new();
+                        // digest.write(&peer_id.to_bytes());
+                        // let u_id = digest.sum64();
+                        // let msg = luffa_rpc_types::Message::StatusSync {
+                        //     to: u_id,
+                        //     from_id: my_id,
+                        //     status: AppStatus::Disconnected,
+                        // };
+                        // let event = luffa_rpc_types::Event::new(0, &msg, None, u_id);
+                        // let event = event.encode().unwrap();
+                        // let client_t = client_t.clone();
+                        // tokio::spawn(async move {
+                        //     if let Err(e) = client_t
+                        //         .gossipsub_publish(
+                        //             TopicHash::from_raw(TOPIC_STATUS),
+                        //             bytes::Bytes::from(event),
+                        //         )
+                        //         .await
+                        //     {
+                        //         error!("{e:?}");
+                        //     }
+                        // });
                     }
                     NetworkEvent::CancelLookupQuery(peer_id) => {
                         tracing::debug!("---------CancelLookupQuery-----------{:?}", peer_id);
@@ -1863,7 +1883,7 @@ impl Client {
                         tokio::spawn(async move {
                             match client.chat_request(bytes::Bytes::from(data)).await {
                                 Ok(res)=>{
-                                    tracing::info!("{res:?}");
+                                    tracing::error!("{res:?}");
                                 }
                                 Err(e)=>{
                                     tracing::error!("{e:?}");
@@ -2329,13 +2349,13 @@ impl Client {
                         Self::get_offer_by_offer_id(db_t.clone(), from_id)
                     {
                         tracing::error!("offer is:{}  nonce:{:?} key: {:?}",from_id,nonce,key);
-                        let msg_data = msg.clone();
                         if let Ok(msg) = luffa_rpc_types::Message::decrypt(
                             bytes::Bytes::from(msg),
                             Some(key.clone()),
                             nonce,
                         ) {
                             let msg_t = msg.clone();
+                            let msg_data = serde_cbor::to_vec(&msg).unwrap();
                             let offer_id = from_id;
                             let offer_key = key.clone();
                             match msg_t {

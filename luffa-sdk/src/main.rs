@@ -81,7 +81,7 @@ fn main() -> Result<()> {
         let mut x = 0;
         let mut code = String::new();
         loop {
-            std::thread::sleep(Duration::from_secs(30));
+            std::thread::sleep(Duration::from_secs(1));
             let peer_id = client.get_local_id();
             tracing::warn!("peer id: {peer_id:?}");
             let peers = client.relay_list();
@@ -146,7 +146,7 @@ fn main() -> Result<()> {
                             let list = client.contacts_list(0);
                             for c in list {
                                 
-                                let ls = client.recent_messages(c.did, 100);
+                                let ls = client.recent_messages(c.did, 10);
                                 {
                                     let msg_len = ls.len();
                                     tracing::warn!(" contacts>> {:?} msg_len>>{}", c,msg_len);
@@ -250,6 +250,15 @@ fn main() -> Result<()> {
                         if let Some(meta) = client_t.read_msg_with_meta(did, crc) {
                             tracing::debug!("{:?}",meta);
                         }
+                    }
+                }
+
+                match client_t.read_msg_with_meta(from_id, crc) {
+                    Some(meta)=>{
+
+                    }
+                    None=>{
+                        tracing::error!("msg not found {}->{}",from_id,crc);
                     }
                 }
             }
