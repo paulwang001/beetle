@@ -32,6 +32,13 @@ enum ClientError {
   "SendFailed",
   "StartFailed",
   "SearchError",
+  "SledError",
+  "ParseIntError",
+  "ParseFloatError",
+  "FromUtf8Error",
+  "TantivyError",
+  "SerdeCborError",
+  "CustomError"
 };
 
 callback interface Callback {
@@ -69,23 +76,28 @@ interface Client {
 
     void save_session(u64 did,string tag,u64? read,u64? reach,string? msg);
 
+    [Throws=ClientError]
     sequence<ChatSession> session_list(u32 top);
     sequence<ChatSession> session_page(u32 page,u32 size);
 
 
-
+    [Throws=ClientError]
     sequence<ContactsView> contacts_list(u8 c_type);
 
     [Throws=ClientError] 
     sequence<string> search(string query,u32 offet,u32 limit);
-    
-    sequence<u8>? read_msg(u64 did,u64 crc); 
-    
+
+    [Throws=ClientError]
+    sequence<u8>? read_msg(u64 did,u64 crc);
+
+    [Throws=ClientError]
     sequence<u64> recent_messages(u64 did,u32 top);
 
     string? find_contacts_tag(u64 did);
 
+    [Throws=ClientError]
     EventMeta meta_msg([ByRef] sequence<u8> data);
+    [Throws=ClientError]
     EventMeta? read_msg_with_meta(u64 did,u64 crc);
 
     string? gen_key([ByRef] string password,boolean store);
@@ -93,8 +105,10 @@ interface Client {
     string? import_key([ByRef] string phrase,[ByRef] string password);
 
     boolean save_key([ByRef] string name);
+
     boolean remove_key([ByRef] string name);
 
+    [Throws=ClientError]
     string? read_key_phrase([ByRef] string name);
 
 
