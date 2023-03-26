@@ -50,38 +50,47 @@ impl Callback for Process {
 }
 
 fn main() -> Result<()> {
-    let (tx, rx) = sync_channel(1024);
-    let args = Args::parse();
-    let process = Process::new(tx);
 
-    let msg = Box::new(process);
-    let to_id = args.to;
-    let scan = args.scan;
-    let tag = args.tag;
-    // let msg_t = Arc::new(msg.clone());
+
+    let args = Args::parse();
     let client = Client::new();
+    let mut timer = std::time::Instant::now();
+    let (tx, rx) = sync_channel(1024);
+
+    // let tx = Arc::new(tx);
     let cfg_path = args.cfg;
     // let msg_t = msg.clone();
     tracing::info!("starting");
     client.init(cfg_path);
-    let keys = client.keys().len();
-    tracing::info!("keys  >>{keys}.");
-    for x in 0..100 {
-        
-        let kk = client.gen_key("", false);
-        tracing::info!("key  >>{kk:?}.");
-
-    }
-
-    client.start(None,tag,msg);
-    tracing::info!("started.");
     let client = Arc::new(client);
     let client_t = client.clone();
+    let client_ctl = client.clone();
+    let to_id = args.to;
+    let scan = args.scan;
+    let tag = args.tag;
+
+    std::thread::spawn(move || {
+        loop {
+            let process = Process::new(tx.clone());                                                                                                                                  
+            let msg = Box::new(process);
+            
+            client_ctl.start(None,tag.clone(),msg);
+            tracing::warn!("started.");
+            if timer.elapsed().as_secs() < 120 {
+                std::thread::sleep(std::time::Duration::from_secs(120));
+            }
+            timer = std::time::Instant::now();
+            client_ctl.stop();
+            tracing::warn!("stoped.");
+            std::thread::sleep(std::time::Duration::from_secs(5));
+        }
+    });
+
     std::thread::spawn(move || {
         let mut x = 0;
         let mut code = String::new();
         loop {
-            std::thread::sleep(Duration::from_secs(1));
+            std::thread::sleep(Duration::from_secs(60));
             let peer_id = client.get_local_id();
             tracing::warn!("peer id: {peer_id:?}");
             let peers = client.relay_list();
@@ -190,6 +199,7 @@ fn main() -> Result<()> {
         }
     });
 
+
     while let Ok((crc, from_id, to, data)) = rx.recv() {
         let msg: Message = serde_cbor::from_slice(&data).unwrap();
 
@@ -264,6 +274,5 @@ fn main() -> Result<()> {
             }
         }
     }
-
     Ok(())
 }
