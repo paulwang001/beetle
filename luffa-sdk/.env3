@@ -1,0 +1,3 @@
+export LUFFA_CONFIG_DIR=../.local/client3/configs
+export LUFFA_DATA_DIR=../.local/client3/data
+export LUFFA_CACHE_DIR=../.local/client3/cache

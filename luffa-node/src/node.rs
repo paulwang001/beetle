@@ -527,6 +527,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     let f = self.get_peer_index(my_id);
                     let t = self.get_peer_index(to_id);
                     // let time = Utc::now().timestamp_millis() as u64;
+                    tracing::warn!("local connection >> {my_id} --> {to_id}");
                     self.connections
                         .update_edge(f, t, ConnectionEdge::Local(peer_id.clone()));
 
@@ -554,6 +555,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
                     if let Some(e) = self.connections.find_edge(f, t) {
                         self.connections.remove_edge(e);
+                        tracing::warn!("local disconnection >> {my_id} --> {to_id}");
+                    }
+                    else{
+                        tracing::error!("local disconnection >> {my_id} --> {to_id}");
                     }
 
                     self.emit_network_event(NetworkEvent::PeerDisconnected(peer_id));
@@ -853,6 +858,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 }
                             }
                         }
+                          //TODO only in my contacts or my white list of relay
+                        if let Some(bitswap) = self.swarm.behaviour().bitswap.as_ref() {
+                            bitswap.on_identify(&peer_id, &info.protocols);
+                        }
                     } else {
                         //TODO only in my contacts
                         for protocol in &info.protocols {
@@ -871,10 +880,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         }
                     }
 
-                    //TODO only in my contacts or my white list of relay
-                    if let Some(bitswap) = self.swarm.behaviour().bitswap.as_ref() {
-                        bitswap.on_identify(&peer_id, &info.protocols);
-                    }
+                  
 
                     self.swarm
                         .behaviour_mut()
@@ -954,55 +960,6 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     let tp = ctt.r#type as u8;
                                                     self.contacts.update_edge(f, t, tp);
                                                 }
-                                                // let p_idx = self.get_node_index(from_id);
-                                                // let mut ls_remove = vec![];
-                                                // for ctt in contacts.iter_mut() {
-                                                //     if ctt.r#type == ContactsTypes::Group {
-                                                //         let ls_crc = self.load_cache_crc(ctt.did,Some(ctt.have_time));
-                                                //         let ls_crc = ls_crc.into_iter().map(|(x,_f)|x).collect::<Vec<_>>();
-                                                //         ctt.wants.extend_from_slice(&ls_crc);
-                                                //     }
-                                                //     else{
-                                                //         let a = self.get_node_index(ctt.did);
-                                                //         self.cache.find_edge(a, p_idx);
-                                                //         let mut itr = self.cache.edges_connecting(a, p_idx);
-                                                //         let mut ls_crc = vec![];
-                                                //         while let Some(e_ref) = itr.next() {
-                                                //             let (crc,time) = e_ref.weight();
-                                                //             if *time > ctt.have_time {
-                                                //                 ls_crc.push((crc,ctt.did));
-                                                //             }
-                                                //             else{
-                                                //                 ls_remove.push(e_ref.id());
-                                                //             }
-                                                //         }
-
-                                                //         let ls_crc = ls_crc.into_iter().map(|(x,_)|*x).collect::<Vec<_>>();
-                                                //         ctt.wants.extend_from_slice(&ls_crc);
-                                                //     }
-
-                                                // }
-                                                // for rm in ls_remove {
-                                                //     self.cache.remove_edge(rm);
-                                                // }
-                                                // contacts.retain(|c| !c.wants.is_empty());
-                                                // if !contacts.is_empty() {
-
-                                                //     let sync_msg = Message::ContactsSync { did, contacts };
-                                                //     let local_id = self.local_peer_id();
-                                                //     let mut digest = crc64fast::Digest::new();
-                                                //     digest.write(&local_id.to_bytes());
-                                                //     let my_id = digest.sum64();
-                                                //     if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
-                                                //         let topic = TopicHash::from_raw(format!(
-                                                //             "luffa_chat",
-                                                //         ));
-                                                //         let e = luffa_rpc_types::Event::new(from_id, &sync_msg, None, my_id);
-                                                //         if let Err(e) = go.publish(topic, e.encode().unwrap()) {
-                                                //             tracing::warn!("{e:?}");
-                                                //         }
-                                                //     }
-                                                // }
                                             }
                                             Message::StatusSync {
                                                 to,
@@ -1022,12 +979,17 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                                 t,
                                                                 ConnectionEdge::Remote(time),
                                                             );
+                                                            tracing::warn!("remote connection {from_id} -> {to}");
                                                         }
                                                         _ => {
                                                             if let Some(i) =
                                                                 self.connections.find_edge(f, t)
                                                             {
                                                                 self.connections.remove_edge(i);
+                                                                tracing::warn!("remote disconnection {from_id} -> {to}");
+                                                            }
+                                                            else{
+                                                                tracing::error!("remote disconnection {from_id} -> {to}");
                                                             }
                                                         }
                                                     }
@@ -1853,9 +1815,6 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             },
             RpcMessage::Chat(response_channel, data) => {
                 let mut peers = {
-                    while self.swarm.behaviour().peer_manager.peers() == 0 {
-                        
-                    }
                     self.swarm
                         .connected_peers()
                         .map(

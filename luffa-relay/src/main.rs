@@ -282,7 +282,7 @@ async fn main() -> Result<()> {
                         from_id: my_id,
                         status: AppStatus::Connected,
                     };
-                    let event = luffa_rpc_types::Event::new(0, &msg, None, u_id);
+                    let event = luffa_rpc_types::Event::new(0, &msg, None, my_id);
                     let event = event.encode().unwrap();
                     let client = client.clone();
                     tokio::spawn(async move{
@@ -309,7 +309,7 @@ async fn main() -> Result<()> {
                         from_id: my_id,
                         status: AppStatus::Disconnected,
                     };
-                    let event = luffa_rpc_types::Event::new(0, &msg, None, u_id);
+                    let event = luffa_rpc_types::Event::new(0, &msg, None, my_id);
                     let event = event.encode().unwrap();
                     let client = client.clone();
                     tokio::spawn(async move{
