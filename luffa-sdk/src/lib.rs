@@ -20,6 +20,7 @@ use luffa_store::{Config as StoreConfig, Store};
 use luffa_util::{luffa_config_path, make_config};
 use serde::{Deserialize, Serialize};
 use sled::Db;
+use tokio::time::Instant;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
@@ -1844,19 +1845,19 @@ impl Client {
         let db_t = db.clone();
         while let Some((to, msg_data, from_id,channel,k)) = receiver.recv().await {
             if to == u64::MAX {
-                channel.send(Err(anyhow::anyhow!("exit"))).unwrap();
+                channel.send(Ok(u64::MAX)).unwrap();
                 break;
             }
             let msg = serde_cbor::from_slice::<Message>(&msg_data).unwrap();
             // let is_exchane = msg.is_contacts_exchange();
             
             let evt = if msg.need_encrypt() {
-                tracing::info!("----------encrypt------{}",to);
                 match k {
-                   Some(key)=>{
-                       Some(Event::new(to, &msg, Some(key), from_id))
-                   }
-                   None=>{
+                    Some(key)=>{
+                        Some(Event::new(to, &msg, Some(key), from_id))
+                    }
+                    None=>{
+                       tracing::warn!("----------encrypt------from [{}] to [{}]",from_id,to);
                        match Self::get_aes_key_from_contacts(db.clone(), to) {
                            Some(key) => Some(Event::new(to, &msg, Some(key), from_id)),
                            None => { 
@@ -1907,12 +1908,21 @@ impl Client {
                         let client = client.clone();
                         let data = data.clone();
                         tokio::spawn(async move {
-                            match client.chat_request(bytes::Bytes::from(data)).await {
-                                Ok(res)=>{
-                                    tracing::error!("{res:?}");
-                                }
-                                Err(e)=>{
-                                    tracing::error!("{e:?}");
+                            let retry = Instant::now();
+                            loop {
+                                match client.chat_request(bytes::Bytes::from(data.clone())).await {
+                                    Ok(res)=>{
+                                        tracing::debug!("{res:?}");
+                                        break;
+                                    }
+                                    Err(e)=>{
+                                        tracing::error!("{e:?}");
+                                        if retry.elapsed().as_secs() > 60 {
+                                            tracing::error!("failed: retry 60s");
+                                            break;
+                                        } 
+                                        tokio::time::sleep(Duration::from_millis(500)).await;
+                                    }
                                 }
                             }
                         });
@@ -1931,7 +1941,7 @@ impl Client {
                         } = e;
                         // assert!(nonce.is_some(),"nonce is none!!");
                         if let Err(e) = channel.send(Ok(crc)) {
-                            tracing::warn!("channel send failed");
+                            tracing::warn!("channel send failed {e:?}");
                         }
                         let db_t = db_t.clone();
                         let schema_t = schema_t.clone();
@@ -2452,7 +2462,7 @@ impl Client {
                             tracing::error!("decrypt failed:>>>>");
                         }
                     } else {
-                        tracing::error!("invalid msg");
+                        tracing::error!("invalid msg {im:?}");
                     }
                 }
             }
