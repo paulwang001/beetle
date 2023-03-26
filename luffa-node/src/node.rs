@@ -1304,6 +1304,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 } else {
                                     let f = self.get_contacts_index(from_id);
                                     let t = self.get_contacts_index(to);
+                                    // put record(crc,data)
+                                    if let Err(e) = self
+                                    .put_to_dht(crc, request.data().to_vec())
+                                    {
+                                        tracing::error!("{e:?}");
+                                    }
                                     // check that from and to was in any contacts ?
                                     if let Some(idx) = self.contacts.find_edge(f, t) {
                                         self.save_cache_crc(crc, from_id, to);
@@ -1379,13 +1385,6 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             tracing::warn!("{e:?}");
                                                         }
                                                     }
-                                                    // put record(crc,data)
-                                                    if let Err(e) = self
-                                                        .put_to_dht(crc, request.data().to_vec())
-                                                    {
-                                                        tracing::error!("{e:?}");
-                                                    }
-
                                                     let msg = Message::Feedback {
                                                         crc,
                                                         status:
@@ -1477,12 +1476,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 }
                                             }
 
-                                            // put record(crc,data)
-                                            if let Err(e) =
-                                                self.put_to_dht(crc, request.data().to_vec())
-                                            {
-                                                tracing::error!("{e:?}");
-                                            }
+                                            // // put record(crc,data)
+                                            // if let Err(e) =
+                                            //     self.put_to_dht(crc, request.data().to_vec())
+                                            // {
+                                            //     tracing::error!("{e:?}");
+                                            // }
                                             let msg = Message::Feedback {
                                                 crc,
                                                 status: luffa_rpc_types::FeedbackStatus::Reach,
@@ -1566,11 +1565,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 }
                                                 // put record(crc,data)
                                                 self.save_cache_crc(crc, from_id, to);
-                                                if let Err(e) =
-                                                    self.put_to_dht(crc, request.data().to_vec())
-                                                {
-                                                    tracing::error!("{e:?}");
-                                                }
+                                                // if let Err(e) =
+                                                //     self.put_to_dht(crc, request.data().to_vec())
+                                                // {
+                                                //     tracing::error!("{e:?}");
+                                                // }
                                                 let msg = Message::Feedback {
                                                     crc,
                                                     status: luffa_rpc_types::FeedbackStatus::Reach,
