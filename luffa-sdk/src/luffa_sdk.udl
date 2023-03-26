@@ -38,6 +38,10 @@ enum ClientError {
   "FromUtf8Error",
   "TantivyError",
   "SerdeCborError",
+  "IoError",
+  "AnyhowError",
+  "MultibaseError",
+  "MultihashError",
   "CustomError"
 };
 
@@ -46,50 +50,63 @@ callback interface Callback {
 };
 
 interface Client {
-    
+
     constructor();
-
+    [Throws=ClientError]
     string? show_code();
-
+    [Throws=ClientError]
     u64 contacts_offer([ByRef] string code);
+    [Throws=ClientError]
     string gen_offer_code(u64 did);
+    [Throws=ClientError]
     u64 contacts_group_create(sequence<u64> invitee,string? tag);
+    [Throws=ClientError]
     u64 contacts_anwser(u64 to,u64 offer_id,sequence<u8> secret_key);
-
+    [Throws=ClientError]
     u64 send_msg(u64 to,sequence<u8> msg);
 
+    [Throws=ClientError]
     u64? get_local_id();
-
+    [Throws=ClientError]
     string? get_peer_id();
-
+    [Throws=ClientError]
     string? get_did();
-
+    [Throws=ClientError]
     sequence<string> relay_list();
+    [Throws=ClientError]
     sequence<string> keys();
 
+    [Throws=ClientError]
     boolean connect(string peer_id);
 
+    [Throws=ClientError]
     void init(string? cfg_path);
+
+    [Throws=ClientError]
     u64 start(string? key,string? tag,Callback cb);
 
+    [Throws=ClientError]
     void stop();
 
+    [Throws=ClientError]
     void save_session(u64 did,string tag,u64? read,u64? reach,string? msg);
 
     [Throws=ClientError]
     sequence<ChatSession> session_list(u32 top);
+    [Throws=ClientError]
     sequence<ChatSession> session_page(u32 page,u32 size);
 
 
     [Throws=ClientError]
     sequence<ContactsView> contacts_list(u8 c_type);
 
-    [Throws=ClientError] 
+    [Throws=ClientError]
     sequence<string> search(string query,u32 offet,u32 limit);
 
     [Throws=ClientError]
     sequence<u64> recent_messages(u64 did,u32 top);
 
+    [Throws=ClientError]
     string? find_contacts_tag(u64 did);
 
     [Throws=ClientError]
@@ -97,12 +114,16 @@ interface Client {
     [Throws=ClientError]
     EventMeta? read_msg_with_meta(u64 did,u64 crc);
 
+    [Throws=ClientError]
     string? gen_key([ByRef] string password,boolean store);
 
+    [Throws=ClientError]
     string? import_key([ByRef] string phrase,[ByRef] string password);
 
+    [Throws=ClientError]
     boolean save_key([ByRef] string name);
 
+    [Throws=ClientError]
     boolean remove_key([ByRef] string name);
 
     [Throws=ClientError]

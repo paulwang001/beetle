@@ -1,6 +1,5 @@
 #[macro_use]
 extern crate lazy_static;
-use aes_gcm::aead::generic_array::GenericArray;
 use aes_gcm::{
     aead::{KeyInit, OsRng},
     Aes256Gcm, // Or `Aes128Gcm`
@@ -9,10 +8,10 @@ use anyhow::Context;
 use api::P2pClient;
 use futures::StreamExt;
 use libp2p::identity::PublicKey;
-use libp2p::PeerId;
+use libp2p::{multihash, PeerId};
 use libp2p::{gossipsub::TopicHash, identity::Keypair};
 use luffa_node::{
-    load_identity, DiskStorage, GossipsubEvent, KeyFilter, Keychain, NetworkEvent, Node, ENV_PREFIX,
+    DiskStorage, GossipsubEvent, KeyFilter, Keychain, NetworkEvent, Node, ENV_PREFIX,
 };
 use luffa_rpc_types::{
     message_from, message_to, ChatContent, Contacts, ContactsTypes, ContentData, FeedbackStatus,
@@ -41,10 +40,9 @@ use tantivy::collector::TopDocs;
 use tantivy::directory::{ManagedDirectory, MmapDirectory};
 use tantivy::query::QueryParser;
 use tantivy::Index;
-use tantivy::ReloadPolicy;
 use tantivy::{doc, DocAddress, Score};
 use tantivy::{schema::*, IndexWriter};
-use tokio::sync::oneshot::Sender as ShotSender;
+use tokio::sync::oneshot::{Sender as ShotSender};
 
 mod api;
 mod config;
@@ -94,6 +92,8 @@ pub struct EventMeta {
     pub msg: Vec<u8>,
 }
 
+pub type ClientResult<T> = anyhow::Result<T, ClientError>;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
     #[error("Contancts parse error")]
@@ -116,6 +116,14 @@ pub enum ClientError {
     TantivyError(#[from] tantivy::TantivyError),
     #[error(transparent)]
     SerdeCborError(#[from] serde_cbor::Error),
+    #[error(transparent)]
+    IoError(#[from] std::io::Error),
+    #[error(transparent)]
+    AnyhowError(#[from] anyhow::Error),
+    #[error(transparent)]
+    MultibaseError(#[from] multibase::Error),
+    #[error(transparent)]
+    MultihashError(#[from] multihash::Error),
     #[error("{0}")]
     CustomError(String),
 }
@@ -244,8 +252,8 @@ impl Client {
         }
     }
     /// show code
-    pub fn show_code(&self) -> Option<String> {
-        if let Some(uid) = self.get_did() {
+    pub fn show_code(&self) -> ClientResult<Option<String>> {
+        let res = if let Some(uid)= self.get_did()? {
             let s_key = Aes256Gcm::generate_key(&mut OsRng);
             let secret_key = s_key.to_vec();
             let mut digest = crc64fast::Digest::new();
@@ -253,21 +261,21 @@ impl Client {
             let offer_id = digest.sum64();
             tracing::warn!("gen offer id:{}", offer_id);
             self.save_contacts_offer(offer_id, secret_key.clone());
-            let my_id = self.get_local_id().unwrap();
-            let tag = self.find_contacts_tag(my_id).unwrap_or_default();
-            Some(format!(
-                "luffa://{}/{}/{}",
-                uid,
-                bs58::encode(secret_key).into_string(),
-                tag
-            ))
-        } else {
-            None
+            if let Some(my_id) = self.get_local_id()?{
+                let tag = self.find_contacts_tag(my_id)?.unwrap_or_default();
+                Some(format!("luffa://{}/{}/{}",uid,bs58::encode(secret_key).into_string(),tag))
+            } else {
+                None
+            }
         }
+        else{
+            None
+        };
+        Ok(res)
     }
 
     /// gen a new offer code for one did
-    pub fn gen_offer_code(&self, did: u64) -> String {
+    pub fn gen_offer_code(&self,did:u64) -> ClientResult<String> {
         let s_key = Aes256Gcm::generate_key(&mut OsRng);
         let secret_key = s_key.to_vec();
         let mut digest = crc64fast::Digest::new();
@@ -275,17 +283,12 @@ impl Client {
         let offer_id = digest.sum64();
         tracing::warn!("gen offer id:{}", offer_id);
         self.save_contacts_offer(offer_id, secret_key.clone());
-        let tag = self.find_contacts_tag(did).unwrap_or_default();
+        let tag = self.find_contacts_tag(did)?.unwrap_or_default();
         let g_id = bs58::encode(did.to_be_bytes()).into_string();
-        format!(
-            "luffa://{}/{}/{}",
-            g_id,
-            bs58::encode(secret_key).into_string(),
-            tag
-        )
+        Ok(format!("luffa://{}/{}/{}",g_id,bs58::encode(secret_key).into_string(),tag))
     }
-    ///Offer contacts
-    pub fn contacts_offer(&self, code: &String) -> u64 {
+    ///Offer contacts 
+    pub fn contacts_offer(&self,code:&String) -> ClientResult<u64>{
         let mut tmp = code.split('/');
         let _from_tag = tmp.next_back();
         let key = tmp.next_back();
@@ -295,8 +298,8 @@ impl Client {
         to.clone_from_slice(&bs58::decode(uid.unwrap()).into_vec().unwrap());
 
         let to = u64::from_be_bytes(to);
-        let my_id = self.get_local_id().unwrap();
-        let tag = self.find_contacts_tag(my_id);
+        let my_id = self.get_local_id()?.unwrap();
+        let tag = self.find_contacts_tag(my_id)?;
         let key = bs58::decode(secret_key).into_vec().unwrap();
 
         let mut digest = crc64fast::Digest::new();
@@ -320,8 +323,7 @@ impl Client {
                         tag,
                         offer_key.clone(),
                         luffa_rpc_types::ContactsTypes::Private,
-                    )
-                    .unwrap()
+                    ).unwrap()
                 });
                 token.unwrap()
             });
@@ -334,7 +336,7 @@ impl Client {
             }
         };
 
-        match self.send_to(to, msg, from_id, Some(key)).map_err(|e| {
+        let res = match self.send_to(to, msg, from_id,Some(key)).map_err(|e| {
             tracing::warn!("send_to failed:{e:?}");
             ClientError::SendFailed
         }) {
@@ -345,19 +347,22 @@ impl Client {
                 Self::save_to_tree(self.db.clone(), offer_id, &table, status, now);
                 crc
             }
-            Err(_) => 0,
-        }
+            Err(_)=>{
+                0
+            }
+        };
+        Ok(res)
     }
-    ///Offer group contacts
-    pub fn contacts_group_create(&self, invitee: Vec<u64>, tag: Option<String>) -> u64 {
-        let key_id = self.gen_key("", false).unwrap();
+    ///Offer group contacts 
+    pub fn contacts_group_create(&self,invitee:Vec<u64>,tag:Option<String>) ->ClientResult<u64>{
+        let key_id = self.gen_key("", false)?.unwrap();
         let g_key = self.read_keypair(&key_id).unwrap();
         let g_id = bs58::decode(key_id).into_vec().unwrap();
         let mut buf = [0u8; 8];
         buf.clone_from_slice(&g_id[..8]);
         let g_id = u64::from_be_bytes(buf);
 
-        let my_id = self.get_local_id().unwrap();
+        let my_id = self.get_local_id()?.unwrap();
         // let tag = self.find_contacts_tag(my_id);
         let offer_key = Aes256Gcm::generate_key(&mut OsRng);
         let offer_key = offer_key.to_vec();
@@ -445,18 +450,20 @@ impl Client {
             });
         });
 
-        g_id
+        Ok(g_id)
+
     }
 
-    /// answer an offer and send it to from
-    pub fn contacts_anwser(&self, to: u64, offer_id: u64, secret_key: Vec<u8>) -> u64 {
+    /// answer an offer and send it to from 
+    pub fn contacts_anwser(&self, to:u64,offer_id: u64,secret_key:Vec<u8>) -> ClientResult<u64>{
         let offer_key = Self::get_offer_by_offer_id(self.db.clone(), offer_id);
 
-        let my_id = self.get_local_id().unwrap();
-        let comment = self.find_contacts_tag(my_id);
-        tracing::warn!("secret_key::: {}", secret_key.len());
-        let new_key = match self.get_secret_key(to) {
-            Some(key) => {
+        let my_id = self.get_local_id()?.unwrap();
+        let comment = self.find_contacts_tag(my_id)?;
+        tracing::warn!("secret_key::: {}",secret_key.len());
+        let new_key =
+        match self.get_secret_key(to) {
+            Some(key)=> {
                 tracing::warn!("contacts old s key");
                 key
             }
@@ -483,7 +490,7 @@ impl Client {
             }
         };
 
-        match self.send_to(to, msg, offer_id, offer_key).map_err(|e| {
+        let res = match self.send_to(to, msg, offer_id,offer_key).map_err(|e| {
             tracing::warn!("send_to failed:{e:?}");
             ClientError::SendFailed
         }) {
@@ -495,8 +502,11 @@ impl Client {
                 Self::update_session(self.db.clone(), to, None, None, None, None, now);
                 crc
             }
-            Err(_) => 0,
-        }
+            Err(_)=>{
+                0
+            }
+        };
+        Ok(res)
     }
 
     fn save_contacts(
@@ -618,8 +628,8 @@ impl Client {
     }
 
     /// Send msg to peer
-    pub fn send_msg(&self, to: u64, msg: Vec<u8>) -> u64 {
-        match message_from(msg) {
+    pub fn send_msg(&self, to: u64, msg: Vec<u8>) -> ClientResult<u64> {
+        let res = match message_from(msg) {
             Some(msg) => {
                 match self.send_to(to, msg, 0, None).map_err(|e| {
                     tracing::warn!("{e:?}");
@@ -630,14 +640,11 @@ impl Client {
                 }
             }
             None => 0,
-        }
+        };
+        Ok(res)
     }
 
-    pub fn recent_messages(
-        &self,
-        did: u64,
-        top: u32,
-    ) -> std::result::Result<Vec<u64>, ClientError> {
+    pub fn recent_messages(&self,did:u64,top:u32) -> ClientResult<Vec<u64>>{
         let mut msgs = vec![];
         let table = format!("message_{did}_time");
         let tree = self.db.open_tree(&table)?;
@@ -654,17 +661,11 @@ impl Client {
         }
         Ok(msgs)
     }
-    pub fn meta_msg(&self, data: &[u8]) -> std::result::Result<EventMeta, ClientError> {
-        let evt: Event = serde_cbor::from_slice(data)?;
-        let Event {
-            to,
-            event_time,
-            from_id,
-            msg,
-            ..
-        } = evt;
-        let (to_tag, _) = Self::get_contacts_tag(self.db.clone(), to).unwrap_or_default();
-        let (from_tag, _) = Self::get_contacts_tag(self.db.clone(), from_id).unwrap_or_default();
+    pub fn meta_msg(&self,data:&[u8])-> ClientResult<EventMeta> {
+        let evt:Event = serde_cbor::from_slice(data)?;
+        let Event { to, event_time, from_id,msg, .. } = evt;
+        let (to_tag,_) = Self::get_contacts_tag(self.db.clone(), to).unwrap_or_default();
+        let (from_tag,_) = Self::get_contacts_tag(self.db.clone(), from_id).unwrap_or_default();
 
         Ok(EventMeta {
             from_id,
@@ -676,11 +677,7 @@ impl Client {
         })
     }
 
-    pub fn read_msg_with_meta(
-        &self,
-        did: u64,
-        crc: u64,
-    ) -> std::result::Result<Option<EventMeta>, ClientError> {
+    pub fn read_msg_with_meta(&self,did:u64,crc:u64) -> ClientResult<Option<EventMeta>> {
         let table = format!("message_{did}");
 
         let tree = self.db.open_tree(&table)?;
@@ -707,41 +704,31 @@ impl Client {
                         Message::decrypt(bytes::Bytes::from(msg.clone()), key, nonce.clone())
                     {
                         match &msg {
-                            Message::Chat { content } => match content {
-                                ChatContent::Send { data } => {
-                                    let (_title, body) = Self::extra_content(data);
-                                    if Self::update_session(
-                                        db_t.clone(),
-                                        did,
-                                        None,
-                                        Some(crc),
-                                        None,
-                                        Some(body),
-                                        now,
-                                    ) {
-                                        let msg = Message::Chat {
-                                            content: ChatContent::Feedback {
-                                                crc,
-                                                status: luffa_rpc_types::FeedbackStatus::Read,
-                                            },
-                                        };
-                                        if let Some(msg) = message_to(msg) {
-                                            if self.send_msg(did, msg) == 0 {
-                                                tracing::warn!("send read feedback failed");
+                            Message::Chat { content }=>{
+                                match content {
+                                    ChatContent::Send { data }=>{
+                                        let (_title,body) = Self::extra_content(data);
+                                        if Self::update_session(db_t.clone(), did, None, Some(crc), None, Some(body), now) {
+                                            let msg = Message::Chat { content: ChatContent::Feedback { crc, status: luffa_rpc_types::FeedbackStatus::Read } };
+                                            if let Some(msg) = message_to(msg) {
+
+                                                if self.send_msg(did, msg).unwrap() == 0 {
+                                                    tracing::warn!("send read feedback failed");
+                                                }
                                             }
                                         }
                                     }
-                                }
-                                _ => {
-                                    Self::update_session(
-                                        db_t.clone(),
-                                        did,
-                                        None,
-                                        Some(crc),
-                                        None,
-                                        None,
-                                        now,
-                                    );
+                                    _ => {
+                                        Self::update_session(
+                                            db_t.clone(),
+                                            did,
+                                            None,
+                                            Some(crc),
+                                            None,
+                                            None,
+                                            now,
+                                        );
+                                    }
                                 }
                             },
                             _ => {
@@ -833,15 +820,18 @@ impl Client {
         Ok(ok)
     }
 
-    pub fn get_local_id(&self) -> Option<u64> {
-        RUNTIME.block_on(async { self.local_id().await })
+    pub fn get_local_id(&self) -> ClientResult<Option<u64>> {
+        let res = RUNTIME.block_on(async {
+            self.local_id().await
+        });
+        Ok(res)
     }
 
-    pub fn get_did(&self) -> Option<String> {
-        self.get_local_id().map(|d| {
+    pub fn get_did(&self) -> ClientResult<Option<String>> {
+        Ok(self.get_local_id().unwrap().map(|d| {
             // hex::encode(d.to_be_bytes())
             bs58::encode(d.to_be_bytes()).into_string()
-        })
+        }))
     }
 
     async fn local_id(&self) -> Option<u64> {
@@ -855,9 +845,9 @@ impl Client {
         })
     }
 
-    pub fn session_list(&self, top: u32) -> std::result::Result<Vec<ChatSession>, ClientError> {
+    pub fn session_list(&self, top: u32) -> ClientResult<Vec<ChatSession>> {
         let tree = self.db.open_tree(KVDB_CHAT_SESSION_TREE)?;
-        let my_id = self.get_local_id().unwrap_or_default();
+        let my_id = self.get_local_id().unwrap().unwrap_or_default();
         let mut chats = tree
             .into_iter()
             .map(|item| {
@@ -876,9 +866,9 @@ impl Client {
     }
 
     /// pagination session
-    pub fn session_page(&self, page: u32, size: u32) -> Vec<ChatSession> {
-        let my_id = self.get_local_id().unwrap_or_default();
-        Self::db_session_list(self.db.clone(), page, size, my_id).unwrap_or_default()
+    pub fn session_page(&self,page:u32,size:u32) -> ClientResult<Vec<ChatSession>> {
+        let my_id = self.get_local_id()?.unwrap_or_default();
+        Ok(Self::db_session_list(self.db.clone(), page, size,my_id).unwrap_or_default())
     }
     /// pagination session list
     fn db_session_list(
@@ -904,35 +894,31 @@ impl Client {
         page.map(|ls| ls.into_iter().map(|s| s.clone()).collect::<Vec<_>>())
     }
 
-    pub fn keys(&self) -> Vec<String> {
+    pub fn keys(&self) -> ClientResult<Vec<String>>{
         // luffa_node::Keychain::keys(&self)
         RUNTIME.block_on(async {
             let keychain = self.key.read().await;
-            let chain = keychain.as_ref().unwrap();
-            let keys = chain
-                .keys()
-                .map(|m| match m {
-                    Ok(k) => Some(k.name()),
-                    Err(_e) => None,
-                })
-                .collect::<Vec<_>>()
-                .await;
+            if let Some(chain) = keychain.as_ref(){
+                let keys  = chain.keys().map(|m| match m {
+                    Ok(k)=> Some(k.name()),
+                    Err(_e)=> None
+                }).collect::<Vec<_>>().await;
 
-            keys.into_iter()
-                .filter(|x| x.is_some())
-                .map(|x| x.unwrap())
-                .collect::<Vec<_>>()
+                Ok(keys.into_iter().filter(|x| x.is_some()).map(|x| x.unwrap()).collect::<Vec<_>>())
+            } else {
+                Err(ClientError::CustomError("get keychain fail".to_string()))
+            }
         })
     }
 
-    pub fn gen_key(&self, password: &str, store: bool) -> Option<String> {
+    pub fn gen_key(&self,password:&str,store:bool) -> ClientResult<Option<String>>{
         RUNTIME.block_on(async {
             let mut keychain = self.key.write().await;
             let chain = keychain.as_mut().unwrap();
             match chain.create_ed25519_key_bip39(password, store).await {
                 Ok((phrase, key)) => {
                     let name = key.name();
-                    let tree = self.db.open_tree("bip39_keys").unwrap();
+                    let tree = self.db.open_tree("bip39_keys")?;
                     match key {
                         luffa_node::Keypair::Ed25519(v) => {
                             let data = v.to_bytes();
@@ -944,71 +930,96 @@ impl Client {
                         }
                         _ => {}
                     }
-                    Some(name)
+                    Ok(Some(name))
                 }
-                Err(e) => None,
+                Err(e)=>{
+                    Err(ClientError::CustomError(e.to_string()))
+                }
             }
         })
     }
-    pub fn import_key(&self, phrase: &str, password: &str) -> Option<String> {
+    pub fn import_key(&self,phrase:&str,password:&str) -> ClientResult<Option<String>>{
         RUNTIME.block_on(async {
             let mut keychain = self.key.write().await;
-            let chain = keychain.as_mut().unwrap();
-            match chain.create_ed25519_key_from_seed(phrase, password).await {
-                Ok(key) => {
-                    let name = key.name();
-                    Some(name)
+            if let Some(chain) = keychain.as_mut(){
+                match chain.create_ed25519_key_from_seed(phrase,password).await {
+                    Ok(key)=>{
+                        let name = key.name();
+                        Ok(Some(name))
+                    }
+                    Err(e)=>{
+                        Err(ClientError::CustomError(e.to_string()))
+                    }
                 }
-                Err(e) => None,
+            } else {
+                Err(ClientError::CustomError("get keychain fail".to_string()))
             }
         })
     }
 
-    pub fn save_key(&self, name: &str) -> bool {
+    pub fn save_key(&self,name:&str) -> ClientResult<bool> {
         RUNTIME.block_on(async {
-            let tree = self.db.open_tree("bip39_keys").unwrap();
-            let k_pair = format!("pair-{}", name);
+            let tree = self.db.open_tree("bip39_keys")?;
+            let k_pair = format!("pair-{}",name);
             if let Ok(Some(k_val)) = tree.get(k_pair) {
                 let mut keychain = self.key.write().await;
-                let chain = keychain.as_mut().unwrap();
-                let mut data = [0u8; 64];
-                data.clone_from_slice(&k_val);
-                if let Ok(k) = chain.create_ed25519_key_from_bytes(&data).await {
-                    true
+                if let Some(chain) = keychain.as_mut(){
+                    let mut data = [0u8;64];
+                    data.clone_from_slice(&k_val);
+                    if let Ok(k) = chain.create_ed25519_key_from_bytes(&data).await {
+                        Ok(true)
+                    }
+                    else {
+                        Ok(false)
+                    }
                 } else {
-                    false
+                    Err(ClientError::CustomError("get keychain fail".to_string()))
                 }
-            } else {
-                true
+            }
+            else {
+                Ok(true)
             }
         })
     }
 
-    pub fn remove_key(&self, name: &str) -> bool {
+    pub fn remove_key(&self,name:&str) -> ClientResult<bool> {
         RUNTIME.block_on(async {
-            let tree = self.db.open_tree("bip39_keys").unwrap();
-            let k_pair = format!("pair-{}", name);
+            let tree = self.db.open_tree("bip39_keys")?;
+            let k_pair = format!("pair-{}",name);
             if let Ok(Some(_)) = tree.remove(k_pair) {
                 let mut keychain = self.key.write().await;
-                let chain = keychain.as_mut().unwrap();
-                match chain.remove(name).await {
-                    Ok(_) => true,
-                    Err(_e) => false,
+                if let Some(chain) = keychain.as_mut() {
+                    match chain.remove(name).await {
+                        Ok(_)=>{
+                            let path = luffa_util::luffa_data_path(KVDB_CONTACTS_FILE).unwrap();
+                            let idx_path = luffa_util::luffa_data_path(LUFFA_CONTENT).unwrap();
+                            std::fs::remove_dir(path)?;
+                            std::fs::remove_dir(idx_path)?;
+                            Ok(true)
+                        }
+                        Err(e)=>{
+                            Err(ClientError::CustomError(e.to_string()))
+                        }
+                    }
+                } else {
+                    Err(ClientError::CustomError("get keychain fail".to_string()))
                 }
-            } else {
-                false
+            }
+            else {
+                Ok(false)
             }
         })
     }
-    pub fn read_key_phrase(&self, name: &str) -> std::result::Result<Option<String>, ClientError> {
+    pub fn read_key_phrase(&self,name:&str) -> ClientResult<Option<String>> {
+
         let tree = self.db.open_tree("bip39_keys")?;
-        let k_pair = format!("phrase-{}", name);
-        let ok = if let Ok(Some(k_val)) = tree.get(k_pair) {
-            Some(String::from_utf8(k_val.to_vec())?)
-        } else {
-            None
-        };
-        Ok(ok)
+        let k_pair = format!("phrase-{}",name);
+        if let Ok(Some(k_val)) = tree.get(k_pair) {
+            Ok(Some(String::from_utf8(k_val.to_vec())?))
+        }
+        else {
+            Ok(None)
+        }
     }
     pub fn read_keypair(&self, id: &str) -> Option<Keypair> {
         let tree = self.db.open_tree("bip39_keys").unwrap();
@@ -1026,16 +1037,10 @@ impl Client {
         None
     }
 
-    pub fn save_session(
-        &self,
-        did: u64,
-        tag: String,
-        read: Option<u64>,
-        reach: Option<u64>,
-        msg: Option<String>,
-    ) {
+    pub fn save_session(&self, did: u64, tag: String,read:Option<u64>,reach:Option<u64>,msg:Option<String>) -> ClientResult<()> {
         let now = Utc::now().timestamp_millis() as u64;
         Self::update_session(self.db.clone(), did, Some(tag), read, reach, msg, now);
+        Ok(())
     }
     pub fn update_session(
         db: Arc<Db>,
@@ -1147,8 +1152,8 @@ impl Client {
             _ => None,
         }
     }
-    pub fn find_contacts_tag(&self, did: u64) -> Option<String> {
-        Self::get_contacts_tag(self.db.clone(), did).map(|(v, _)| v)
+    pub fn find_contacts_tag(&self,did: u64)-> ClientResult<Option<String>> {
+        Ok(Self::get_contacts_tag(self.db.clone(), did).map(|(v,_)| v))
     }
 
     pub fn update_contacts_tag(&self, did: u64, tag: String) {
@@ -1192,11 +1197,11 @@ impl Client {
         tree.flush().unwrap();
     }
 
-    pub fn contacts_list(&self, c_type: u8) -> std::result::Result<Vec<ContactsView>, ClientError> {
+    pub fn contacts_list(&self, c_type: u8) -> ClientResult<Vec<ContactsView>> {
         let tree = self.db.open_tree(KVDB_CONTACTS_TREE)?;
         let tag_prefix = format!("TAG-");
         let itr = tree.scan_prefix(tag_prefix);
-        let my_id = self.get_local_id();
+        let my_id = self.get_local_id()?;
         let mut res = vec![];
         for item in itr {
             let (k, v) = item.unwrap();
@@ -1222,7 +1227,7 @@ impl Client {
         query: String,
         offset: u32,
         limit: u32,
-    ) -> std::result::Result<Vec<String>, ClientError> {
+    ) -> ClientResult<Vec<String>> {
         let reader = self.idx.reader()?;
         let schema = self.idx.schema();
         let searcher = reader.searcher();
@@ -1263,21 +1268,23 @@ impl Client {
         Ok(docs)
     }
 
-    pub fn get_peer_id(&self) -> Option<String> {
-        RUNTIME.block_on(async {
+    pub fn get_peer_id(&self) -> ClientResult<Option<String>> {
+
+        let res = RUNTIME.block_on(async {
             let filter = self.filter.read().await;
             let key = self.get_keypair(filter.clone()).await;
             key.map(|k| {
                 let data = PeerId::from_public_key(&k.public()).to_bytes();
                 bs58::encode(data).into_string()
             })
-        })
+        });
+        Ok(res)
     }
 
-    pub fn relay_list(&self) -> Vec<String> {
+    pub fn relay_list(&self) -> ClientResult<Vec<String>> {
         let client = self.client.clone();
 
-        RUNTIME.block_on(async {
+        let list = RUNTIME.block_on(async {
             let c = client.read().await;
 
             if let Some(cc) = c.as_ref() {
@@ -1296,14 +1303,15 @@ impl Client {
             }
             tracing::warn!("client is None");
             vec![]
-        })
+        });
+        Ok(list)
     }
 
-    pub fn connect(&self, peer_id: String) -> bool {
-        let (_, data) = multibase::decode(&peer_id).unwrap();
-        let peer_id = PeerId::from_bytes(&data).unwrap();
+    pub fn connect(&self, peer_id: String) -> ClientResult<bool> {
+        let (_, data) = multibase::decode(&peer_id)?;
+        let peer_id = PeerId::from_bytes(&data)?;
         let client = self.client.clone();
-        RUNTIME.block_on(async {
+        let ok = RUNTIME.block_on(async {
             let c = client.read().await;
             if let Some(cc) = c.as_ref() {
                 match cc.connect(peer_id, vec![]).await {
@@ -1313,11 +1321,13 @@ impl Client {
             } else {
                 false
             }
-        })
+        });
+        Ok(ok)
     }
 
-    pub fn stop(&self) {
-        if let Err(e) = self.send_to(
+    pub fn stop(&self) -> ClientResult<()>{
+        if let Err(e) = 
+        self.send_to(
             u64::MAX,
             Message::StatusSync {
                 to: 0,
@@ -1329,8 +1339,9 @@ impl Client {
         ) {
             tracing::warn!("{e:?}");
         }
+        Ok(())
     }
-    pub fn init(&self, cfg_path: Option<String>) {
+    pub fn init(&self,cfg_path: Option<String>) -> ClientResult<()> {
         #[cfg(unix)]
         {
             match luffa_util::increase_fd_limit() {
@@ -1339,7 +1350,7 @@ impl Client {
             }
         }
         let args: HashMap<String, String> = HashMap::new();
-        let dft_path = luffa_config_path(CONFIG_FILE_NAME).unwrap();
+        let dft_path = luffa_config_path(CONFIG_FILE_NAME)?;
         let cfg_path = cfg_path.map(|p| PathBuf::from(p));
         let cfg_path = cfg_path.unwrap_or(dft_path);
         println!("cfg_path:{cfg_path:?}");
@@ -1354,8 +1365,7 @@ impl Client {
             ENV_PREFIX,
             // map of present command line arguments
             args,
-        )
-        .unwrap();
+        )?;
 
         println!("config--->{config:?}");
         config.metrics = luffa_node::metrics::metrics_config_with_compile_time_info(config.metrics);
@@ -1368,8 +1378,7 @@ impl Client {
                 .expect("failed to initialize metrics");
 
             let kc = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone())
-                .await
-                .unwrap();
+                .await.unwrap();
 
             let mut m_key = self.key.write().await;
             *m_key = Some(kc.clone());
@@ -1379,9 +1388,11 @@ impl Client {
             let store = start_store(store_config).await.unwrap();
             *m_store = Some(Arc::new(store));
         });
+        Ok(())
     }
 
-    pub fn start(&self, key: Option<String>, tag: Option<String>, cb: Box<dyn Callback>) -> u64 {
+    pub fn start(&self,key:Option<String>,tag:Option<String>, cb: Box<dyn Callback>) -> ClientResult<u64>
+    {
         // let keychain = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone());
         let filter = key.map(|k| KeyFilter::Name(format!("{}", k)));
         let (kc, config) = RUNTIME.block_on(async {
@@ -1392,9 +1403,9 @@ impl Client {
             (m_key.clone().unwrap(), cfg.clone().unwrap())
         });
 
-        let my_id = self.get_local_id();
+        let my_id = self.get_local_id()?;
         if my_id.is_none() {
-            return 0;
+            return Ok(0);
         }
         let my_id = my_id.unwrap();
         self.update_contacts_tag(my_id, tag.unwrap_or(format!("{}", my_id)).to_string());
@@ -1416,7 +1427,7 @@ impl Client {
                 debug!("run exit!....");
             });
         });
-        my_id
+        Ok(my_id)
     }
 
     /// run

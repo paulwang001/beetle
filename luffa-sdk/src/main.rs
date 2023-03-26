@@ -62,6 +62,8 @@ fn main() -> Result<()> {
     // let msg_t = msg.clone();
     tracing::info!("starting");
     client.init(cfg_path);
+
+    tracing::info!("started.");
     let client = Arc::new(client);
     let client_t = client.clone();
     let client_ctl = client.clone();
@@ -74,13 +76,13 @@ fn main() -> Result<()> {
             let process = Process::new(tx.clone());                                                                                                                                  
             let msg = Box::new(process);
             
-            client_ctl.start(None,tag.clone(),msg);
+            client_ctl.start(None,tag.clone(),msg).unwrap();
             tracing::warn!("started.");
             if timer.elapsed().as_secs() < 120 {
                 std::thread::sleep(std::time::Duration::from_secs(120));
             }
             timer = std::time::Instant::now();
-            client_ctl.stop();
+            client_ctl.stop().unwrap();
             tracing::warn!("stoped.");
             std::thread::sleep(std::time::Duration::from_secs(5));
         }
@@ -92,13 +94,15 @@ fn main() -> Result<()> {
         loop {
             std::thread::sleep(Duration::from_secs(60));
             let peer_id = client.get_local_id();
+            std::thread::sleep(Duration::from_secs(1));
+            let peer_id = client.get_local_id().unwrap().unwrap();
             tracing::warn!("peer id: {peer_id:?}");
             let peers = client.relay_list();
             // client.send_msg(to, msg)
             tracing::debug!("{:?}", peers);
             match to_id {
                 Some(to_id)=>{
-                    match client.find_contacts_tag(to_id) {
+                    match client.find_contacts_tag(to_id).unwrap() {
                         Some(tag) => {
                             x += 1;
                             tracing::warn!("is man");
@@ -116,17 +120,17 @@ fn main() -> Result<()> {
                                 },
                             };
                             let msg = message_to(msg).unwrap();
-                            let crc = client.send_msg(to_id, msg);
+                            let crc = client.send_msg(to_id, msg).unwrap();
                             tracing::info!("send seccess {crc}");
                                                     }
                         None => {
                             match scan.as_ref() {
                                 Some(scan)=>{
-                                    client.contacts_offer(scan);
+                                    client.contacts_offer(scan).unwrap();
                                 }
                                 None=>{
                                     if code.is_empty() {
-                                        code = client.show_code().unwrap();
+                                        code = client.show_code().unwrap().unwrap();
                                     }
                                     tracing::warn!("scan me :{}",code);
                                 }
@@ -149,7 +153,7 @@ fn main() -> Result<()> {
                         }
                         None=>{
                             if code.is_empty() {
-                                code = client.show_code().unwrap();
+                                code = client.show_code().unwrap().unwrap();
                             }
                             tracing::warn!("scan me :{}",code);
                             let list = client.contacts_list(0).unwrap();
@@ -243,7 +247,7 @@ fn main() -> Result<()> {
                         },
                     };
                     let msg = message_to(msg).unwrap();
-                    let crc = client_t.send_msg(to, msg);
+                    let crc = client_t.send_msg(to, msg).unwrap();
                     tracing::warn!("Answer from:offer_id {} ,did {}  ==> {}", from_id, to,crc);
                 }
             },
