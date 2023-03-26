@@ -73,7 +73,7 @@ fn main() -> Result<()> {
 
     }
 
-    client.start(None,tag,msg);
+    client.start(None,tag,msg)?;
     tracing::info!("started.");
     let client = Arc::new(client);
     let client_t = client.clone();
@@ -82,7 +82,7 @@ fn main() -> Result<()> {
         let mut code = String::new();
         loop {
             std::thread::sleep(Duration::from_secs(1));
-            let peer_id = client.get_local_id();
+            let peer_id = client.get_local_id()?;
             tracing::warn!("peer id: {peer_id:?}");
             let peers = client.relay_list();
             // client.send_msg(to, msg)
