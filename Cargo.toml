@@ -124,6 +124,9 @@ unsigned-varint = "0.7.1"
 which = "4.3.0"
 zeroize = "1.4"
 chrono = "0.4.23"
+identicon-rs = "4.0.1"
+calamine = "0.19.1"
+image = "0.24.0"
 
 
 
