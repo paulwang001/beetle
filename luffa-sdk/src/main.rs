@@ -61,7 +61,7 @@ fn main() -> Result<()> {
     let cfg_path = args.cfg;
     // let msg_t = msg.clone();
     tracing::info!("starting");
-    client.init(cfg_path);
+    client.init(cfg_path).unwrap();
 
     tracing::info!("started.");
     let client = Arc::new(client);
