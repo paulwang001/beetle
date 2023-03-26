@@ -1284,7 +1284,8 @@ impl Client {
         })
     }
 
-    pub fn stop(&self) {
+    pub fn stop(&self){
+        if let Err(e) = 
         self.send_to(
             u64::MAX,
             Message::StatusSync {
@@ -1294,7 +1295,10 @@ impl Client {
             },
             u64::MAX,
             None,
-        ).unwrap();
+        )
+        {
+            tracing::warn!("{e:?}");
+        }
     }
     pub fn init(&self,cfg_path: Option<String>) {
         #[cfg(unix)]

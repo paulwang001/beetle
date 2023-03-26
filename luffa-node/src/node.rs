@@ -853,6 +853,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 }
                             }
                         }
+                          //TODO only in my contacts or my white list of relay
+                        if let Some(bitswap) = self.swarm.behaviour().bitswap.as_ref() {
+                            bitswap.on_identify(&peer_id, &info.protocols);
+                        }
                     } else {
                         //TODO only in my contacts
                         for protocol in &info.protocols {
@@ -871,10 +875,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         }
                     }
 
-                    //TODO only in my contacts or my white list of relay
-                    if let Some(bitswap) = self.swarm.behaviour().bitswap.as_ref() {
-                        bitswap.on_identify(&peer_id, &info.protocols);
-                    }
+                  
 
                     self.swarm
                         .behaviour_mut()
@@ -1853,9 +1854,6 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             },
             RpcMessage::Chat(response_channel, data) => {
                 let mut peers = {
-                    while self.swarm.behaviour().peer_manager.peers() == 0 {
-                        
-                    }
                     self.swarm
                         .connected_peers()
                         .map(
