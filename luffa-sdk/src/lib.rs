@@ -653,61 +653,6 @@ impl Client {
         })
     }
 
-
-
-    pub fn read_msg(&self,did:u64,crc:u64) -> std::result::Result<Option<Vec<u8>>, ClientError> {
-        let table = format!("message_{did}");
-
-        let tree = self.db.open_tree(&table)?;
-        let db_t = self.db.clone();
-        let ok = match tree.get(crc.to_be_bytes()) {
-            Ok(v)=>{
-                v.map(|v| {
-                    let data = v.to_vec();
-                    let evt:Event = serde_cbor::from_slice(&data[..]).ok()?;
-                    let Event { to, event_time, crc, from_id, nonce, msg } = evt;
-                    let key = Self::get_aes_key_from_contacts(db_t.clone(), did);
-                    if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), key, nonce) {
-                        match &msg {
-                            Message::Chat { content }=>{
-                                match content {
-                                    ChatContent::Send { data }=>{
-                                        let (title,body) = Self::extra_content(data);
-                                        if let Some((_tag,tp)) = Self::get_contacts_tag(db_t.clone(), to) {
-                                            let did = if tp == 0 {from_id} else {to};
-                                            let now = Utc::now().timestamp_millis() as u64;
-                                            Self::update_session(db_t, did, None, Some(crc), None, Some(body), now);
-                                        }
-                                    }
-                                    _=>{
-
-                                    }
-                                }
-                            }
-                            _=>{
-
-                            }
-                        }
-                        match message_to(msg) {
-                            Some(d)=> Some(d),
-                            None=>{
-                                None
-                            }
-                        }
-                    }
-                    else{
-                        tracing::error!("c read msg: decrypt failed>>>");
-                        None
-                    }
-                }).unwrap_or_default()
-            }
-            Err(e)=>{
-                error!("{e:?}");
-                None
-            }
-        };
-        Ok(ok)
-    }
     pub fn read_msg_with_meta(&self,did:u64,crc:u64) -> std::result::Result<Option<EventMeta>, ClientError> {
         let table = format!("message_{did}");
 
