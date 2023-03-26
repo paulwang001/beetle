@@ -609,7 +609,9 @@ impl Client {
                 let tx = sender.read().await;
                 let tx = tx.as_ref().unwrap();
                 let (req, res) = tokio::sync::oneshot::channel();
-                tx.send((to, msg, from_id, req, key)).await.unwrap();
+                if let Err(e) = tx.send((to, msg, from_id, req, key)).await {
+                    return Err(anyhow::anyhow!("{e:?}"));
+                }
                 match res.await {
                     Ok(r) => r,
                     Err(e) => {
@@ -796,7 +798,7 @@ impl Client {
                                 None
                             }
                         } else {
-                            error!("read msg 2: decrypt failed>>>");
+                            error!("read msg 2: decrypt failed>>>did={did} to={to} from:{from_id}");
                             None
                         }
                     }
@@ -1072,6 +1074,7 @@ impl Client {
                         last_msg,
                     } = chat;
                     let mut last_time = last_time;
+                    let mut last_msg = last_msg;
                     if let Some(c) = reach {
                         if !reach_crc.contains(&c) {
                             reach_crc.push(c);
@@ -1082,7 +1085,12 @@ impl Client {
                         reach_crc.retain(|x| *x != *c);
                         // assert!(reach_crc.contains(c),"reach contain :{c}");
                         // warn!("reach_crc:{reach_crc:?}   {c}");
-                        last_time = event_time;
+                        if first_read {
+                            if msg.is_some() {
+                                last_time = event_time;
+                            }
+                            last_msg = msg.clone().unwrap_or(last_msg);
+                        }
                     }
                     let upd = ChatSession {
                         did,
@@ -1091,7 +1099,7 @@ impl Client {
                         tag: n_tag.clone().unwrap_or(tag),
                         read_crc: read.unwrap_or(read_crc),
                         reach_crc,
-                        last_msg: msg.clone().unwrap_or(last_msg),
+                        last_msg,
                     };
                     Some(serde_cbor::to_vec(&upd).unwrap())
                 }
@@ -1480,7 +1488,7 @@ impl Client {
                 };
                 if peers.len() < 1 && timer.elapsed().as_millis() < 30000 {
                     tracing::warn!("waiting....{}", 1 - peers.len());
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     continue;
                 }
                 timer = std::time::Instant::now();
@@ -1979,6 +1987,9 @@ impl Client {
                                         break;
                                     }
                                     Err(e) => {
+                                        if e.to_string().to_lowercase().starts_with("channel") {
+                                            break;
+                                        }
                                         tracing::error!("{e:?}");
                                         if retry.elapsed().as_secs() > 60 {
                                             tracing::error!("failed: retry 60s");
@@ -2387,7 +2398,7 @@ impl Client {
                                 );
                             }
                             Message::ContactsExchange { exchange } => {
-                                tracing::error!("exchange should not to here!!!");
+                                // tracing::error!("exchange should not to here!!!");
                                 let token = match exchange {
                                     ContactsEvent::Answer { token } => {
                                         tracing::error!("G> Answer>>>>>{token:?}");

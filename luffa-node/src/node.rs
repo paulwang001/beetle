@@ -493,14 +493,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         }
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self,event))]
     fn handle_swarm_event(
         &mut self,
         event: SwarmEvent<
             <NodeBehaviour as NetworkBehaviour>::OutEvent,
             <<<NodeBehaviour as NetworkBehaviour>::ConnectionHandler as IntoConnectionHandler>::Handler as ConnectionHandler>::Error>,
     ) -> Result<()> {
-        // libp2p_metrics().record(&event);
+        libp2p_metrics().record(&event);
         // tracing::info!("swarm>>>> {event:?}");
         match event {
             // outbound events
@@ -539,8 +539,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             SwarmEvent::ConnectionClosed {
                 peer_id,
                 num_established,
+                endpoint,
                 ..
             } => {
+                if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+                    chat.remove_address(&peer_id, endpoint.get_remote_address());
+                }
                 if num_established == 0 {
                     let local_id = self.local_peer_id();
                     let mut digest = crc64fast::Digest::new();
@@ -563,7 +567,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
                     self.emit_network_event(NetworkEvent::PeerDisconnected(peer_id));
                 }
-
+                
                 debug!("ConnectionClosed: {:}", peer_id);
                 Ok(())
             }
@@ -599,7 +603,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         }
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self,event))]
     fn handle_node_event(&mut self, event: Event) -> Result<()> {
         // tracing::info!("node>>> {event:?}");
         let local_id = self.local_peer_id();
@@ -912,6 +916,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         .behaviour_mut()
                         .peer_manager
                         .inject_ping(e.peer, ping);
+                }
+                else{
+                    tracing::warn!("ping>>>>{e:?}");
                 }
             }
             Event::Relay(e) => {
@@ -1789,7 +1796,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         Ok(None)
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self,message))]
     fn handle_rpc_message(&mut self, message: RpcMessage) -> Result<bool> {
         // Inbound messages
         match message {
@@ -1829,7 +1836,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         )
                         .filter(|item| item.is_some())
                         .map(|item| item.unwrap())
-                        .filter(|(_p, info, _)| info.agent_version.contains("Relay"))
+                        // .filter(|(_p, info, _)| info.agent_version.contains("Relay"))
                         .collect::<Vec<_>>()
                 };
                 
