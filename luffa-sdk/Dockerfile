@@ -5,11 +5,13 @@ COPY . .
 #RUN apt-get install curl git gcc g++ libssl-dev pkg-config -y
 #RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 COPY config $HOME/.cargo/config
-RUN cargo build --release
+RUN cargo build --bin luffa-client --release
 
 FROM debian
 ENV PARAMS=luffa.client.toml
 WORKDIR /app
+COPY --from=builder /app/luffa.client.toml .
+COPY --from=builder /app/luffa.client.toml2 .
 COPY --from=builder /app/luffa.client.toml .
 COPY --from=builder /app/target/release/main .
 COPY --from=builder /app/cfg cfg

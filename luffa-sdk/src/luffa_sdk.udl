@@ -88,9 +88,6 @@ interface Client {
     sequence<string> search(string query,u32 offet,u32 limit);
 
     [Throws=ClientError]
-    sequence<u8>? read_msg(u64 did,u64 crc);
-
-    [Throws=ClientError]
     sequence<u64> recent_messages(u64 did,u32 top);
 
     string? find_contacts_tag(u64 did);

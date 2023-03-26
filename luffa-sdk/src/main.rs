@@ -1,4 +1,4 @@
-#![feature(poll_ready)]
+// #![feature(poll_ready)]
 use anyhow::Result;
 use bip39::{Mnemonic, MnemonicType, Language};
 use futures::pending;
@@ -143,16 +143,16 @@ fn main() -> Result<()> {
                                 code = client.show_code().unwrap();
                             }
                             tracing::warn!("scan me :{}",code);
-                            let list = client.contacts_list(0);
+                            let list = client.contacts_list(0).unwrap();
                             for c in list {
                                 
-                                let ls = client.recent_messages(c.did, 10);
+                                let ls = client.recent_messages(c.did, 10).unwrap();
                                 {
                                     let msg_len = ls.len();
                                     tracing::warn!(" contacts>> {:?} msg_len>>{}", c,msg_len);
             
                                     for crc in ls {
-                                        if let Some(meta) = client.read_msg_with_meta(c.did, crc) {
+                                        if let Some(meta) = client.read_msg_with_meta(c.did, crc).unwrap() {
                                             let msg = message_from(meta.msg).unwrap();
                                             match &msg {
                                                 Message::Chat { content }=>{
@@ -172,13 +172,13 @@ fn main() -> Result<()> {
                                     }
                                 }
                             }
-                            let list = client.session_list(10);
+                            let list = client.session_list(10).unwrap();
                             tracing::warn!(" session>> {:?}", list);
             
                             for s in list {
                                 let did = s.did;
                                 for crc in s.reach_crc {
-                                    if let Some(meta) = client.read_msg_with_meta(did, crc) {
+                                    if let Some(meta) = client.read_msg_with_meta(did, crc).unwrap() {
                                         tracing::warn!("{:?}",meta);
                                     }
                                 }
@@ -238,22 +238,22 @@ fn main() -> Result<()> {
                 }
             },
             _ => {
-                let list = client_t.contacts_list(0);
+                let list = client_t.contacts_list(0)?;
                 tracing::debug!("contacts>> {:?}", list);
-                let list = client_t.session_list(10);
+                let list = client_t.session_list(10)?;
 
                 tracing::debug!(" session>> {:?}", list);
 
                 for s in list {
                     let did = s.did;
                     for crc in s.reach_crc {
-                        if let Some(meta) = client_t.read_msg_with_meta(did, crc) {
+                        if let Some(meta) = client_t.read_msg_with_meta(did, crc)? {
                             tracing::debug!("{:?}",meta);
                         }
                     }
                 }
 
-                match client_t.read_msg_with_meta(from_id, crc) {
+                match client_t.read_msg_with_meta(from_id, crc)? {
                     Some(meta)=>{
 
                     }
