@@ -43,9 +43,13 @@ use tantivy::Index;
 use tantivy::{doc, DocAddress, Score};
 use tantivy::{schema::*, IndexWriter};
 use tokio::sync::oneshot::{Sender as ShotSender};
+use luffa_util::exitcodes::OK;
+use crate::avatar_nickname::avatar::generate_avatar;
+use crate::avatar_nickname::nickname::generate_nickname;
 
 mod api;
 mod config;
+pub mod avatar_nickname;
 
 use crate::config::Config;
 
@@ -287,6 +291,7 @@ impl Client {
         let g_id = bs58::encode(did.to_be_bytes()).into_string();
         Ok(format!("luffa://{}/{}/{}",g_id,bs58::encode(secret_key).into_string(),tag))
     }
+
     ///Offer contacts 
     pub fn contacts_offer(&self,code:&String) -> ClientResult<u64>{
         let mut tmp = code.split('/');
@@ -1428,6 +1433,14 @@ impl Client {
             });
         });
         Ok(my_id)
+    }
+
+    pub fn generate_nickname(&self, peer_id: &str) -> ClientResult<String> {
+        Ok(generate_nickname(peer_id))
+    }
+
+    pub fn generate_avatar(&self, peer_id: &str) -> ClientResult<String> {
+        Ok(generate_avatar(peer_id))
     }
 
     /// run
