@@ -64,7 +64,7 @@ fn main() -> Result<()> {
     // let msg_t = msg.clone();
     tracing::info!("starting");
     client.init(cfg_path);
-    let keys = client.keys().len();
+    let keys = client.keys()?.len();
     tracing::info!("keys  >>{keys}.");
     for x in 0..100 {
         
@@ -82,14 +82,14 @@ fn main() -> Result<()> {
         let mut code = String::new();
         loop {
             std::thread::sleep(Duration::from_secs(1));
-            let peer_id = client.get_local_id()?;
+            let peer_id = client.get_local_id().unwrap();
             tracing::warn!("peer id: {peer_id:?}");
             let peers = client.relay_list();
             // client.send_msg(to, msg)
             tracing::debug!("{:?}", peers);
             match to_id {
                 Some(to_id)=>{
-                    match client.find_contacts_tag(to_id) {
+                    match client.find_contacts_tag(to_id).unwrap() {
                         Some(tag) => {
                             x += 1;
                             tracing::warn!("is man");
@@ -107,7 +107,7 @@ fn main() -> Result<()> {
                                 },
                             };
                             let msg = message_to(msg).unwrap();
-                            let crc = client.send_msg(to_id, msg);
+                            let crc = client.send_msg(to_id, msg).unwrap();
                             tracing::info!("send seccess {crc}");
                                                     }
                         None => {
@@ -117,7 +117,7 @@ fn main() -> Result<()> {
                                 }
                                 None=>{
                                     if code.is_empty() {
-                                        code = client.show_code().unwrap();
+                                        code = client.show_code().unwrap().unwrap();
                                     }
                                     tracing::warn!("scan me :{}",code);
                                 }
@@ -140,7 +140,7 @@ fn main() -> Result<()> {
                         }
                         None=>{
                             if code.is_empty() {
-                                code = client.show_code().unwrap();
+                                code = client.show_code().unwrap().unwrap();
                             }
                             tracing::warn!("scan me :{}",code);
                             let list = client.contacts_list(0).unwrap();
@@ -233,7 +233,7 @@ fn main() -> Result<()> {
                         },
                     };
                     let msg = message_to(msg).unwrap();
-                    let crc = client_t.send_msg(to, msg);
+                    let crc = client_t.send_msg(to, msg)?;
                     tracing::warn!("Answer from:offer_id {} ,did {}  ==> {}", from_id, to,crc);
                 }
             },
