@@ -1062,8 +1062,24 @@ impl Client {
             return false;
         }
         let tree = db.open_tree(KVDB_CHAT_SESSION_TREE).unwrap();
-        // assert!(did > 0,"update_session:{msg:?} ,{tag:?}");
         let mut first_read = false;
+        if let Some(r) = read.as_ref() {
+            let tree_read = db.open_tree(format!("{}_read",KVDB_CHAT_SESSION_TREE)).unwrap();
+            match tree_read.get(r.to_be_bytes()) {
+                Ok(Some(_last)) =>{
+
+                }
+                _=>{
+                    first_read = true;
+                    if let Err(e) = tree_read.insert(r.to_be_bytes(), event_time.to_be_bytes().to_vec()) {
+                        tracing::error!("{e:?}");
+                    }
+                }
+            }
+        }
+         
+        // assert!(did > 0,"update_session:{msg:?} ,{tag:?}");
+
         let n_tag = tag.clone();
         if let Err(e) = tree.fetch_and_update(did.to_be_bytes(), |old| {
             match old {
@@ -1078,24 +1094,20 @@ impl Client {
                         mut reach_crc,
                         last_msg,
                     } = chat;
-                    let mut last_time = last_time;
                     let mut last_msg = last_msg;
+                    let mut last_time = last_time;
                     if let Some(c) = reach {
                         if !reach_crc.contains(&c) {
                             reach_crc.push(c);
                         }
                     }
                     if let Some(c) = read.as_ref() {
-                        first_read = reach_crc.contains(c);
                         reach_crc.retain(|x| *x != *c);
-                        // assert!(reach_crc.contains(c),"reach contain :{c}");
-                        // warn!("reach_crc:{reach_crc:?}   {c}");
-                        if first_read {
-                            if msg.is_some() {
-                                last_time = event_time;
-                            }
-                            last_msg = msg.clone().unwrap_or(last_msg);
+                        if first_read && msg.is_some() {
+                            last_msg = msg.clone().unwrap();
+                            last_time = event_time;
                         }
+                        
                     }
                     let upd = ChatSession {
                         did,
@@ -1119,14 +1131,23 @@ impl Client {
                     if let Some(c) = reach {
                         reach_crc.push(c);
                     }
+                    let mut last_msg = String::new();
+                    let last_time = event_time;
+                    if let Some(c) = read.as_ref() {
+                        reach_crc.retain(|x| *x != *c);
+                        if first_read && msg.is_some() {
+                            last_msg = msg.clone().unwrap();
+                        }
+                        
+                    }
                     let upd = ChatSession {
                         did,
                         session_type: tp,
-                        last_time: event_time,
+                        last_time,
                         tag: n_tag.clone().unwrap_or(dft),
                         read_crc: read.unwrap_or_default(),
                         reach_crc,
-                        last_msg: msg.clone().unwrap_or_default(),
+                        last_msg,
                     };
                     Some(serde_cbor::to_vec(&upd).unwrap())
                 }
@@ -2492,6 +2513,7 @@ impl Client {
                             _ => {}
                         }
                         tokio::spawn(async move {
+
                             cb.on_message(crc, from_id, to, msg_data);
                         });
                     } else {
@@ -2594,6 +2616,7 @@ impl Client {
                                     tracing::error!("from offer msg {msg:?}");
                                 }
                             }
+                            
                             tokio::spawn(async move {
                                 cb.on_message(crc, from_id, to, msg_data);
                             });

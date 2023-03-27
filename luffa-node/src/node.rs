@@ -846,6 +846,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             Event::Identify(e) => {
                 libp2p_metrics().record(&*e);
                 debug!("tick: identify {:?}", e);
+                //self.agent
                 if let IdentifyEvent::Received { peer_id, info } = *e {
                     if info.agent_version.contains("Relay") {
                         // TODO: only in my relay white list;
@@ -853,11 +854,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             let p = protocol.as_bytes();
                             if p == kad::protocol::DEFAULT_PROTO_NAME {
                                 for addr in &info.listen_addrs {
-                                    if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
-                                        kad.add_address(&peer_id, addr.clone());
-                                    }
-                                    if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-                                        chat.add_address(&peer_id, addr.clone());
+                                    if !addr.to_string().contains("127.0.0.1") {
+                                        if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
+                                            kad.add_address(&peer_id, addr.clone());
+                                        }
+                                        if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+                                            chat.add_address(&peer_id, addr.clone());
+                                        }
+                                        
                                     }
                                 }
                             }
@@ -866,9 +870,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         if let Some(bitswap) = self.swarm.behaviour().bitswap.as_ref() {
                             bitswap.on_identify(&peer_id, &info.protocols);
                         }
+                        tracing::info!("peer info: {info:?}");
                     } else {
                         //TODO only in my contacts
+                        tracing::warn!("peer info: {info:?}");
                         for protocol in &info.protocols {
+
                             let p = protocol.as_bytes();
                             if p == b"/libp2p/autonat/1.0.0" {
                                 // TODO: expose protocol name on `libp2p::autonat`.

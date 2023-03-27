@@ -81,8 +81,8 @@ fn main() -> Result<()> {
             
             client_ctl.start(None,tag.clone(),msg).unwrap();
             tracing::warn!("started.");
-            if timer.elapsed().as_secs() < 240 {
-                std::thread::sleep(std::time::Duration::from_secs(240));
+            if timer.elapsed().as_secs() < 120 {
+                std::thread::sleep(std::time::Duration::from_secs(120));
             }
             timer = std::time::Instant::now();
             client_ctl.stop().unwrap();
@@ -156,7 +156,8 @@ fn main() -> Result<()> {
                             if code.is_empty() {
                                 code = client.show_code().unwrap().unwrap();
                             }
-                            tracing::warn!("scan me :{}",code);
+                            let relays = client.relay_list().unwrap();
+                            tracing::warn!("scan me :{}  --->>{:?}",code,relays);
                             let list = client.contacts_list(1).unwrap();
                             for c in list {
                                 
