@@ -46,7 +46,6 @@ use tokio::sync::oneshot::{Sender as ShotSender};
 use luffa_util::exitcodes::OK;
 use crate::avatar_nickname::avatar::generate_avatar;
 use crate::avatar_nickname::nickname::generate_nickname;
-use crate::ClientError::CustomError;
 
 mod api;
 mod config;
@@ -820,7 +819,7 @@ impl Client {
             }
             Err(e) => {
                 error!("{e:?}");
-                return Err(CustomError(e.to_string()))
+                None
             }
         };
         Ok(ok)
@@ -1344,7 +1343,6 @@ impl Client {
             None,
         ) {
             tracing::warn!("{e:?}");
-            return Err(ClientError::CustomError(e.to_string()))
         }
         Ok(())
     }
@@ -1353,11 +1351,7 @@ impl Client {
         {
             match luffa_util::increase_fd_limit() {
                 Ok(soft) => tracing::debug!("NOFILE limit: soft = {}", soft),
-                Err(err) => {
-                    let err = format!("Error increasing NOFILE limit: {err}");
-                    tracing::error!("{err}");
-                    return Err(CustomError(err));
-                }
+                Err(err) => tracing::error!("Error increasing NOFILE limit: {}", err),
             }
         }
         let args: HashMap<String, String> = HashMap::new();
