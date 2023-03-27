@@ -4,7 +4,7 @@ use bip39::{Mnemonic, MnemonicType, Language};
 use futures::pending;
 use libp2p::PeerId;
 use libp2p::identity::PublicKey;
-use luffa_rpc_types::{message_to, ChatContent, ContactsEvent, ContactsToken, Message, RtcAction, message_from, AppStatus};
+use luffa_rpc_types::{message_to, ChatContent, ContactsEvent, ContactsToken, Message, RtcAction, message_from, AppStatus, ContactsTypes};
 use luffa_sdk::{Callback, Client};
 use std::future::{Future, IntoFuture};
 use std::sync::mpsc::sync_channel;
@@ -26,6 +26,8 @@ pub struct Args {
     to: Option<u64>,
     #[clap(long)]
     scan: Option<String>,
+    #[clap(long)]
+    group: Option<String>,
     #[clap(long)]
     pub cfg: Option<String>,
     #[clap(long)]
@@ -70,6 +72,7 @@ fn main() -> Result<()> {
     let to_id = args.to;
     let scan = args.scan;
     let tag = args.tag;
+    let group = args.group;
 
     std::thread::spawn(move || {
         loop {
@@ -91,10 +94,9 @@ fn main() -> Result<()> {
     std::thread::spawn(move || {
         let mut x = 0;
         let mut code = String::new();
+        let mut group_id = 0; 
         loop {
-            std::thread::sleep(Duration::from_secs(60));
-            let peer_id = client.get_local_id();
-            std::thread::sleep(Duration::from_secs(1));
+            std::thread::sleep(Duration::from_secs(10));
             let peer_id = client.get_local_id().unwrap().unwrap();
             tracing::warn!("peer id: {peer_id:?}");
             let peers = client.relay_list();
@@ -149,20 +151,20 @@ fn main() -> Result<()> {
                     match scan.as_ref() {
                         Some(scan)=>{
                             let crc = client.contacts_offer(scan);
-
                         }
                         None=>{
                             if code.is_empty() {
                                 code = client.show_code().unwrap().unwrap();
                             }
-                            tracing::warn!("scan me :{}",code);
-                            let list = client.contacts_list(0).unwrap();
+                            let relays = client.relay_list().unwrap();
+                            tracing::warn!("scan me :{}  --->>{:?}",code,relays);
+                            let list = client.contacts_list(1).unwrap();
                             for c in list {
                                 
                                 let ls = client.recent_messages(c.did, 10).unwrap();
                                 {
                                     let msg_len = ls.len();
-                                    tracing::warn!(" contacts>> {:?} msg_len>>{}", c,msg_len);
+                                    tracing::info!(" contacts>> {:?} msg_len>>{}", c,msg_len);
             
                                     for crc in ls {
                                         if let Some(meta) = client.read_msg_with_meta(c.did, crc).unwrap() {
@@ -186,18 +188,37 @@ fn main() -> Result<()> {
                                 }
                             }
                             let list = client.session_list(10).unwrap();
-                            tracing::warn!(" session>> {:?}", list);
+                            tracing::info!(" session>> {:?}", list);
             
                             for s in list {
                                 let did = s.did;
                                 for crc in s.reach_crc {
                                     if let Some(meta) = client.read_msg_with_meta(did, crc).unwrap() {
-                                        tracing::warn!("{:?}",meta);
+                                        tracing::info!("{:?}",meta);
                                     }
                                 }
                             }
                         }
                     }
+                }
+            }
+            match group.as_ref() {
+                Some(gp)=>{
+                    if group_id == 0 {
+                        let invitee = gp.split(',').map(|id| id.parse::<u64>().unwrap()).collect::<Vec<_>>();
+                        match client.contacts_group_create(invitee, Some(format!("Hello"))) {
+                            Ok(g_id) => {
+                                group_id = g_id;
+                                tracing::error!("create group sucess: {group_id}");
+                            }
+                            Err(e)=>{
+                                tracing::error!("create group failed: {e:?}");
+                            }
+                        }
+                    }
+                }
+                None=>{
+
                 }
             }
         }
@@ -220,14 +241,17 @@ fn main() -> Result<()> {
             Message::ContactsExchange { exchange } => match exchange {
                 ContactsEvent::Offer { token } => {
                     let ContactsToken { public_key, create_at, sign, secret_key, contacts_type, comment } = token;
-                    let pk = PublicKey::from_protobuf_encoding(public_key).unwrap();
-                    let peer = PeerId::from_public_key(&pk);
-                    let mut digest = crc64fast::Digest::new();
-                    digest.write(&peer.to_bytes());
-                    let to = digest.sum64();
-                    let crc =
-                    client_t
-                    .contacts_anwser(to, from_id,secret_key.clone());
+                    if contacts_type == &ContactsTypes::Private {
+
+                        let pk = PublicKey::from_protobuf_encoding(public_key).unwrap();
+                        let peer = PeerId::from_public_key(&pk);
+                        let mut digest = crc64fast::Digest::new();
+                        digest.write(&peer.to_bytes());
+                        let to = digest.sum64();
+                        let crc =
+                        client_t
+                        .contacts_anwser(to, from_id,secret_key.clone());
+                    }
             }
             ContactsEvent::Answer { token } => {
                     let ContactsToken { public_key, create_at, sign, secret_key, contacts_type, comment } = token;
@@ -256,7 +280,7 @@ fn main() -> Result<()> {
                 tracing::debug!("contacts>> {:?}", list);
                 let list = client_t.session_list(10)?;
 
-                tracing::debug!(" session>> {:?}", list);
+                tracing::warn!(" session>> {:?}", list);
 
                 for s in list {
                     let did = s.did;
