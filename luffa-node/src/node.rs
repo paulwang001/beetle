@@ -891,7 +891,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     tracing::error!("{e:?}");
                                 }
                             }
-                            else if add_addr.clone().to_string().contains("/p2p-circuit/p2p/") {
+                            else {
                                 if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
                                     tracing::warn!("chat client>>>>[{peer_id:?}] {add_addr:?}");
                                     chat.add_address(&peer_id, addr.clone());
@@ -906,11 +906,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             let p = protocol.as_bytes();
                             if p == kad::protocol::DEFAULT_PROTO_NAME {
                                 for addr in &info.listen_addrs {
-                                    let add_addr = addr.clone();
-                                    if add_addr.clone().to_string().contains("/p2p/") {
-                                        if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
-                                            kad.add_address(&peer_id, addr.clone());
-                                        }
+                                    if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
+                                        kad.add_address(&peer_id, addr.clone());
                                     }
                                 }
                             }
