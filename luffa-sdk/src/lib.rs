@@ -1776,16 +1776,22 @@ impl Client {
                                                                             Self::set_contacts_have_time(db_tt.clone(), did,event_time);
                                                                             let data =
                                                                                 data.to_vec();
-                                                                            Self::process_event(
+                                                                            if !Self::have_in_tree(
                                                                                 db_tt.clone(),
-                                                                                cb_t.clone(),
-                                                                                clt.clone(),
-                                                                                idx.clone(),
-                                                                                scm,
-                                                                                &data,
-                                                                                my_id,
-                                                                            )
-                                                                            .await;
+                                                                                crc,
+                                                                                &table,
+                                                                            ){
+                                                                                Self::process_event(
+                                                                                    db_tt.clone(),
+                                                                                    cb_t.clone(),
+                                                                                    clt.clone(),
+                                                                                    idx.clone(),
+                                                                                    scm,
+                                                                                    &data,
+                                                                                    my_id,
+                                                                                )
+                                                                                .await;
+                                                                            }
                                                                             if let Ok(im) = Event::decode_uncheck(&data) {
                                                                                 let Event {
                                                                                     msg,

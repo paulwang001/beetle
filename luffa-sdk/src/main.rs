@@ -71,22 +71,27 @@ fn main() -> Result<()> {
     let scan = args.scan;
     let tag = args.tag;
 
-    std::thread::spawn(move || {
-        loop {
-            let process = Process::new(tx.clone());                                                                                                                                  
-            let msg = Box::new(process);
+    let process = Process::new(tx.clone());                                                                                                                                  
+    let msg = Box::new(process);
+    
+    client_ctl.start(None,tag.clone(),msg).unwrap();
+    tracing::warn!("started.");
+    // std::thread::spawn(move || {
+    //     loop {
+    //         let process = Process::new(tx.clone());                                                                                                                                  
+    //         let msg = Box::new(process);
             
-            client_ctl.start(None,tag.clone(),msg).unwrap();
-            tracing::warn!("started.");
-            if timer.elapsed().as_secs() < 3600 {
-                std::thread::sleep(std::time::Duration::from_secs(3600));
-            }
-            timer = std::time::Instant::now();
-            client_ctl.stop().unwrap();
-            tracing::warn!("stoped.");
-            std::thread::sleep(std::time::Duration::from_secs(5));
-        }
-    });
+    //         client_ctl.start(None,tag.clone(),msg).unwrap();
+    //         tracing::warn!("started.");
+    //         if timer.elapsed().as_secs() < 3600 {
+    //             std::thread::sleep(std::time::Duration::from_secs(3600));
+    //         }
+    //         timer = std::time::Instant::now();
+    //         client_ctl.stop().unwrap();
+    //         tracing::warn!("stoped.");
+    //         std::thread::sleep(std::time::Duration::from_secs(5));
+    //     }
+    // });
 
     std::thread::spawn(move || {
         let mut x = 0;

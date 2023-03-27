@@ -134,4 +134,6 @@ interface Client {
     string generate_avatar([ByRef] string peer_id);
     [Throws=ClientError]
     string generate_nickname([ByRef] string peer_id);
+    [Throws=ClientError]
+    void remove_local_msg(u64 did,u64 crc);
 };

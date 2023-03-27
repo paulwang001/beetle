@@ -628,7 +628,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         }
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self,event))]
     fn handle_node_event(&mut self, event: Event) -> Result<()> {
         // tracing::info!("node>>> {event:?}");
         let local_id = self.local_peer_id();
