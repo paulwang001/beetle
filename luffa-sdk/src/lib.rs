@@ -827,6 +827,65 @@ impl Client {
         Ok(ok)
     }
 
+    pub fn remove_local_msg(&self, did: u64, crc: u64) -> ClientResult<()> {
+        let table = format!("message_{did}");
+
+        if !Self::have_in_tree(self.db.clone(), crc, &table) {
+            return Ok(());
+        }
+
+        let event_at = self.read_msg_with_meta(did, crc).ok().flatten().map(|x| x.event_time);
+
+        // 删除消息数据
+        Self::burn_from_tree(self.db.clone(), crc, table.clone());
+
+        let event_table = format!("{}_time", table);
+        if let Some(event_at) = event_at {
+            Self::burn_from_tree(self.db.clone(), event_at, event_table);
+        } else {
+            // {
+            //     let x = 232323344u64;
+            //     let bs = x.to_be_bytes();
+            //
+            //     let x2 = bs.into_iter().fold(0, |acc, x| acc << 8 | (x as u64));
+            //     assert_eq!(x, x2)
+            // }
+
+            // 查找消息，使用消息id
+            let tree = self.db.open_tree(event_table.clone())?;
+            let id = tree.iter().find(|item| {
+                item
+                    .as_ref()
+                    .ok()
+                    .and_then(|(_, v)| {
+                        let id = v.to_vec().into_iter().fold(0, |acc, x| acc << 8 | (x as u64));
+
+                        if id == crc {
+                            Some(())
+                        } else {
+                            None
+                        }
+                    })
+                    .is_some()
+            })
+                .map(|x| x.ok())
+                .flatten()
+                .map(|(key, _)| {
+                    key.to_vec().into_iter().fold(0, |acc, x| acc << 8 | (x as u64))
+                });
+
+
+            if let Some(id) = id {
+                Self::burn_from_tree(self.db.clone(), id, event_table)
+            } else {
+                warn!("not found event_time id with crc id: {crc}");
+            }
+        }
+
+        Ok(())
+    }
+
+
     pub fn get_local_id(&self) -> ClientResult<Option<u64>> {
         let res = RUNTIME.block_on(async {
             self.local_id().await
