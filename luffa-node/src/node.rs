@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 use std::num::NonZeroUsize;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -215,6 +216,34 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         for addr in &libp2p_config.listening_multiaddrs {
             Swarm::listen_on(&mut swarm, addr.clone())?;
             listen_addrs.push(addr.clone());
+        }
+        let local_peer_id = swarm.local_peer_id().to_string();
+        let is_client = match agent.as_ref() {
+            Some(a)=>{
+                !a.contains("Relay")
+            }
+            _=> true
+        };
+        for multiaddr in &libp2p_config.bootstrap_peers {
+            // TODO: move parsing into config
+            let mut addr = multiaddr.to_owned();
+            let add_addr = addr.clone();
+            if let Some(Protocol::P2p(mh)) = addr.pop() {
+                let peer_id = PeerId::from_multihash(mh).unwrap();
+                tracing::warn!("add boot>> {:?}  {:?}",peer_id,addr);
+                if !libp2p_config.kademlia {
+                    swarm.dial(addr)?;
+                }
+                if is_client{
+                    let l_addr = format!("{}/p2p-circuit/p2p/{}",add_addr.clone().to_string(),local_peer_id);
+                    tracing::info!("{l_addr}");
+                    let on_addr = Multiaddr::from_str(&l_addr).unwrap();
+                    Swarm::listen_on(&mut swarm, on_addr.clone())?;
+                    listen_addrs.push(on_addr.clone());
+                }
+            } else {
+                tracing::warn!("Could not parse bootstrap addr {}", multiaddr);
+            }
         }
         let cache = DiGraph::<u64, (u64, u64)>::new();
         let connections = UnGraph::<u64, ConnectionEdge>::with_capacity(1024, 1024);
@@ -845,23 +874,47 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             }
             Event::Identify(e) => {
                 libp2p_metrics().record(&*e);
-                debug!("tick: identify {:?}", e);
-                //self.agent
+                // tracing::warn!("tick: identify {:?}", e);
+                let local_peer_id = local_id.to_string();
+                let is_client = match self.agent.as_ref() {
+                    Some(ag)=>{
+                        !ag.contains("Relay")
+                    }
+                    None=> false
+                };
+
                 if let IdentifyEvent::Received { peer_id, info } = *e {
+                    for addr in &info.listen_addrs {
+                        let add_addr = addr.clone();
+                        if add_addr.clone().to_string().contains("quic-v1") /*|| add_addr.clone().to_string().contains("/tcp/")*/ {
+                            if is_client {
+                                let l_addr = format!("{}/p2p/{}/p2p-circuit/p2p/{}",add_addr.clone().to_string(),peer_id,local_peer_id);
+                                tracing::warn!("{l_addr}");
+                                let on_addr = Multiaddr::from_str(&l_addr).unwrap();
+                                if let Err(e) = self.swarm.listen_on(on_addr) {
+                                    tracing::error!("{e:?}");
+                                }
+                            }
+                            else if add_addr.clone().to_string().contains("/p2p-circuit/p2p/") {
+                                if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+                                    tracing::warn!("chat client>>>>[{peer_id:?}] {add_addr:?}");
+                                    chat.add_address(&peer_id, addr.clone());
+                                }
+                            }
+                        }
+
+                    }
                     if info.agent_version.contains("Relay") {
                         // TODO: only in my relay white list;
                         for protocol in &info.protocols {
                             let p = protocol.as_bytes();
                             if p == kad::protocol::DEFAULT_PROTO_NAME {
                                 for addr in &info.listen_addrs {
-                                    if !addr.to_string().contains("127.0.0.1") {
+                                    let add_addr = addr.clone();
+                                    if add_addr.clone().to_string().contains("/p2p/") {
                                         if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
                                             kad.add_address(&peer_id, addr.clone());
                                         }
-                                        if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-                                            chat.add_address(&peer_id, addr.clone());
-                                        }
-                                        
                                     }
                                 }
                             }
@@ -874,6 +927,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     } else {
                         //TODO only in my contacts
                         tracing::warn!("peer info: {info:?}");
+                        // info.observed_addr
                         for protocol in &info.protocols {
 
                             let p = protocol.as_bytes();
@@ -891,12 +945,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         }
                     }
 
-                  
-
+                    tracing::warn!("identity>>> {peer_id} --> {info:?} ");
                     self.swarm
                         .behaviour_mut()
                         .peer_manager
-                        .inject_identify_info(peer_id, info.clone());
+                        .inject_identify_info(peer_id, Some(info.clone()));
+
 
                     if let Some(channels) = self.lookup_queries.remove(&peer_id) {
                         for chan in channels {
@@ -915,9 +969,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         }
                     }
                 }
+                
             }
             Event::Ping(e) => {
                 libp2p_metrics().record(&e);
+                tracing::info!("ping:{e:?}");
                 if let PingResult::Ok(ping) = e.result {
                     self.swarm
                         .behaviour_mut()
@@ -928,8 +984,81 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     tracing::warn!("ping>>>>{e:?}");
                 }
             }
-            Event::Relay(e) => {
-                libp2p_metrics().record(&e);
+            Event::Relay(event) => {
+                libp2p_metrics().record(&event);
+                tracing::info!("relay:{event:?}");
+                match event {
+                    libp2p::relay::v2::relay::Event::ReservationReqAccepted { src_peer_id, renewed } =>{
+                        let add_obs =
+                        match self.swarm.behaviour().peer_manager.info_for_peer(&src_peer_id) {
+                            Some(info) => {
+                                if let Some(last) = &info.last_info {
+                                    let obs = &last.observed_addr;
+                                    if obs.to_string().ends_with(&format!("{}",local_id)) {
+                                        Some(obs.clone())
+                                    }
+                                    else{
+                                        tracing::error!("peer info not found!{src_peer_id:?} >>>{obs:?}");
+                                        None
+                                    }
+                                }
+                                else{
+                                    tracing::error!("peer info not found!{src_peer_id:?}");
+                                    None
+                                }
+                            }
+                            None => {
+                                None
+                            }
+                        };
+                        if let Some(addr) = add_obs {
+                            let mut msg = None;
+                            if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+                    
+                                let l_addr = format!("{}/p2p-circuit/p2p/{}",addr.clone().to_string(),src_peer_id);
+                                    tracing::warn!("relay>>> {l_addr}");
+                                    let on_addr = Multiaddr::from_str(&l_addr).unwrap();
+                                tracing::warn!("relay>> chat client>>>>[{src_peer_id:?}] {on_addr:?}");
+                                chat.add_address(&src_peer_id, on_addr.clone());
+
+                               
+                                let mut digest = crc64fast::Digest::new();
+                                digest.write(&src_peer_id.to_bytes());
+                                let to_id = digest.sum64();
+                                let f = self.get_peer_index(my_id);
+                                let t = self.get_peer_index(to_id);
+                                // let time = Utc::now().timestamp_millis() as u64;
+                                tracing::warn!("local relay connection >> {my_id} --> {to_id}");
+                                self.connections
+                                    .update_edge(f, t, ConnectionEdge::Local(src_peer_id.clone()));
+                                msg = Some(luffa_rpc_types::Message::StatusSync {
+                                    to: to_id,
+                                    from_id: my_id,
+                                    status: AppStatus::Connected,
+                                });
+                            }
+                            if let Some(m) = msg {
+
+                                let event = luffa_rpc_types::Event::new(0, &m, None, my_id);
+                                let event = event.encode().unwrap();
+                                if let Some(go) =
+                                    self.swarm.behaviour_mut().gossipsub.as_mut()
+                                {
+                                    if let Err(e) = go.publish(
+                                        TopicHash::from_raw(TOPIC_STATUS),
+                                        event,
+                                    ) {
+                                        tracing::error!("{e:?}");
+                                    }
+                                }
+                            }
+
+                        }
+                    }
+                    _=>{
+
+                    }
+                }
             }
             Event::Dcutr(e) => {
                 libp2p_metrics().record(&e);
@@ -1827,18 +1956,20 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 _ => {}
             },
             RpcMessage::Chat(response_channel, data) => {
+                let peer_manager = &self.swarm.behaviour().peer_manager;
+                let manager = peer_manager.all_peers().into_iter().map(|p| p.clone()).collect::<Vec<_>>();
+
                 let mut peers = {
-                    self.swarm
-                        .connected_peers()
+                    manager.iter()
                         .map(
-                            |p| match self.swarm.behaviour().peer_manager.info_for_peer(p) {
+                            |p| match peer_manager.info_for_peer(p) {
                                 Some(pp) => match &pp.last_info {
                                     Some(info) => {
-                                        Some((p.clone(), info.clone(), pp.last_rtt.clone()))
+                                        Some((p.clone(), Some(info.clone()), pp.last_rtt.clone()))
                                     }
-                                    None => None,
+                                    None => Some((p.clone(), None, pp.last_rtt.clone())),
                                 },
-                                None => None,
+                                None => Some((p.clone(),None,None)),
                             },
                         )
                         .filter(|item| item.is_some())
@@ -1852,16 +1983,31 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     let b = b.unwrap_or(Duration::from_secs(5)).as_millis();
                     a.partial_cmp(&b).unwrap()
                 });
+                
+                
                 if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-                    if let Some((peer, _, _)) = peers.first() {
+                    if let Some((peer, _, ttl)) = peers.first() {
                         let req_id =
                             chat.send_request(peer, crate::behaviour::chat::Request(data.msg));
                         self.pending_request.insert(req_id, response_channel);
-                        tracing::info!("chat send. {:?}", req_id);
+                        if let Some((_,_,ttl2)) = peers.last() {
+                            tracing::info!("chat send fast relay ttl({ttl:?}) < ttl({ttl2:?}). {:?}", req_id);
+                        }
+                        else{
+                            tracing::info!("chat send fast relay ttl({ttl:?}). {:?}", req_id);
+                        }
+                        return Ok(false);
+                    }
+
+                    if let Some(dft_peer) = manager.first() {
+                        // let dft_peer = PeerId::from_str("12D3KooWEFUVBFL7g2Jtn4J9A49GvAY3D4y6iGjXU2Z7z8R62f8B").unwrap();
+                        let req_id =
+                            chat.send_request(&dft_peer, crate::behaviour::chat::Request(data.msg));
+                        self.pending_request.insert(req_id, response_channel);
+                        tracing::warn!("chat send to default ({dft_peer:?}). {:?}", req_id);
                         return Ok(false);
                     }
                 }
-
                 if let Err(_e) = response_channel.send(Err(anyhow!("not peers"))) {
                     tracing::warn!("channel response failed");
                 }

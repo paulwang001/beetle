@@ -1520,12 +1520,12 @@ impl Client {
                         continue;
                     }
                 };
-                if peers.len() < 1 && timer.elapsed().as_millis() < 30000 {
-                    tracing::warn!("waiting....{}", 1 - peers.len());
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    continue;
-                }
-                timer = std::time::Instant::now();
+                // if peers.len() < 1 && timer.elapsed().as_millis() < 30000 {
+                //     tracing::warn!("waiting....{}", 1 - peers.len());
+                //     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                //     continue;
+                // }
+                // timer = std::time::Instant::now();
 
                 if count % 30 == 1 {
                     tracing::warn!("subscribed all as client,status sync");

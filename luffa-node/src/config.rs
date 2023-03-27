@@ -17,7 +17,7 @@ pub const ENV_PREFIX: &str = "LUFFA_";
 /// Default bootstrap nodes
 ///
 pub const DEFAULT_BOOTSTRAP: &[&str] = &[
-    // "/ip4/182.140.244.159/udp/8899/quic-v1/p2p/12D3KooWEFUVBFL7g2Jtn4J9A49GvAY3D4y6iGjXU2Z7z8R62f8B",
+    "/ip4/182.140.244.159/udp/8899/quic-v1/p2p/12D3KooWEFUVBFL7g2Jtn4J9A49GvAY3D4y6iGjXU2Z7z8R62f8B",
     "/ip4/182.140.244.167/tcp/8866/p2p/12D3KooWFQ6ifytHCU6EC2qFFebm6UMzLQN3NWz3XwbzSTD5V1xT",
     "/ip4/182.140.244.156/tcp/8866/p2p/12D3KooWAvfMdfWBxu2Td8K9Cn1nsVRjAq3zfVBmMd7rgSv4Tcn1"
 ];
@@ -206,24 +206,25 @@ impl Default for Libp2pConfig {
         Self {
             listening_multiaddrs: vec![
                 "/ip4/0.0.0.0/tcp/0".parse().unwrap(),
+                "/ip4/0.0.0.0/udp/0/quic-v1".parse().unwrap(),
             ],
             bootstrap_peers,
             mdns: false,
             kademlia: true,
-            autonat: true,
+            autonat: false,
             relay_server: true,
             relay_client: true,
             gossipsub: true,
             bitswap_client: true,
-            bitswap_server: true,
+            bitswap_server: false,
             max_conns_pending_out: 256,
             max_conns_pending_in: 256,
             max_conns_in: 512,
             max_conns_out: 512,
-            max_conns_per_peer: 3,
+            max_conns_per_peer: 16,
             notify_handler_buffer_size: 256,
             connection_event_buffer_size: 256,
-            dial_concurrency_factor: 8,
+            dial_concurrency_factor: 4,
         }
     }
 }

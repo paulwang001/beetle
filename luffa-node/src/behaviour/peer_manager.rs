@@ -57,8 +57,8 @@ impl PeerManager {
         self.bad_peers.contains(peer_id)
     }
 
-    pub fn inject_identify_info(&mut self, peer_id: PeerId, new_info: IdentifyInfo) {
-        self.info.entry(peer_id).or_default().last_info = Some(new_info);
+    pub fn inject_identify_info(&mut self, peer_id: PeerId, new_info: Option<IdentifyInfo>) {
+        self.info.entry(peer_id).or_default().last_info = new_info;
     }
 
     pub fn inject_ping(&mut self, peer_id: PeerId, new_ping: PingSuccess) {
@@ -70,8 +70,8 @@ impl PeerManager {
     pub fn info_for_peer(&self, peer_id: &PeerId) -> Option<&Info> {
         self.info.get(peer_id)
     }
-    pub fn peers(&self) -> usize {
-        self.info.len()
+    pub fn all_peers(&self) -> Vec<&PeerId> {
+        self.info.keys().collect::<Vec<_>>()
     }
     pub fn supported_protocols(&self) -> Vec<String> {
         self.supported_protocols.clone()

@@ -81,8 +81,8 @@ fn main() -> Result<()> {
             
             client_ctl.start(None,tag.clone(),msg).unwrap();
             tracing::warn!("started.");
-            if timer.elapsed().as_secs() < 120 {
-                std::thread::sleep(std::time::Duration::from_secs(120));
+            if timer.elapsed().as_secs() < 3600 {
+                std::thread::sleep(std::time::Duration::from_secs(3600));
             }
             timer = std::time::Instant::now();
             client_ctl.stop().unwrap();
@@ -158,7 +158,7 @@ fn main() -> Result<()> {
                             }
                             let relays = client.relay_list().unwrap();
                             tracing::warn!("scan me :{}  --->>{:?}",code,relays);
-                            let list = client.contacts_list(1).unwrap();
+                            let list = client.contacts_list(0).unwrap();
                             for c in list {
                                 
                                 let ls = client.recent_messages(c.did, 10).unwrap();
