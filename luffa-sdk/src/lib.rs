@@ -841,43 +841,43 @@ impl Client {
         if let Some(event_at) = event_at {
             Self::burn_from_tree(self.db.clone(), event_at, event_table);
         } else {
-            // {
-            //     let x = 232323344u64;
-            //     let bs = x.to_be_bytes();
-            //
-            //     let x2 = bs.into_iter().fold(0, |acc, x| acc << 8 | (x as u64));
-            //     assert_eq!(x, x2)
+            // // {
+            // //     let x = 232323344u64;
+            // //     let bs = x.to_be_bytes();
+            // //
+            // //     let x2 = bs.into_iter().fold(0, |acc, x| acc << 8 | (x as u64));
+            // //     assert_eq!(x, x2)
+            // // }
+
+            // // 查找消息，使用消息id
+            // let tree = self.db.open_tree(event_table.clone())?;
+            // let id = tree.iter().find(|item| {
+            //     item
+            //         .as_ref()
+            //         .ok()
+            //         .and_then(|(_, v)| {
+            //             let id = v.to_vec().into_iter().fold(0, |acc, x| acc << 8 | (x as u64));
+
+            //             if id == crc {
+            //                 Some(())
+            //             } else {
+            //                 None
+            //             }
+            //         })
+            //         .is_some()
+            // })
+            //     .map(|x| x.ok())
+            //     .flatten()
+            //     .map(|(key, _)| {
+            //         key.to_vec().into_iter().fold(0, |acc, x| acc << 8 | (x as u64))
+            //     });
+
+
+            // if let Some(id) = id {
+            //     Self::burn_from_tree(self.db.clone(), id, event_table)
+            // } else {
+            //     warn!("not found event_time id with crc id: {crc}");
             // }
-
-            // 查找消息，使用消息id
-            let tree = self.db.open_tree(event_table.clone())?;
-            let id = tree.iter().find(|item| {
-                item
-                    .as_ref()
-                    .ok()
-                    .and_then(|(_, v)| {
-                        let id = v.to_vec().into_iter().fold(0, |acc, x| acc << 8 | (x as u64));
-
-                        if id == crc {
-                            Some(())
-                        } else {
-                            None
-                        }
-                    })
-                    .is_some()
-            })
-                .map(|x| x.ok())
-                .flatten()
-                .map(|(key, _)| {
-                    key.to_vec().into_iter().fold(0, |acc, x| acc << 8 | (x as u64))
-                });
-
-
-            if let Some(id) = id {
-                Self::burn_from_tree(self.db.clone(), id, event_table)
-            } else {
-                warn!("not found event_time id with crc id: {crc}");
-            }
         }
 
         Ok(())
