@@ -1343,6 +1343,7 @@ impl Client {
             None,
         ) {
             tracing::warn!("{e:?}");
+            return Err(ClientError::CustomError(e.to_string()))
         }
         Ok(())
     }
