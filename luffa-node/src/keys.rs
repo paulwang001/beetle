@@ -104,7 +104,7 @@ impl<S: Storage> Keychain<S> {
     /// Creates a new Ed25519 based key and stores it.
     pub async fn create_ed25519_key_bip39(&mut self,password:&str,store:bool) -> Result<(String,Keypair)> {
         // create a new randomly generated mnemonic phrase
-        let mnemonic = Mnemonic::new(MnemonicType::Words24, Language::English);
+        let mnemonic = Mnemonic::new(MnemonicType::Words12, Language::English);
         
         // get the HD wallet seed
         let seed = Seed::new(&mnemonic, password);
