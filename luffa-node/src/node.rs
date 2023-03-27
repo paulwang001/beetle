@@ -522,14 +522,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         }
     }
 
-    #[tracing::instrument(skip(self,event))]
+    #[tracing::instrument(skip(self))]
     fn handle_swarm_event(
         &mut self,
         event: SwarmEvent<
             <NodeBehaviour as NetworkBehaviour>::OutEvent,
             <<<NodeBehaviour as NetworkBehaviour>::ConnectionHandler as IntoConnectionHandler>::Handler as ConnectionHandler>::Error>,
     ) -> Result<()> {
-        libp2p_metrics().record(&event);
+        // libp2p_metrics().record(&event);
         // tracing::info!("swarm>>>> {event:?}");
         match event {
             // outbound events
@@ -568,12 +568,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             SwarmEvent::ConnectionClosed {
                 peer_id,
                 num_established,
-                endpoint,
                 ..
             } => {
-                if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-                    chat.remove_address(&peer_id, endpoint.get_remote_address());
-                }
                 if num_established == 0 {
                     let local_id = self.local_peer_id();
                     let mut digest = crc64fast::Digest::new();
@@ -596,7 +592,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
                     self.emit_network_event(NetworkEvent::PeerDisconnected(peer_id));
                 }
-                
+
                 debug!("ConnectionClosed: {:}", peer_id);
                 Ok(())
             }
@@ -632,7 +628,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         }
     }
 
-    #[tracing::instrument(skip(self,event))]
+    #[tracing::instrument(skip(self))]
     fn handle_node_event(&mut self, event: Event) -> Result<()> {
         // tracing::info!("node>>> {event:?}");
         let local_id = self.local_peer_id();
@@ -923,13 +919,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         if let Some(bitswap) = self.swarm.behaviour().bitswap.as_ref() {
                             bitswap.on_identify(&peer_id, &info.protocols);
                         }
-                        tracing::info!("peer info: {info:?}");
                     } else {
                         //TODO only in my contacts
                         tracing::warn!("peer info: {info:?}");
                         // info.observed_addr
                         for protocol in &info.protocols {
-
                             let p = protocol.as_bytes();
                             if p == b"/libp2p/autonat/1.0.0" {
                                 // TODO: expose protocol name on `libp2p::autonat`.
@@ -1932,7 +1926,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         Ok(None)
     }
 
-    #[tracing::instrument(skip(self,message))]
+    #[tracing::instrument(skip(self))]
     fn handle_rpc_message(&mut self, message: RpcMessage) -> Result<bool> {
         // Inbound messages
         match message {

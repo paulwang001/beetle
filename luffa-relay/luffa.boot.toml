@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 push_api = "https://luffa.putdev.com/post/sendMessage"
+=======
+push_api="https://luffa.putdev.com/post/sendMessage"
+>>>>>>> c6d6b2b60309aea2cc811928277a5a0cd34ee91a
 [store]
 path = "../.local/share/boot/store"
 [p2p]

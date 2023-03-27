@@ -614,9 +614,7 @@ impl Client {
                 let tx = sender.read().await;
                 let tx = tx.as_ref().unwrap();
                 let (req, res) = tokio::sync::oneshot::channel();
-                if let Err(e) = tx.send((to, msg, from_id, req, key)).await {
-                    return Err(anyhow::anyhow!("{e:?}"));
-                }
+                tx.send((to, msg, from_id, req, key)).await.unwrap();
                 match res.await {
                     Ok(r) => r,
                     Err(e) => {
@@ -803,7 +801,7 @@ impl Client {
                                 None
                             }
                         } else {
-                            error!("read msg 2: decrypt failed>>>did={did} to={to} from:{from_id}");
+                            error!("read msg 2: decrypt failed>>>");
                             None
                         }
                     }
@@ -826,6 +824,65 @@ impl Client {
         };
         Ok(ok)
     }
+
+    pub fn remove_local_msg(&self, did: u64, crc: u64) -> ClientResult<()> {
+        let table = format!("message_{did}");
+
+        if !Self::have_in_tree(self.db.clone(), crc, &table) {
+            return Ok(());
+        }
+
+        let event_at = self.read_msg_with_meta(did, crc).ok().flatten().map(|x| x.event_time);
+
+        // 删除消息数据
+        Self::burn_from_tree(self.db.clone(), crc, table.clone());
+
+        let event_table = format!("{}_time", table);
+        if let Some(event_at) = event_at {
+            Self::burn_from_tree(self.db.clone(), event_at, event_table);
+        } else {
+            // {
+            //     let x = 232323344u64;
+            //     let bs = x.to_be_bytes();
+            //
+            //     let x2 = bs.into_iter().fold(0, |acc, x| acc << 8 | (x as u64));
+            //     assert_eq!(x, x2)
+            // }
+
+            // 查找消息，使用消息id
+            let tree = self.db.open_tree(event_table.clone())?;
+            let id = tree.iter().find(|item| {
+                item
+                    .as_ref()
+                    .ok()
+                    .and_then(|(_, v)| {
+                        let id = v.to_vec().into_iter().fold(0, |acc, x| acc << 8 | (x as u64));
+
+                        if id == crc {
+                            Some(())
+                        } else {
+                            None
+                        }
+                    })
+                    .is_some()
+            })
+                .map(|x| x.ok())
+                .flatten()
+                .map(|(key, _)| {
+                    key.to_vec().into_iter().fold(0, |acc, x| acc << 8 | (x as u64))
+                });
+
+
+            if let Some(id) = id {
+                Self::burn_from_tree(self.db.clone(), id, event_table)
+            } else {
+                warn!("not found event_time id with crc id: {crc}");
+            }
+        }
+
+        Ok(())
+    }
+
 
     pub fn get_local_id(&self) -> ClientResult<Option<u64>> {
         let res = RUNTIME.block_on(async {
@@ -1062,24 +1119,8 @@ impl Client {
             return false;
         }
         let tree = db.open_tree(KVDB_CHAT_SESSION_TREE).unwrap();
-        let mut first_read = false;
-        if let Some(r) = read.as_ref() {
-            let tree_read = db.open_tree(format!("{}_read",KVDB_CHAT_SESSION_TREE)).unwrap();
-            match tree_read.get(r.to_be_bytes()) {
-                Ok(Some(_last)) =>{
-
-                }
-                _=>{
-                    first_read = true;
-                    if let Err(e) = tree_read.insert(r.to_be_bytes(), event_time.to_be_bytes().to_vec()) {
-                        tracing::error!("{e:?}");
-                    }
-                }
-            }
-        }
-         
         // assert!(did > 0,"update_session:{msg:?} ,{tag:?}");
-
+        let mut first_read = false;
         let n_tag = tag.clone();
         if let Err(e) = tree.fetch_and_update(did.to_be_bytes(), |old| {
             match old {
@@ -1094,7 +1135,6 @@ impl Client {
                         mut reach_crc,
                         last_msg,
                     } = chat;
-                    let mut last_msg = last_msg;
                     let mut last_time = last_time;
                     if let Some(c) = reach {
                         if !reach_crc.contains(&c) {
@@ -1102,12 +1142,11 @@ impl Client {
                         }
                     }
                     if let Some(c) = read.as_ref() {
+                        first_read = reach_crc.contains(c);
                         reach_crc.retain(|x| *x != *c);
-                        if first_read && msg.is_some() {
-                            last_msg = msg.clone().unwrap();
-                            last_time = event_time;
-                        }
-                        
+                        // assert!(reach_crc.contains(c),"reach contain :{c}");
+                        // warn!("reach_crc:{reach_crc:?}   {c}");
+                        last_time = event_time;
                     }
                     let upd = ChatSession {
                         did,
@@ -1116,7 +1155,7 @@ impl Client {
                         tag: n_tag.clone().unwrap_or(tag),
                         read_crc: read.unwrap_or(read_crc),
                         reach_crc,
-                        last_msg,
+                        last_msg: msg.clone().unwrap_or(last_msg),
                     };
                     Some(serde_cbor::to_vec(&upd).unwrap())
                 }
@@ -1131,23 +1170,14 @@ impl Client {
                     if let Some(c) = reach {
                         reach_crc.push(c);
                     }
-                    let mut last_msg = String::new();
-                    let last_time = event_time;
-                    if let Some(c) = read.as_ref() {
-                        reach_crc.retain(|x| *x != *c);
-                        if first_read && msg.is_some() {
-                            last_msg = msg.clone().unwrap();
-                        }
-                        
-                    }
                     let upd = ChatSession {
                         did,
                         session_type: tp,
-                        last_time,
+                        last_time: event_time,
                         tag: n_tag.clone().unwrap_or(dft),
                         read_crc: read.unwrap_or_default(),
                         reach_crc,
-                        last_msg,
+                        last_msg: msg.clone().unwrap_or_default(),
                     };
                     Some(serde_cbor::to_vec(&upd).unwrap())
                 }
@@ -1372,6 +1402,7 @@ impl Client {
             None,
         ) {
             tracing::warn!("{e:?}");
+            return Err(ClientError::CustomError(e.to_string()))
         }
         Ok(())
     }
@@ -1512,14 +1543,14 @@ impl Client {
             let mut timer = std::time::Instant::now();
             let mut count = 0_u64;
             loop {
-                let peers = match client_t.get_peers().await {
-                    Ok(peers) => peers,
-                    Err(e) => {
-                        tracing::warn!("{e:?}");
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        continue;
-                    }
-                };
+                // let peers = match client_t.get_peers().await {
+                //     Ok(peers) => peers,
+                //     Err(e) => {
+                //         tracing::warn!("{e:?}");
+                //         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                //         continue;
+                //     }
+                // };
                 // if peers.len() < 1 && timer.elapsed().as_millis() < 30000 {
                 //     tracing::warn!("waiting....{}", 1 - peers.len());
                 //     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -2021,9 +2052,6 @@ impl Client {
                                         break;
                                     }
                                     Err(e) => {
-                                        if e.to_string().to_lowercase().starts_with("channel") {
-                                            break;
-                                        }
                                         tracing::error!("{e:?}");
                                         if retry.elapsed().as_secs() > 60 {
                                             tracing::error!("failed: retry 60s");
@@ -2432,7 +2460,7 @@ impl Client {
                                 );
                             }
                             Message::ContactsExchange { exchange } => {
-                                // tracing::error!("exchange should not to here!!!");
+                                tracing::error!("exchange should not to here!!!");
                                 let token = match exchange {
                                     ContactsEvent::Answer { token } => {
                                         tracing::error!("G> Answer>>>>>{token:?}");
@@ -2513,7 +2541,6 @@ impl Client {
                             _ => {}
                         }
                         tokio::spawn(async move {
-
                             cb.on_message(crc, from_id, to, msg_data);
                         });
                     } else {
@@ -2616,7 +2643,6 @@ impl Client {
                                     tracing::error!("from offer msg {msg:?}");
                                 }
                             }
-                            
                             tokio::spawn(async move {
                                 cb.on_message(crc, from_id, to, msg_data);
                             });
