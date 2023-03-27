@@ -1361,8 +1361,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     self.contacts.update_edge(f, t, tp);
                                                 }
                                                 contacts.retain(|c| !c.wants.is_empty());
-                                                tracing::debug!(
-                                                    "ContactsSync:{contacts:?}  to {did}"
+                                                tracing::warn!(
+                                                    "ContactsSync --->:{contacts:?}  to {did}"
                                                 );
                                                 let feed = Message::ContactsSync { did, contacts };
                                                 let evnt = luffa_rpc_types::Event::new(
