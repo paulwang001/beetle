@@ -2302,9 +2302,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 let addrs = self.swarm.behaviour_mut().addresses_of_peer(&peer_id);
                 response_channel.send(addrs).ok();
             }
-            RpcMessage::NetDisconnect(response_channel, _peer_id) => {
+            RpcMessage::NetDisconnect(response_channel, peer_id) => {
                 tracing::warn!("NetDisconnect API not yet implemented"); // TODO: implement NetDisconnect
 
+                if self.swarm.is_connected(&peer_id) {
+                    if let Err(e) = self.swarm.disconnect_peer_id(peer_id) {
+
+                    }
+                }
                 response_channel
                     .send(())
                     .map_err(|_| anyhow!("sender dropped"))?;
