@@ -1,0 +1,10 @@
+push_api="https://luffa.putdev.com/post/sendMessage"
+[store]
+path = "~/.local/share/boot/store"
+[p2p]
+libp2p = {listening_multiaddrs = ["/ip4/0.0.0.0/udp/8899/quic-v1"],bootstrap_peers=["/ip4/0.0.0.0/udp/8899/quic-v1/p2p/12D3KooWRZXrt2KZQvw7aV1vWosaL9YBZafH8wicuXS8nBi3pBnL"]}
+key_store_path = "~/share/boot"
+
+
+
+
