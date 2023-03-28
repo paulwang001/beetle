@@ -2303,8 +2303,6 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 response_channel.send(addrs).ok();
             }
             RpcMessage::NetDisconnect(response_channel, peer_id) => {
-                tracing::warn!("NetDisconnect API not yet implemented"); // TODO: implement NetDisconnect
-
                 if self.swarm.is_connected(&peer_id) {
                     if let Err(e) = self.swarm.disconnect_peer_id(peer_id) {
 

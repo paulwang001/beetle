@@ -244,7 +244,6 @@ impl P2pClient {
 
     #[tracing::instrument(skip(self))]
     pub async fn disconnect(&self, peer_id: PeerId) -> Result<()> {
-        tracing::warn!("NetDisconnect not yet implemented on p2p node");
         let req = DisconnectRequest { peer_id };
         self.client.peer_disconnect(req).await?;
         Ok(())
