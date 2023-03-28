@@ -1389,6 +1389,24 @@ impl Client {
         Ok(ok)
     }
 
+    pub fn disconnect(&self, peer_id: String) -> ClientResult<bool> {
+        let (_, data) = multibase::decode(&peer_id)?;
+        let peer_id = PeerId::from_bytes(&data)?;
+        let client = self.client.clone();
+        let ok = RUNTIME.block_on(async {
+            let c = client.read().await;
+            if let Some(cc) = c.as_ref() {
+                match cc.disconnect(peer_id).await {
+                    Ok(_) => true,
+                    _ => false,
+                }
+            } else {
+                false
+            }
+        });
+        Ok(ok)
+    }
+
     pub fn stop(&self) -> ClientResult<()>{
         if let Err(e) = 
         self.send_to(

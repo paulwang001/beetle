@@ -78,6 +78,8 @@ interface Client {
 
     [Throws=ClientError]
     boolean connect(string peer_id);
+    [Throws=ClientError]
+    boolean disconnect(string peer_id);
 
     [Throws=ClientError]
     void init(string? cfg_path);
