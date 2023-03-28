@@ -152,10 +152,9 @@ pub fn public_key_to_id(public_key: Vec<u8>) -> u64 {
 }
 
 pub fn bs58_decode(data: &str) -> ClientResult<u64> {
-    let data = bs58::decode(data).into_vec()?;
-    let mut digest = crc64fast::Digest::new();
-    digest.write(&data);
-    Ok(digest.sum64())
+    let mut to = [0u8; 8];
+    to.clone_from_slice(&bs58::decode(data).into_vec()?);
+    Ok(u64::from_be_bytes(to))
 }
 
 fn content_index(idx_path: &Path) -> (Index, Schema) {
