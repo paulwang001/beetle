@@ -128,6 +128,8 @@ pub enum ClientError {
     MultibaseError(#[from] multibase::Error),
     #[error(transparent)]
     MultihashError(#[from] multihash::Error),
+    #[error(transparent)]
+    Bs58DecodeError(#[from] bs58::decode::Error),
     #[error("{0}")]
     CustomError(String),
 }
@@ -147,6 +149,13 @@ pub fn public_key_to_id(public_key: Vec<u8>) -> u64 {
     digest.write(&peer.to_bytes());
     let to = digest.sum64();
     to
+}
+
+pub fn bs58_decode(data: &str) -> ClientResult<u64> {
+    let data = bs58::decode(data).into_vec()?;
+    let mut digest = crc64fast::Digest::new();
+    digest.write(&data);
+    Ok(digest.sum64())
 }
 
 fn content_index(idx_path: &Path) -> (Index, Schema) {
@@ -897,6 +906,8 @@ impl Client {
             bs58::encode(d.to_be_bytes()).into_string()
         }))
     }
+
+
 
     async fn local_id(&self) -> Option<u64> {
         let filter = self.filter.read().await;

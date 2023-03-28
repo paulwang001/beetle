@@ -1,5 +1,7 @@
 namespace LuffaSDK {
   u64 public_key_to_id(sequence<u8> public_key);
+  [Throws=ClientError]
+  u64 bs58_decode([ByRef] string data);
 };
 
 dictionary ChatSession {
@@ -42,6 +44,7 @@ enum ClientError {
   "AnyhowError",
   "MultibaseError",
   "MultihashError",
+  "Bs58DecodeError",
   "CustomError"
 };
 
