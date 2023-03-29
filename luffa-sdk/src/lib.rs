@@ -630,9 +630,9 @@ impl Client {
             comment.unwrap_or(format!("{to}")).as_bytes(),
         )
             .unwrap();
-        if g_keypair.is_some() {
+        if let Some(keypair) = g_keypair {
             let group_keypair = format!("GROUPKEYPAIR-{}", to);
-            tree.insert(group_keypair, g_keypair.unwrap()).unwrap();
+            tree.insert(group_keypair, keypair).unwrap();
         }
         tree.flush().unwrap();
     }
