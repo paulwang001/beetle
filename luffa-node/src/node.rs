@@ -1407,7 +1407,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         TopicHash::from_raw(TOPIC_STATUS),
                                                         event,
                                                     ) {
-                                                        tracing::error!("StatusSync pub>>>:{e:?}");
+                                                        tracing::error!("[{from_id}]StatusSync pub>>>:{e:?}");
                                                     }
                                                 }
                                                 
@@ -1426,7 +1426,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         TopicHash::from_raw(TOPIC_STATUS),
                                                         event,
                                                     ) {
-                                                        tracing::error!("ContactsSync pub>>>:{e:?}");
+                                                        tracing::error!("[{did}]ContactsSync pub>>>:{e:?}");
                                                     }
                                                 }
                                             }

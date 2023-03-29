@@ -19,13 +19,13 @@ fileprivate extension RustBuffer {
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
-        try! rustCall { ffi_LuffaRpcTypes_df87_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
+        try! rustCall { ffi_LuffaRpcTypes_fff4_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
     // Frees the buffer in place.
     // The buffer must not be used after this is called.
     func deallocate() {
-        try! rustCall { ffi_LuffaRpcTypes_df87_rustbuffer_free(self, $0) }
+        try! rustCall { ffi_LuffaRpcTypes_fff4_rustbuffer_free(self, $0) }
     }
 }
 
@@ -1001,10 +1001,15 @@ extension DataSource: Equatable, Hashable {}
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 public enum FeedbackStatus {
     
+    case `sending`
+    case `send`
+    case `routing`
+    case `route`
     case `reach`
     case `read`
     case `fetch`
     case `notice`
+    case `failed`
 }
 
 public struct FfiConverterTypeFeedbackStatus: FfiConverterRustBuffer {
@@ -1014,13 +1019,23 @@ public struct FfiConverterTypeFeedbackStatus: FfiConverterRustBuffer {
         let variant: Int32 = try readInt(&buf)
         switch variant {
         
-        case 1: return .`reach`
+        case 1: return .`sending`
         
-        case 2: return .`read`
+        case 2: return .`send`
         
-        case 3: return .`fetch`
+        case 3: return .`routing`
         
-        case 4: return .`notice`
+        case 4: return .`route`
+        
+        case 5: return .`reach`
+        
+        case 6: return .`read`
+        
+        case 7: return .`fetch`
+        
+        case 8: return .`notice`
+        
+        case 9: return .`failed`
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -1030,20 +1045,40 @@ public struct FfiConverterTypeFeedbackStatus: FfiConverterRustBuffer {
         switch value {
         
         
-        case .`reach`:
+        case .`sending`:
             writeInt(&buf, Int32(1))
         
         
-        case .`read`:
+        case .`send`:
             writeInt(&buf, Int32(2))
         
         
-        case .`fetch`:
+        case .`routing`:
             writeInt(&buf, Int32(3))
         
         
-        case .`notice`:
+        case .`route`:
             writeInt(&buf, Int32(4))
+        
+        
+        case .`reach`:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .`read`:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .`fetch`:
+            writeInt(&buf, Int32(7))
+        
+        
+        case .`notice`:
+            writeInt(&buf, Int32(8))
+        
+        
+        case .`failed`:
+            writeInt(&buf, Int32(9))
         
         }
     }
@@ -1146,7 +1181,7 @@ extension MediaTypes: Equatable, Hashable {}
 public enum Message {
     
     case `statusSync`(`to`: UInt64, `fromId`: UInt64, `status`: AppStatus)
-    case `feedback`(`crc`: UInt64, `status`: FeedbackStatus)
+    case `feedback`(`crc`: [UInt64], `fromId`: UInt64?, `toId`: UInt64?, `status`: FeedbackStatus)
     case `relayNode`(`did`: UInt64)
     case `contactsSync`(`did`: UInt64, `contacts`: [Contacts])
     case `contactsExchange`(`exchange`: ContactsEvent)
@@ -1168,7 +1203,9 @@ public struct FfiConverterTypeMessage: FfiConverterRustBuffer {
         )
         
         case 2: return .`feedback`(
-            `crc`: try FfiConverterUInt64.read(from: &buf), 
+            `crc`: try FfiConverterSequenceUInt64.read(from: &buf), 
+            `fromId`: try FfiConverterOptionUInt64.read(from: &buf), 
+            `toId`: try FfiConverterOptionUInt64.read(from: &buf), 
             `status`: try FfiConverterTypeFeedbackStatus.read(from: &buf)
         )
         
@@ -1209,9 +1246,11 @@ public struct FfiConverterTypeMessage: FfiConverterRustBuffer {
             FfiConverterTypeAppStatus.write(`status`, into: &buf)
             
         
-        case let .`feedback`(`crc`,`status`):
+        case let .`feedback`(`crc`,`fromId`,`toId`,`status`):
             writeInt(&buf, Int32(2))
-            FfiConverterUInt64.write(`crc`, into: &buf)
+            FfiConverterSequenceUInt64.write(`crc`, into: &buf)
+            FfiConverterOptionUInt64.write(`fromId`, into: &buf)
+            FfiConverterOptionUInt64.write(`toId`, into: &buf)
             FfiConverterTypeFeedbackStatus.write(`status`, into: &buf)
             
         
@@ -1365,6 +1404,27 @@ public func FfiConverterTypeRtcAction_lower(_ value: RtcAction) -> RustBuffer {
 extension RtcAction: Equatable, Hashable {}
 
 
+fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
+    typealias SwiftType = UInt64?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt64.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
 fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
     typealias SwiftType = String?
 
@@ -1500,7 +1560,7 @@ public func `messageFrom`(`msg`: [UInt8])  -> Message? {
     
     rustCall() {
     
-    LuffaRpcTypes_df87_message_from(
+    LuffaRpcTypes_fff4_message_from(
         FfiConverterSequenceUInt8.lower(`msg`), $0)
 }
     )
@@ -1514,7 +1574,7 @@ public func `messageTo`(`msg`: Message)  -> [UInt8]? {
     
     rustCall() {
     
-    LuffaRpcTypes_df87_message_to(
+    LuffaRpcTypes_fff4_message_to(
         FfiConverterTypeMessage.lower(`msg`), $0)
 }
     )
