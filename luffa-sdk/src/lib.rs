@@ -24,8 +24,11 @@ use serde::{Deserialize, Serialize};
 use sled::Db;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::fs;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tantivy::tokenizer::{LowerCaser, SimpleTokenizer, Stemmer, TextAnalyzer};
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -41,7 +44,7 @@ use image::EncodableLayout;
 use tantivy::collector::TopDocs;
 use tantivy::directory::{ManagedDirectory, MmapDirectory};
 use tantivy::query::QueryParser;
-use tantivy::Index;
+use tantivy::{Index, TantivyError};
 use tantivy::{doc, DocAddress, Score};
 use tantivy::{schema::*, IndexWriter};
 use tokio::sync::oneshot::{Sender as ShotSender};
@@ -138,6 +141,24 @@ pub enum ClientError {
     CustomError(String),
 }
 
+#[derive(Default)]
+struct CloneableAtomicBool(AtomicBool);
+
+impl Clone for CloneableAtomicBool {
+    fn clone(&self) -> Self {
+        Self(AtomicBool::new(self.0.load(Ordering::SeqCst)))
+    }
+}
+
+impl Deref for CloneableAtomicBool {
+    type Target = AtomicBool;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+
 fn create_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Runtime::new().unwrap()
 }
@@ -206,16 +227,41 @@ pub struct Client {
     filter: Arc<RwLock<Option<KeyFilter>>>,
     config: Arc<RwLock<Option<Config>>>,
     store: Arc<RwLock<Option<Arc<luffa_store::Store>>>>,
+    is_init: CloneableAtomicBool,
+    is_started: CloneableAtomicBool,
 }
 
 impl Client {
     pub fn new() -> Self {
+        RUNTIME.block_on(async {
+            if let Err(e) = luffa_metrics::MetricsHandle::new(luffa_node::metrics::metrics_config_with_compile_time_info(Default::default()))
+                .await
+            {
+                println!("failed to initialize metrics");
+            }
+        });
+
         let path = luffa_util::luffa_data_path(KVDB_CONTACTS_FILE).unwrap();
         let idx_path = luffa_util::luffa_data_path(LUFFA_CONTENT).unwrap();
-        tracing::info!("open db>>>>{:?}", &path);
-        let db = Arc::new(sled::open(path).unwrap());
+        info!("path >>>> {:?}", &path);
+        info!("idx_path >>>> {:?}", &idx_path);
+
+        let db = Arc::new(sled::open(path).expect("open db failed"));
         let (idx, schema) = content_index(idx_path.as_path());
-        let writer = idx.writer_with_num_threads(1, 12 * 1024 * 1024).unwrap();
+        let writer = idx.writer_with_num_threads(1, 12 * 1024 * 1024).or_else(|e| {
+            match e {
+                TantivyError::LockFailure(_, _) => {
+                    // 清除文件锁，再次尝试打开 indexWriter
+                    warn!("first open indexWriter failed because of acquire file lock failed");
+                    fs::remove_file(&idx_path.join(".tantivy-writer.lock")).expect("release indexWriter lock failed");
+
+                    idx.writer_with_num_threads(1, 12 * 1024 * 1024)
+                }
+                _ => panic!("acquire indexWriter failed: {:?}", e)
+            }
+        })
+            .expect("acquire indexWriter failed");
+
         Client {
             key: Arc::new(RwLock::new(None)),
             filter: Arc::new(RwLock::new(None)),
@@ -227,6 +273,8 @@ impl Client {
             idx: Arc::new(idx),
             schema,
             writer: Arc::new(RwLock::new(writer)),
+            is_init: Default::default(),
+            is_started: Default::default(),
         }
     }
 
@@ -1521,6 +1569,15 @@ impl Client {
         Ok(())
     }
     pub fn init(&self, cfg_path: Option<String>) -> ClientResult<()> {
+        info!("is_init {}", self.is_init.load(Ordering::SeqCst));
+
+        if self.is_init.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+
+        info!("init: at => {}", chrono::Local::now());
+        info!("init: path => {cfg_path:?}");
+
         #[cfg(unix)]
         {
             match luffa_util::increase_fd_limit() {
@@ -1549,12 +1606,12 @@ impl Client {
         println!("config--->{config:?}");
         config.metrics = luffa_node::metrics::metrics_config_with_compile_time_info(config.metrics);
 
-        let metrics_config = config.metrics.clone();
+        // let metrics_config = config.metrics.clone();
         let store_config = config.store.clone();
         RUNTIME.block_on(async {
-            let metrics_handle = luffa_metrics::MetricsHandle::new(metrics_config)
-                .await
-                .expect("failed to initialize metrics");
+            // let metrics_handle = luffa_metrics::MetricsHandle::new(metrics_config)
+            //     .await
+            //     .expect("failed to initialize metrics");
 
             let kc = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone())
                 .await.unwrap();
@@ -1567,11 +1624,19 @@ impl Client {
             let store = start_store(store_config).await.unwrap();
             *m_store = Some(Arc::new(store));
         });
+
+        self.is_init.store(true, Ordering::SeqCst);
         Ok(())
+
     }
 
     pub fn start(&self, key: Option<String>, tag: Option<String>, cb: Box<dyn Callback>) -> ClientResult<u64>
     {
+        info!("is_start {}", self.is_started.load(Ordering::SeqCst));
+        if self.is_started.load(Ordering::SeqCst) {
+            return Ok(self.get_local_id().ok().flatten().expect("client get local id"));
+        }
+
         // let keychain = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone());
         let filter = key.map(|k| KeyFilter::Name(format!("{}", k)));
         let (kc, config) = RUNTIME.block_on(async {
@@ -1606,6 +1671,8 @@ impl Client {
                 debug!("run exit!....");
             });
         });
+
+        self.is_started.store(true, Ordering::SeqCst);
         Ok(my_id)
     }
 
