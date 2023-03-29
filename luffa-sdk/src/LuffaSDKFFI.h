@@ -46,167 +46,171 @@ typedef struct RustCallStatus {
 // ⚠️ increment the version suffix in all instances of UNIFFI_SHARED_HEADER_V4 in this file.           ⚠️
 #endif // def UNIFFI_SHARED_H
 
-void ffi_LuffaSDK_7ad6_Client_object_free(
+void ffi_LuffaSDK_6edb_Client_object_free(
       void*_Nonnull ptr,
     RustCallStatus *_Nonnull out_status
     );
-void*_Nonnull LuffaSDK_7ad6_Client_new(
+void*_Nonnull LuffaSDK_6edb_Client_new(
       
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_show_code(
+RustBuffer LuffaSDK_6edb_Client_show_code(
       void*_Nonnull ptr,
     RustCallStatus *_Nonnull out_status
     );
-uint64_t LuffaSDK_7ad6_Client_contacts_offer(
+uint64_t LuffaSDK_6edb_Client_contacts_offer(
       void*_Nonnull ptr,RustBuffer code,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_gen_offer_code(
+RustBuffer LuffaSDK_6edb_Client_gen_offer_code(
       void*_Nonnull ptr,uint64_t did,
     RustCallStatus *_Nonnull out_status
     );
-uint64_t LuffaSDK_7ad6_Client_contacts_group_create(
+uint64_t LuffaSDK_6edb_Client_contacts_group_create(
       void*_Nonnull ptr,RustBuffer invitee,RustBuffer tag,
     RustCallStatus *_Nonnull out_status
     );
-uint64_t LuffaSDK_7ad6_Client_contacts_anwser(
+uint64_t LuffaSDK_6edb_Client_contacts_anwser(
       void*_Nonnull ptr,uint64_t to,uint64_t offer_id,RustBuffer secret_key,
     RustCallStatus *_Nonnull out_status
     );
-uint64_t LuffaSDK_7ad6_Client_send_msg(
+uint64_t LuffaSDK_6edb_Client_send_msg(
       void*_Nonnull ptr,uint64_t to,RustBuffer msg,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_get_local_id(
+RustBuffer LuffaSDK_6edb_Client_get_local_id(
       void*_Nonnull ptr,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_get_peer_id(
+RustBuffer LuffaSDK_6edb_Client_get_peer_id(
       void*_Nonnull ptr,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_get_did(
+RustBuffer LuffaSDK_6edb_Client_get_did(
       void*_Nonnull ptr,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_relay_list(
+RustBuffer LuffaSDK_6edb_Client_relay_list(
       void*_Nonnull ptr,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_keys(
+RustBuffer LuffaSDK_6edb_Client_keys(
       void*_Nonnull ptr,
     RustCallStatus *_Nonnull out_status
     );
-int8_t LuffaSDK_7ad6_Client_connect(
+int8_t LuffaSDK_6edb_Client_connect(
       void*_Nonnull ptr,RustBuffer peer_id,
     RustCallStatus *_Nonnull out_status
     );
-int8_t LuffaSDK_7ad6_Client_disconnect(
-      void*_Nonnull ptr,RustBuffer peer_id,
+int8_t LuffaSDK_6edb_Client_disconnect(
+      void*_Nonnull ptr,
     RustCallStatus *_Nonnull out_status
     );
-void LuffaSDK_7ad6_Client_init(
+void LuffaSDK_6edb_Client_init(
       void*_Nonnull ptr,RustBuffer cfg_path,
     RustCallStatus *_Nonnull out_status
     );
-uint64_t LuffaSDK_7ad6_Client_start(
+uint64_t LuffaSDK_6edb_Client_start(
       void*_Nonnull ptr,RustBuffer key,RustBuffer tag,uint64_t cb,
     RustCallStatus *_Nonnull out_status
     );
-void LuffaSDK_7ad6_Client_stop(
+void LuffaSDK_6edb_Client_stop(
       void*_Nonnull ptr,
     RustCallStatus *_Nonnull out_status
     );
-void LuffaSDK_7ad6_Client_save_session(
+void LuffaSDK_6edb_Client_save_session(
       void*_Nonnull ptr,uint64_t did,RustBuffer tag,RustBuffer read,RustBuffer reach,RustBuffer msg,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_session_list(
+RustBuffer LuffaSDK_6edb_Client_session_list(
       void*_Nonnull ptr,uint32_t top,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_session_page(
+RustBuffer LuffaSDK_6edb_Client_session_page(
       void*_Nonnull ptr,uint32_t page,uint32_t size,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_contacts_list(
+RustBuffer LuffaSDK_6edb_Client_contacts_list(
       void*_Nonnull ptr,uint8_t c_type,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_search(
+RustBuffer LuffaSDK_6edb_Client_search(
       void*_Nonnull ptr,RustBuffer query,uint32_t offet,uint32_t limit,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_recent_messages(
+RustBuffer LuffaSDK_6edb_Client_recent_messages(
       void*_Nonnull ptr,uint64_t did,uint32_t top,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_find_contacts_tag(
+RustBuffer LuffaSDK_6edb_Client_find_contacts_tag(
       void*_Nonnull ptr,uint64_t did,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_meta_msg(
+RustBuffer LuffaSDK_6edb_Client_meta_msg(
       void*_Nonnull ptr,RustBuffer data,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_read_msg_with_meta(
+RustBuffer LuffaSDK_6edb_Client_read_msg_with_meta(
       void*_Nonnull ptr,uint64_t did,uint64_t crc,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_gen_key(
+RustBuffer LuffaSDK_6edb_Client_gen_key(
       void*_Nonnull ptr,RustBuffer password,int8_t store,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_import_key(
+RustBuffer LuffaSDK_6edb_Client_import_key(
       void*_Nonnull ptr,RustBuffer phrase,RustBuffer password,
     RustCallStatus *_Nonnull out_status
     );
-int8_t LuffaSDK_7ad6_Client_save_key(
+int8_t LuffaSDK_6edb_Client_save_key(
       void*_Nonnull ptr,RustBuffer name,
     RustCallStatus *_Nonnull out_status
     );
-int8_t LuffaSDK_7ad6_Client_remove_key(
+int8_t LuffaSDK_6edb_Client_remove_key(
       void*_Nonnull ptr,RustBuffer name,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_read_key_phrase(
+RustBuffer LuffaSDK_6edb_Client_read_key_phrase(
       void*_Nonnull ptr,RustBuffer name,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_generate_avatar(
+RustBuffer LuffaSDK_6edb_Client_generate_avatar(
       void*_Nonnull ptr,RustBuffer peer_id,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer LuffaSDK_7ad6_Client_generate_nickname(
+RustBuffer LuffaSDK_6edb_Client_generate_nickname(
       void*_Nonnull ptr,RustBuffer peer_id,
     RustCallStatus *_Nonnull out_status
     );
-void LuffaSDK_7ad6_Client_remove_local_msg(
+void LuffaSDK_6edb_Client_remove_local_msg(
       void*_Nonnull ptr,uint64_t did,uint64_t crc,
     RustCallStatus *_Nonnull out_status
     );
-void ffi_LuffaSDK_7ad6_Callback_init_callback(
+void ffi_LuffaSDK_6edb_Callback_init_callback(
       ForeignCallback  _Nonnull callback_stub,
     RustCallStatus *_Nonnull out_status
     );
-uint64_t LuffaSDK_7ad6_public_key_to_id(
+uint64_t LuffaSDK_6edb_public_key_to_id(
       RustBuffer public_key,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer ffi_LuffaSDK_7ad6_rustbuffer_alloc(
+uint64_t LuffaSDK_6edb_bs58_decode(
+      RustBuffer data,
+    RustCallStatus *_Nonnull out_status
+    );
+RustBuffer ffi_LuffaSDK_6edb_rustbuffer_alloc(
       int32_t size,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer ffi_LuffaSDK_7ad6_rustbuffer_from_bytes(
+RustBuffer ffi_LuffaSDK_6edb_rustbuffer_from_bytes(
       ForeignBytes bytes,
     RustCallStatus *_Nonnull out_status
     );
-void ffi_LuffaSDK_7ad6_rustbuffer_free(
+void ffi_LuffaSDK_6edb_rustbuffer_free(
       RustBuffer buf,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer ffi_LuffaSDK_7ad6_rustbuffer_reserve(
+RustBuffer ffi_LuffaSDK_6edb_rustbuffer_reserve(
       RustBuffer buf,int32_t additional,
     RustCallStatus *_Nonnull out_status
     );

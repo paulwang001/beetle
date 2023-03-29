@@ -1399,7 +1399,8 @@ impl Client {
         Ok(ok)
     }
 
-    pub fn disconnect(&self, peer_id: String) -> ClientResult<bool> {
+    pub fn disconnect(&self) -> ClientResult<bool> {
+        let peer_id = self.get_peer_id()?.unwrap();
         let (_, data) = multibase::decode(&peer_id)?;
         let peer_id = PeerId::from_bytes(&data)?;
         let client = self.client.clone();
