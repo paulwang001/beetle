@@ -1543,6 +1543,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     }
                                                 } else {
                                                     tracing::warn!("not connect.");
+                                                    self.emit_network_event(NetworkEvent::RequestResponse(
+                                                        ChatEvent::Request(request.data().to_vec()),
+                                                    ));
                                                 }
                                             }
                                             match rx_any {
@@ -1670,6 +1673,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                             }
                                             else{
                                                 tracing::warn!("2 not connect.");
+                                                self.emit_network_event(NetworkEvent::RequestResponse(
+                                                    ChatEvent::Request(request.data().to_vec()),
+                                                ));
                                             }
                                         }
                                         match rx_any {
