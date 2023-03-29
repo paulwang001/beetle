@@ -108,7 +108,7 @@ impl P2p {
         let mut itr = providers.await.into_iter();
         while let Some(pp) = itr.next() {
             let pp = pp.unwrap_or_default();
-            tracing::warn!("fetch from: {pp:?}");
+            tracing::info!("fetch from: {pp:?}");
             if pp.is_empty() {
                 continue;
             }

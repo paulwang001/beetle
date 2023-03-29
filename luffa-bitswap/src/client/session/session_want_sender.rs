@@ -132,7 +132,7 @@ fn signal_availability(changes: async_channel::Sender<Change>, peer: PeerId, is_
     };
     // Add the change in a non-blocking manner to avoid the possibility of a deadlock.
     if let Err(err) = changes.try_send(Change::Availability(availability)) {
-        tracing::warn!("unable to deliver changes: {:?}", err);
+        tracing::info!("unable to deliver changes: {:?}", err);
     }
 }
 
@@ -177,7 +177,7 @@ impl SessionWantSender {
                             Ok(change) => { loop_state.on_change(change).await },
                             Err(err) => {
                                 // sender gone
-                                tracing::warn!("changes sender error: {:?}", err);
+                                tracing::info!("changes sender error: {:?}", err);
                                 break;
                             }
                         }
@@ -250,7 +250,7 @@ impl SessionWantSender {
     // Adds a new change to the queue.
     async fn add_change(&self, change: Change) {
         if let Err(err) = self.changes.send(change).await {
-            tracing::warn!(
+            tracing::info!(
                 "session {}: unable to send changes: {:?}",
                 self.session_id, err
             );
@@ -775,7 +775,7 @@ impl LoopState {
                 .send(super::Op::Broadcast(newly_exhausted.into_iter().collect()))
                 .await
             {
-                tracing::warn!("unabel to send broadcast op: {:?}", err);
+                tracing::info!("unabel to send broadcast op: {:?}", err);
             }
         }
     }
@@ -861,7 +861,7 @@ impl LoopState {
                 .send(super::Op::WantsSent(want_blocks))
                 .await
             {
-                tracing::warn!("unabel to send broadcast op: {:?}", err);
+                tracing::info!("unabel to send broadcast op: {:?}", err);
             }
         }
     }

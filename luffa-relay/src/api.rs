@@ -52,7 +52,7 @@ impl P2pClient {
         cid: Cid,
         providers: HashSet<PeerId>,
     ) -> Result<Bytes> {
-        tracing::warn!("rpc p2p client fetch_bitswap: {:?}", cid);
+        tracing::info!("rpc p2p client fetch_bitswap: {:?}", cid);
         let providers = providers.into_iter().collect();
         let res = self
             .client
@@ -243,7 +243,7 @@ impl P2pClient {
 
     #[tracing::instrument(skip(self))]
     pub async fn disconnect(&self, peer_id: PeerId) -> Result<()> {
-        tracing::warn!("NetDisconnect not yet implemented on p2p node");
+        tracing::info!("NetDisconnect not yet implemented on p2p node");
         let req = DisconnectRequest { peer_id };
         self.client.peer_disconnect(req).await?;
         Ok(())

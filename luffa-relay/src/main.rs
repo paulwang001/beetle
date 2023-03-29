@@ -110,7 +110,7 @@ async fn main() -> Result<()> {
                 let topics = vec![TOPIC_RELAY, TOPIC_STATUS,TOPIC_CHAT];
                 for t in topics.into_iter() {
                     if let Err(e) = client_t.gossipsub_subscribe(TopicHash::from_raw(t)).await {
-                        tracing::warn!("{e:?}");
+                        tracing::info!("{e:?}");
                         has_err = true;
                         break;
                     }
@@ -137,14 +137,14 @@ async fn main() -> Result<()> {
                         .gossipsub_publish(TopicHash::from_raw(TOPIC_RELAY), bytes::Bytes::from(event))
                         .await
                     {
-                        tracing::warn!("{e:?}");
+                        tracing::info!("{e:?}");
                     }
                 })
                 .await
                 {
                     tracing::info!("relay successfully.");
                     if let Ok(peers) = client_t.gossipsub_mesh_peers(TopicHash::from_raw(TOPIC_RELAY)).await {
-                        tracing::warn!("mesh peers:{:?}",peers);
+                        tracing::info!("mesh peers:{:?}",peers);
                     }
                 }
             }
@@ -156,7 +156,7 @@ async fn main() -> Result<()> {
             };
             let mut notice = notice_queue_t.write().await;
             if tasks.is_empty() {
-                tracing::warn!("notice task is empty!");
+                tracing::info!("notice task is empty!");
             }
 
             for task in tasks {
@@ -171,13 +171,13 @@ async fn main() -> Result<()> {
                             current_key:format!("AIzaSyCG7wT4KYvbSf_HYU6xAmn7g5bgKOdGb0s")
                         };
 
-                        tracing::warn!("post:{nb:?}");
+                        tracing::info!("post:{nb:?}");
                         if let Err(e) = post.post(api).json(&nb).send().await {
-                            tracing::warn!("{e:?}");
+                            tracing::info!("{e:?}");
                         }                        
                     }
                     else{
-                        tracing::warn!("post api not found!!!!");
+                        tracing::info!("post api not found!!!!");
                     }
                 }
             }
@@ -187,7 +187,7 @@ async fn main() -> Result<()> {
         while let Some(evt) = events.recv().await {
             match evt {
                 NetworkEvent::RequestResponse(rsp)=>{
-                    // tracing::warn!("request>>> {rsp:?}");
+                    // tracing::info!("request>>> {rsp:?}");
                     match rsp {
                         ChatEvent::Request(data)=>{
                             match Event::decode_uncheck(&data) {
@@ -198,13 +198,13 @@ async fn main() -> Result<()> {
                                         ..
                                     } = im;
 
-                                    tracing::warn!("request msg:{from_id} -> {to}");
+                                    tracing::info!("request msg:{from_id} -> {to}");
                                     let notice = notice_queue.clone();
                                     let mut queue = notice.write().await;
                                     let (time,count,_) = queue.entry(to).or_insert((get_now(),from_id,0));
                                     *time = get_now();
                                     *count += 1;
-                                    tracing::warn!("TODO: offline notify");
+                                    tracing::info!("TODO: offline notify");
 
                                 }
                                 _=>{
@@ -218,7 +218,7 @@ async fn main() -> Result<()> {
                     }
                 }
                 NetworkEvent::Gossipsub(GossipsubEvent::Subscribed { peer_id, topic }) => {
-                    tracing::warn!("Subscribed>>>> peer_id: {peer_id:?} topic: {topic:?}");
+                    tracing::info!("Subscribed>>>> peer_id: {peer_id:?} topic: {topic:?}");
                 }
                 NetworkEvent::Gossipsub(GossipsubEvent::Message { message, from, id }) => {
                     let GossipsubMessage { data, .. } = message;
@@ -244,17 +244,24 @@ async fn main() -> Result<()> {
                                         "msg>>>>[{event_time}] from: {from_id} to:{to} msg:{msg:?}"
                                     );
                                     match msg {
-                                        Message::Feedback { crc, status } => match status {
-                                            FeedbackStatus::Fetch => {}
+                                        Message::Feedback { crc, status ,..} => match status {
+                                            FeedbackStatus::Fetch => {
+
+                                            }
                                             FeedbackStatus::Notice => {
-                                                let mut queue = notice_queue.write().await;
-                                                queue.remove(&crc);
+                                                // let mut queue = notice_queue.write().await;
+                                                // queue.remove(&crc);
                                             }
                                             FeedbackStatus::Reach => {
-                                                let mut queue = notice_queue.write().await;
-                                                queue.remove(&crc);
+                                                // let mut queue = notice_queue.write().await;
+                                                // queue.remove(&crc);
                                             }
-                                            FeedbackStatus::Read => {}
+                                            FeedbackStatus::Read => {
+
+                                            }
+                                            _=>{
+
+                                            }
                                         },
                                         _ => {}
                                     }
@@ -262,7 +269,7 @@ async fn main() -> Result<()> {
                             }
                         }
                         Err(e) => {
-                            tracing::warn!("{e:?}");
+                            tracing::info!("{e:?}");
                         }
                     }
                 }
@@ -293,7 +300,7 @@ async fn main() -> Result<()> {
                             )
                             .await
                         {
-                            tracing::warn!("{e:?}");
+                            tracing::info!("{e:?}");
                         }
                     });
                     
@@ -320,7 +327,7 @@ async fn main() -> Result<()> {
                             )
                             .await
                         {
-                            tracing::warn!("{e:?}");
+                            tracing::info!("{e:?}");
                         }
                     });
                     

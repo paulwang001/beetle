@@ -51,7 +51,7 @@ pub async fn create_server<S: Service>(
             // Ok(Some(RpcServer::new(combined::Channel::new(Some(addr), None))))
         }
         Addr::Irpc(addr) => {
-            tracing::warn!("Rpc server host on {addr:?}");
+            tracing::info!("Rpc server host on {addr:?}");
             let channel = quic_rpc::transport::http2::ServerChannel::serve(&addr)?;
             let channel = combined::ServerChannel::new(Some(channel), None);
             let server = RpcServer::new(channel);

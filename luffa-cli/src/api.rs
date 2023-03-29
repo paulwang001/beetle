@@ -177,7 +177,7 @@ impl Api {
                 let providers = providers.collect::<Vec<_>>();
                 let mut itr = providers.await.into_iter();
                 while let Some(Ok(pp)) = itr.next() {
-                    tracing::warn!("fetch from: {pp:?}");
+                    tracing::info!("fetch from: {pp:?}");
                     if pp.is_empty() {
                         continue;
                     }

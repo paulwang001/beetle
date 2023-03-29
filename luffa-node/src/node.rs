@@ -1,13 +1,12 @@
-use std::collections::{HashMap, HashSet};
-use std::error::Error;
+use std::collections::{HashMap, HashSet,VecDeque};
 use std::fmt;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, Result};
 use chrono::Utc;
 use cid::Cid;
 use futures_util::stream::StreamExt;
@@ -39,7 +38,7 @@ use libp2p::{PeerId, Swarm};
 use luffa_bitswap::{BitswapEvent, Block};
 use luffa_metrics::{core::MRecorder, inc, libp2p_metrics, p2p::P2PMetrics};
 use luffa_rpc_types::p2p::{ChatRequest, ChatResponse};
-use luffa_rpc_types::{AppStatus, ChatContent, ContactsTypes, Message};
+use luffa_rpc_types::{AppStatus, ChatContent, ContactsTypes, Message, FeedbackStatus};
 use multihash::MultihashDigest;
 use petgraph::algo::astar;
 use petgraph::prelude::*;
@@ -79,7 +78,7 @@ enum ConnectionEdge {
 pub enum ChatEvent {
     Request(Vec<u8>),
     Response {
-        request_id: RequestId,
+        request_id: Option<RequestId>,
         data: Vec<u8>,
     },
     /// An outbound request failed.
@@ -134,21 +133,25 @@ pub struct Node<KeyStorage: Storage> {
     net_receiver_in: Receiver<rpc::RpcMessage>,
     chat_receiver: Receiver<(
         crate::behaviour::chat::Response,
-        libp2p::request_response::ResponseChannel<crate::behaviour::chat::Response>,
+        PeerId,
     )>,
     chat_sender: Arc<
         Sender<(
             crate::behaviour::chat::Response,
-            libp2p::request_response::ResponseChannel<crate::behaviour::chat::Response>,
+            PeerId,
         )>,
     >,
+    routing_tx:Sender<(PeerId,Vec<u64>)>,
+    routing_rx:Receiver<(PeerId,Vec<u64>)>,
     dial_queries: AHashMap<PeerId, Vec<OneShotSender<Result<()>>>>,
+    pending_routing: AHashMap<u64,Vec<(u64,Instant)>>,
+    connected_peers: AHashMap<u64,PeerId>,
     lookup_queries: AHashMap<PeerId, Vec<oneshot::Sender<Result<IdentifyInfo>>>>,
     // TODO(ramfox): use new providers queue instead
     find_on_dht_queries: AHashMap<Vec<u8>, DHTQuery>,
     record_on_dht_queries: AHashMap<Vec<u8>, (QueryId, Vec<OneShotSender<Result<Option<Record>>>>)>,
     provider_on_dht_queries: AHashMap<Vec<u8>, (QueryId, Vec<OneShotSender<Result<QueryId>>>)>,
-    pending_request: AHashMap<RequestId, OneShotSender<Result<Option<ChatResponse>>>>,
+    pending_request: AHashMap<RequestId, (u64,u64,OneShotSender<Result<Option<ChatResponse>>>)>,
     network_events: Vec<Sender<NetworkEvent>>,
     _keychain: Keychain<KeyStorage>,
     #[allow(dead_code)]
@@ -210,6 +213,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             ..
         } = config;
 
+        let (routing_tx,routing_rx) = channel::<(PeerId,Vec<u64>)>(4096);
+
         let keypair = load_identity(&mut keychain, filter).await?;
         let mut swarm = build_swarm(&libp2p_config, &keypair, db.clone(), agent.clone()).await?;
         let mut listen_addrs = vec![];
@@ -230,19 +235,19 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             let add_addr = addr.clone();
             if let Some(Protocol::P2p(mh)) = addr.pop() {
                 let peer_id = PeerId::from_multihash(mh).unwrap();
-                tracing::warn!("add boot>> {:?}  {:?}",peer_id,addr);
+                tracing::info!("add boot>> {:?}  {:?}",peer_id,addr);
                 if !libp2p_config.kademlia {
                     swarm.dial(addr)?;
                 }
                 if is_client{
                     let l_addr = format!("{}/p2p-circuit/p2p/{}",add_addr.clone().to_string(),local_peer_id);
-                    tracing::info!("{l_addr}");
+                    tracing::warn!("{l_addr}");
                     let on_addr = Multiaddr::from_str(&l_addr).unwrap();
                     Swarm::listen_on(&mut swarm, on_addr.clone())?;
                     listen_addrs.push(on_addr.clone());
                 }
             } else {
-                tracing::warn!("Could not parse bootstrap addr {}", multiaddr);
+                tracing::info!("Could not parse bootstrap addr {}", multiaddr);
             }
         }
         let cache = DiGraph::<u64, (u64, u64)>::new();
@@ -254,7 +259,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 net_receiver_in,
                 chat_receiver,
                 chat_sender,
+                routing_tx,
+                routing_rx,
                 dial_queries: Default::default(),
+                pending_routing: Default::default(),
+                connected_peers: Default::default(),
                 lookup_queries: Default::default(),
                 // TODO(ramfox): use new providers queue instead
                 find_on_dht_queries: Default::default(),
@@ -303,8 +312,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             tokio::select! {
                 swarm_event = self.swarm.next() => {
                     let swarm_event = swarm_event.expect("the swarm will never die");
-                    if let Err(err) = self.handle_swarm_event(swarm_event) {
-                        tracing::warn!("swarm error: {:?}", err);
+                    if let Err(err) = self.handle_swarm_event(swarm_event).await {
+                        tracing::info!("swarm error: {:?}", err);
                     }
 
                     if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
@@ -323,7 +332,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     // continue;
                                 }
                                 Err(err) => {
-                                    tracing::warn!("rpc: {:?}", err);
+                                    tracing::info!("rpc: {:?}", err);
                                 }
                             }
                         }
@@ -333,10 +342,20 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         }
                     }
                 }
+                routing = self.routing_rx.recv() => {
+                    match routing {
+                        Some((peer_id,crc))=>{
+                            self.handle_chat_routing(peer_id,crc);
+                        }
+                        None=>{
+
+                        }
+                    }
+                }
                 res_channel = self.chat_receiver.recv() => {
                     match res_channel {
-                        Some((res,channel))=>{
-                            self.handle_chat_response(res,channel);
+                        Some((res,peer_id))=>{
+                            self.handle_chat_response(res,peer_id);
                         }
                         None=>{
 
@@ -351,12 +370,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     }
                 }, if nice_interval.is_some() => {
                     // Print peer count on an interval.
-                    tracing::warn!("[{}] Peers connected: {:?}",self.local_peer_id(), self.swarm.connected_peers().count());
+                    tracing::info!("[{}] Peers connected: {:?}",self.local_peer_id(), self.swarm.connected_peers().count());
                     // self.dht_nice_tick().await;
                 }
                 _ = bootstrap_interval.tick() => {
                     if let Err(e) = self.swarm.behaviour_mut().kad_bootstrap() {
-                        tracing::warn!("kad bootstrap failed: {:?}", e);
+                        tracing::info!("kad bootstrap failed: {:?}", e);
                     }
                     else{
                         tracing::debug!("kad bootstrap successfully");
@@ -364,7 +383,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 }
                 _ = expiry_interval.tick() => {
                     if let Err(err) = self.expiry() {
-                        tracing::warn!("expiry error {:?}", err);
+                        tracing::info!("expiry error {:?}", err);
                     }
                 }
             }
@@ -465,10 +484,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     debug!("all workers stopped for session {}", ctx);
                 }
                 if let Err(err) = client.stop_session(ctx).await {
-                    tracing::warn!("failed to stop session {}: {:?}", ctx, err);
+                    tracing::info!("failed to stop session {}: {:?}", ctx, err);
                 }
                 if let Err(err) = response_channel.send(Ok(())) {
-                    tracing::warn!("session {} failed to send stop response: {:?}", ctx, err);
+                    tracing::info!("session {} failed to send stop response: {:?}", ctx, err);
                 }
                 debug!("session {} stopped", ctx);
             });
@@ -505,7 +524,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     block = client.get_block_with_session_id(ctx, &cid, &providers) => match block {
                         Ok(block) => {
                             if let Err(e) = chan.send(Ok(block)) {
-                                tracing::warn!("failed to send block response: {:?}", e);
+                                tracing::info!("failed to send block response: {:?}", e);
                             }
                         }
                         Err(err) => {
@@ -523,7 +542,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
     }
 
     #[tracing::instrument(skip(self))]
-    fn handle_swarm_event(
+    async fn handle_swarm_event(
         &mut self,
         event: SwarmEvent<
             <NodeBehaviour as NetworkBehaviour>::OutEvent,
@@ -533,7 +552,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         // tracing::info!("swarm>>>> {event:?}");
         match event {
             // outbound events
-            SwarmEvent::Behaviour(event) => self.handle_node_event(event),
+            SwarmEvent::Behaviour(event) => self.handle_node_event(event).await,
             SwarmEvent::ConnectionEstablished {
                 peer_id,
                 num_established,
@@ -544,19 +563,32 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         channel.send(Ok(())).ok();
                     }
                 }
-
+                
                 if num_established.get() == 1 {
+                    let mut digest = crc64fast::Digest::new();
+                    digest.write(&peer_id.to_bytes());
+                    let to_id = digest.sum64();
+                    self.connected_peers.insert(to_id, peer_id.clone());
+                    if let Some(pending) = self.pending_routing.get(&to_id) {
+                        let mut pending_crc = vec![];
+                        for (crc,t) in pending {
+                            if t.elapsed().as_millis() > 2000 {
+                                tracing::warn!("pending crc {crc} to {peer_id}");
+                                pending_crc.push(*crc);
+                            }
+                        }
+                        if !pending_crc.is_empty() {
+                            self.routing_tx.send((peer_id.clone(),pending_crc)).await?;
+                        }
+                    }
                     let local_id = self.local_peer_id();
                     let mut digest = crc64fast::Digest::new();
                     digest.write(&local_id.to_bytes());
                     let my_id = digest.sum64();
-                    let mut digest = crc64fast::Digest::new();
-                    digest.write(&peer_id.to_bytes());
-                    let to_id = digest.sum64();
                     let f = self.get_peer_index(my_id);
                     let t = self.get_peer_index(to_id);
                     // let time = Utc::now().timestamp_millis() as u64;
-                    tracing::warn!("local connection >> {my_id} --> {to_id}");
+                    tracing::error!("local connection >> {my_id} --> {to_id}");
                     self.connections
                         .update_edge(f, t, ConnectionEdge::Local(peer_id.clone()));
 
@@ -579,12 +611,13 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     let mut digest = crc64fast::Digest::new();
                     digest.write(&peer_id.to_bytes());
                     let to_id = digest.sum64();
+                    self.connected_peers.remove(&to_id);
                     let f = self.get_peer_index(my_id);
                     let t = self.get_peer_index(to_id);
 
                     if let Some(e) = self.connections.find_edge(f, t) {
                         self.connections.remove_edge(e);
-                        tracing::warn!("local disconnection >> {my_id} --> {to_id}");
+                        tracing::error!("local disconnection >> {my_id} --> {to_id}");
                     }
                     else{
                         tracing::error!("local disconnection >> {my_id} --> {to_id}");
@@ -622,14 +655,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             let sender = sender.clone();
             tokio::task::spawn(async move {
                 if let Err(e) = sender.send(ev.clone()).await {
-                    tracing::warn!("failed to send network event: {:?}", e);
+                    tracing::info!("failed to send network event: {:?}", e);
                 }
             });
         }
     }
 
     #[tracing::instrument(skip(self,event))]
-    fn handle_node_event(&mut self, event: Event) -> Result<()> {
+    async fn handle_node_event(&mut self, event: Event) -> Result<()> {
         // tracing::info!("node>>> {event:?}");
         let local_id = self.local_peer_id();
         let mut digest = crc64fast::Digest::new();
@@ -646,7 +679,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     // TODO: track query?
                                 }
                                 Err(err) => {
-                                    tracing::warn!("failed to provide {}: {:?}", key, err);
+                                    tracing::info!("failed to provide {}: {:?}", key, err);
                                 }
                             }
                         }
@@ -738,7 +771,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             );
                         }
                         QueryResult::Bootstrap(Err(e)) => {
-                            tracing::warn!("kad bootstrap error: {:?}", e);
+                            tracing::info!("kad bootstrap error: {:?}", e);
                         }
                         QueryResult::GetClosestPeers(Ok(GetClosestPeersOk { key, peers })) => {
                             debug!("GetClosestPeers ok {:?}", key);
@@ -795,6 +828,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         }
                                     });
                                 }
+                                
                             }
                             GetRecordOk::FinishedWithNoAdditionalRecord { .. } => {
                                 tracing::debug!("FinishedWithNoAdditionalRecord");
@@ -870,8 +904,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             }
             Event::Identify(e) => {
                 libp2p_metrics().record(&*e);
-                // tracing::warn!("tick: identify {:?}", e);
-                let local_peer_id = local_id.to_string();
+                // tracing::info!("tick: identify {:?}", e);
+                // let local_peer_id = local_id.to_string();
                 let is_client = match self.agent.as_ref() {
                     Some(ag)=>{
                         !ag.contains("Relay")
@@ -880,26 +914,18 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 };
 
                 if let IdentifyEvent::Received { peer_id, info } = *e {
-                    for addr in &info.listen_addrs {
-                        let add_addr = addr.clone();
-                        if add_addr.clone().to_string().contains("quic-v1") /*|| add_addr.clone().to_string().contains("/tcp/")*/ {
-                            if is_client {
-                                let l_addr = format!("{}/p2p/{}/p2p-circuit/p2p/{}",add_addr.clone().to_string(),peer_id,local_peer_id);
-                                tracing::warn!("{l_addr}");
-                                let on_addr = Multiaddr::from_str(&l_addr).unwrap();
-                                if let Err(e) = self.swarm.listen_on(on_addr) {
-                                    tracing::error!("{e:?}");
-                                }
-                            }
-                            else {
-                                if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-                                    tracing::warn!("chat client>>>>[{peer_id:?}] {add_addr:?}");
-                                    chat.add_address(&peer_id, addr.clone());
-                                }
+                    let obs_addr = &info.observed_addr;
+                    if obs_addr.to_string().contains("quic-v1/p2p/") /*|| add_addr.clone().to_string().contains("/tcp/")*/ {
+                        if !is_client {
+                            if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+                                let on_addr = format!("{}/p2p-circuit/p2p/{}",obs_addr.clone().to_string(),peer_id);
+                                let on_addr = Multiaddr::from_str(&on_addr).unwrap();
+                                tracing::info!("relay chat client>>>>[{peer_id:?}] {on_addr:?}");
+                                chat.add_address(&peer_id, on_addr.clone());
                             }
                         }
-
                     }
+                    
                     if info.agent_version.contains("Relay") {
                         // TODO: only in my relay white list;
                         for protocol in &info.protocols {
@@ -918,7 +944,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         }
                     } else {
                         //TODO only in my contacts
-                        tracing::warn!("peer info: {info:?}");
+                        tracing::info!("peer info: {info:?}");
                         // info.observed_addr
                         for protocol in &info.protocols {
                             let p = protocol.as_bytes();
@@ -936,7 +962,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         }
                     }
 
-                    tracing::warn!("identity>>> {peer_id} --> {info:?} ");
+                    tracing::info!("identity>>> {peer_id} --> {info:?} ");
                     self.swarm
                         .behaviour_mut()
                         .peer_manager
@@ -972,7 +998,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         .inject_ping(e.peer, ping);
                 }
                 else{
-                    tracing::warn!("ping>>>>{e:?}");
+                    tracing::info!("ping>>>>{e:?}");
                 }
             }
             Event::Relay(event) => {
@@ -1019,7 +1045,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 let f = self.get_peer_index(my_id);
                                 let t = self.get_peer_index(to_id);
                                 // let time = Utc::now().timestamp_millis() as u64;
-                                tracing::warn!("local relay connection >> {my_id} --> {to_id}");
+                                tracing::info!("local relay connection >> {my_id} --> {to_id}");
                                 self.connections
                                     .update_edge(f, t, ConnectionEdge::Local(src_peer_id.clone()));
                                 msg = Some(luffa_rpc_types::Message::StatusSync {
@@ -1080,9 +1106,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     ..
                                 } = event;
                                 if nonce.is_none() {
-                                    if to > 0 {
-                                        return Ok(());
-                                    }
+                                    
                                     if let Ok(msg) =
                                         Message::decrypt(bytes::Bytes::from(msg), None, nonce)
                                     {
@@ -1093,6 +1117,22 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     let t = self.get_contacts_index(ctt.did);
                                                     let tp = ctt.r#type as u8;
                                                     self.contacts.update_edge(f, t, tp);
+                                                }
+                                            }
+                                            Message::Feedback { crc,status,from_id,.. }=>{
+                                                match status {
+                                                    FeedbackStatus::Reach | FeedbackStatus::Read =>{
+                                                        if let Some(from) = from_id {
+                                                            let pending = self.pending_routing.entry(from).or_insert(Vec::new());
+                                                            pending.retain(|(c,_t)| !crc.contains(c));
+                                                        }
+                                                        else{
+                                                            tracing::warn!("reach or read feedback which from is None");
+                                                        }
+                                                    }
+                                                    _=>{
+                                                        
+                                                    }
                                                 }
                                             }
                                             Message::StatusSync {
@@ -1113,14 +1153,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                                 t,
                                                                 ConnectionEdge::Remote(time),
                                                             );
-                                                            tracing::warn!("remote connection {from_id} -> {to}");
+                                                            tracing::info!("remote connection {from_id} -> {to}");
                                                         }
                                                         _ => {
                                                             if let Some(i) =
                                                                 self.connections.find_edge(f, t)
                                                             {
                                                                 self.connections.remove_edge(i);
-                                                                tracing::warn!("remote disconnection {from_id} -> {to}");
+                                                                tracing::info!("remote disconnection {from_id} -> {to}");
                                                             }
                                                             else{
                                                                 tracing::error!("remote disconnection {from_id} -> {to}");
@@ -1129,6 +1169,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     }
                                                 }
                                             }
+                                            
                                             _ => {}
                                         }
                                     }
@@ -1137,7 +1178,6 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     let t = self.get_contacts_index(to);
                                     // check that from and to was in any contacts ?
                                     if let Some(idx) = self.contacts.find_edge(f, t) {
-                                        self.save_cache_crc(crc, from_id, to);
                                         let tp = self.contacts.edge_weight(idx).unwrap();
                                         let mut rx_any = None;
                                         if *tp == 0 {
@@ -1200,6 +1240,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             };
                                                         }
                                                     });
+                                                }
+                                                else{
+                                                    if let Some(to) = self.contacts.node_weight(t) {
+
+                                                    }
                                                 }
                                             }
                                         }
@@ -1269,7 +1314,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             let dial_opts =
                                 DialOpts::peer_id(peer_id).addresses(vec![addr]).build();
                             if let Err(e) = Swarm::dial(&mut self.swarm, dial_opts) {
-                                tracing::warn!("invalid dial options: {:?}", e);
+                                tracing::info!("invalid dial options: {:?}", e);
                             }
                         }
                     }
@@ -1300,142 +1345,152 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     nonce,
                                     ..
                                 } = event;
-                                // if crc > 0 {
-                                //     let msg = Message::Feedback { crc, status: luffa_rpc_types::FeedbackStatus::Fetch };
-                                //     let evnt = luffa_rpc_types::Event::new(from_id,&msg,None,0);
-                                //     let res = evnt.encode().unwrap();
-                                //     let res = crate::behaviour::chat::Response(res);
-                                //     let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
-
-                                //     if let Err(e) = chat.send_response(channel, res) {
-                                //         tracing::warn!("chat response failed: >>{e:?}");
-                                //     }
-                                //     tracing::warn!("-----{request_id:?}------");
-                                //     return Ok(());
-                                // }
-                                if nonce.is_none() {
-                                    if let Ok(msg) =
-                                        Message::decrypt(bytes::Bytes::from(msg), None, nonce)
-                                    {
-                                        match msg {
-                                            Message::ContactsSync { did, mut contacts } => {
-                                                let contacts_t = contacts.clone();
-                                                let status = Message::ContactsSync {
-                                                    did,
-                                                    contacts: contacts_t,
-                                                };
-                                                let evnt = luffa_rpc_types::Event::new(
-                                                    0, &status, None, from_id,
-                                                );
-                                                let sts = evnt.encode().unwrap();
-                                                if let Some(go) =
-                                                    self.swarm.behaviour_mut().gossipsub.as_mut()
-                                                {
-                                                    if let Err(e) = go.publish(
-                                                        TopicHash::from_raw(TOPIC_STATUS),
-                                                        sts,
-                                                    ) {
-                                                        tracing::error!("{e:?}");
-                                                    }
-                                                }
-
-                                                for ctt in contacts.iter_mut() {
-                                                    let ls_crc = self.load_cache_crc(
-                                                        ctt.did,
-                                                        Some(ctt.have_time),
-                                                    );
-                                                    let ls_crc = ls_crc
-                                                        .into_iter()
-                                                        .map(|(x, _f)| x)
-                                                        .collect::<Vec<_>>();
-                                                    ctt.wants.extend_from_slice(&ls_crc);
-                                                }
-
-                                                let f = self.get_contacts_index(from_id);
-                                                for ctt in contacts.iter() {
-                                                    let t = self.get_contacts_index(ctt.did);
-                                                    let tp = ctt.r#type as u8;
-                                                    self.contacts.update_edge(f, t, tp);
-                                                }
-                                                contacts.retain(|c| !c.wants.is_empty());
-                                                tracing::warn!(
-                                                    "ContactsSync --->:{contacts:?}  to {did}"
-                                                );
-                                                let feed = Message::ContactsSync { did, contacts };
-                                                let evnt = luffa_rpc_types::Event::new(
-                                                    from_id, &feed, None, 0,
-                                                );
-                                                let res = evnt.encode().unwrap();
-
-                                                let res = crate::behaviour::chat::Response(res);
-                                                let chat = self
-                                                    .swarm
-                                                    .behaviour_mut()
-                                                    .chat
-                                                    .as_mut()
-                                                    .unwrap();
-
-                                                if let Err(e) = chat.send_response(channel, res) {
-                                                    tracing::warn!("chat response failed: >>{e:?}");
-                                                }
-                                            }
-                                            _ => {
-                                                let msg = Message::Feedback {
-                                                    crc,
-                                                    status: luffa_rpc_types::FeedbackStatus::Reach,
-                                                };
-                                                let evnt = luffa_rpc_types::Event::new(
-                                                    from_id, &msg, None, 0,
-                                                );
-                                                let res = evnt.encode().unwrap();
-                                                let res = crate::behaviour::chat::Response(res);
-                                                let chat = self
-                                                    .swarm
-                                                    .behaviour_mut()
-                                                    .chat
-                                                    .as_mut()
-                                                    .unwrap();
-
-                                                if let Err(e) = chat.send_response(channel, res) {
-                                                    tracing::warn!("chat response failed: >>{e:?}");
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        tracing::warn!("this message can not decrypt.");
-                                        let msg = Message::Feedback {
-                                            crc,
-                                            status: luffa_rpc_types::FeedbackStatus::Fetch,
-                                        };
-                                        let evnt =
-                                            luffa_rpc_types::Event::new(from_id, &msg, None, 0);
-                                        let res = evnt.encode().unwrap();
-                                        let res = crate::behaviour::chat::Response(res);
-                                        let chat =
-                                            self.swarm.behaviour_mut().chat.as_mut().unwrap();
-
-                                        if let Err(e) = chat.send_response(channel, res) {
-                                            tracing::warn!("chat response failed: >>{e:?}");
-                                        }
-                                    }
-                                } else if to == my_id {
-                                    // this node is a client and the message is send to it.
-                                    self.emit_network_event(NetworkEvent::RequestResponse(
-                                        ChatEvent::Request(request.data().to_vec()),
-                                    ));
-                                    let msg = Message::Feedback {
-                                        crc,
-                                        status: luffa_rpc_types::FeedbackStatus::Reach,
-                                    };
-                                    let evnt = luffa_rpc_types::Event::new(from_id, &msg, None, 0);
+                                {
+                                    let msg = Message::Feedback { crc:vec![crc],from_id:Some(from_id),to_id:Some(to),status: luffa_rpc_types::FeedbackStatus::Routing };
+                                    let evnt = luffa_rpc_types::Event::new(from_id,&msg,None,0);
                                     let res = evnt.encode().unwrap();
                                     let res = crate::behaviour::chat::Response(res);
                                     let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
 
                                     if let Err(e) = chat.send_response(channel, res) {
-                                        tracing::warn!("chat response failed: >>{e:?}");
+                                        tracing::error!("chat response failed: >>{e:?}");
                                     }
-                                } else {
+                                    tracing::info!("-----{request_id:?}------");
+                                }
+                                if nonce.is_none() {
+                                    if let Ok(msg) =
+                                        Message::decrypt(bytes::Bytes::from(msg), None, nonce)
+                                    {
+                                        let msg_t = msg.clone();
+                                        match msg {
+                                            Message::StatusSync { from_id, status ,..}=>{
+                                                match status {
+                                                    AppStatus::Active=> {
+                                                        if let Some(pending) = self.pending_routing.get(&from_id) {
+                                                            if let Some(peer_id) = self.connected_peers.get(&from_id) {
+                                                                let mut pending_crc = vec![];
+                                                                for (crc,t) in pending {
+                                                                    if t.elapsed().as_millis() > 3000 {
+                                                                        tracing::warn!("active pending crc {crc} to {peer_id}");
+                                                                        pending_crc.push(*crc);
+                                                                    }
+                                                                }
+                                                                if !pending_crc.is_empty() {
+                                                                    self.routing_tx.send((peer_id.clone(),pending_crc)).await?;
+                                                                }
+                                                            }
+                                                            
+                                                        }
+                                                    }
+                                                    AppStatus::Deactive =>{
+                                                        self.connected_peers.remove(&from_id);
+                                                        let f = self.get_peer_index(my_id);
+                                                        let t = self.get_peer_index(from_id);
+
+                                                        if let Some(e) = self.connections.find_edge(f, t) {
+                                                            self.connections.remove_edge(e);
+                                                            tracing::warn!("local Deactive >> {my_id} --> {from_id}");
+                                                        }
+                                                        else{
+                                                            tracing::error!("local Deactive >> {my_id} --> {from_id}");
+                                                        }
+                                                    }
+                                                    _=>{
+                                                        
+                                                    }
+                                                }
+                                                if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
+                                                    let msg_t = Message::StatusSync {to:from_id,from_id:my_id,status};
+                                                    let event = luffa_rpc_types::Event::new(0,&msg_t,None,from_id);
+                                                    let event = event.encode()?;
+                                                    if let Err(e) = go.publish(
+                                                        TopicHash::from_raw(TOPIC_STATUS),
+                                                        event,
+                                                    ) {
+                                                        tracing::error!("StatusSync pub>>>:{e:?}");
+                                                    }
+                                                }
+                                                
+                                            }
+                                            Message::ContactsSync { did, contacts } => {
+                                                let f = self.get_contacts_index(did);
+                                                for ctt in contacts.iter() {
+                                                    let t = self.get_contacts_index(ctt.did);
+                                                    let tp = ctt.r#type as u8;
+                                                    self.contacts.update_edge(f, t, tp);
+                                                }
+                                                let event = luffa_rpc_types::Event::new(0,&msg_t,None,from_id);
+                                                let event = event.encode()?;
+                                                if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
+                                                    if let Err(e) = go.publish(
+                                                        TopicHash::from_raw(TOPIC_STATUS),
+                                                        event,
+                                                    ) {
+                                                        tracing::error!("ContactsSync pub>>>:{e:?}");
+                                                    }
+                                                }
+                                            }
+                                            Message::Feedback { crc,status,from_id,.. }=>{
+                                                match &status {
+                                                    FeedbackStatus::Reach | FeedbackStatus::Read =>{
+                                                        if let Some(from) = from_id {
+                                                            let pending = self.pending_routing.entry(from).or_insert(Vec::new());
+                                                            pending.retain(|(c,_t)| !crc.contains(c));
+                                                            // if !pending.is_empty() {
+                                                            // }
+                                                            tracing::warn!("from {from} Reach>>>> {:?}", pending);
+                                                            if let Some(go) = self
+                                                            .swarm
+                                                            .behaviour_mut()
+                                                            .gossipsub
+                                                            .as_mut()
+                                                            {
+                                                                let msg_t = Message::Feedback {crc,from_id:Some(from),to_id:None,status};
+                                                                let event = luffa_rpc_types::Event::new(0,&msg_t,None,my_id);
+                                                                let event = event.encode()?;
+                                                                if let Err(e) = go.publish(
+                                                                    TopicHash::from_raw(TOPIC_STATUS),
+                                                                    event,
+                                                                ) {
+                                                                    tracing::error!("Feedback>>>{e:?}  msg: {msg_t:?}");
+                                                                }
+                                                            }
+                                                        }
+                                                        else{
+                                                            tracing::warn!("reach or read feedback which from is None");
+                                                        }
+                                                    }
+                                                    FeedbackStatus::Fetch=>{
+                                                        self.emit_network_event(NetworkEvent::RequestResponse(
+                                                            ChatEvent::Request(request.data().to_vec()),
+                                                        ));
+                                                    }
+                                                    _=>{
+                                                        tracing::warn!("feedback>> nonce msg: {msg_t:?}");
+
+                                                    }
+                                                }
+                                            }
+                                            _ => {
+                                                tracing::warn!("nonce msg: {msg_t:?}");
+                                            }
+                                        }
+                                    } 
+                                } else if to == my_id  {
+                                    // this node is a client and the message is send to it.
+                                    self.emit_network_event(NetworkEvent::RequestResponse(
+                                        ChatEvent::Request(request.data().to_vec()),
+                                    ));
+                                    
+                                } else if from_id == my_id  {
+                                    // this node is a client and the message is send to it.
+                                    tracing::warn!("from_id == my_id");
+                                    self.emit_network_event(NetworkEvent::RequestResponse(
+                                        ChatEvent::Request(request.data().to_vec()),
+                                    ));
+                                    
+                                }
+                                else {
                                     let f = self.get_contacts_index(from_id);
                                     let t = self.get_contacts_index(to);
                                     // put record(crc,data)
@@ -1444,13 +1499,16 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     {
                                         tracing::error!("{e:?}");
                                     }
+                                    // tracing::info!("{crc}");
                                     // check that from and to was in any contacts ?
+
                                     if let Some(idx) = self.contacts.find_edge(f, t) {
-                                        self.save_cache_crc(crc, from_id, to);
                                         let tp = self.contacts.edge_weight(idx).unwrap();
                                         let mut rx_any = None;
                                         if *tp == 0 {
                                             // contact is private
+                                            let pending = self.pending_routing.entry(to).or_insert(Vec::new());
+                                            pending.push((crc,std::time::Instant::now()));
                                             let t = self.get_peer_index(to);
 
                                             if let Ok(Some(rx)) =
@@ -1489,23 +1547,24 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                             }
                                             match rx_any {
                                                 Some(rx) => {
+                                                    let pending = self.pending_routing.entry(to).or_insert(Vec::new());
+                                                    pending.retain(|(c,_t)| crc != *c);
                                                     let sender = self.chat_sender.clone();
                                                     tokio::spawn(async move {
                                                         if let Ok(res) = rx.await {
                                                             if let Ok(Some(cr)) = res {
                                                                 let res = crate::behaviour::chat::Response(cr.data);
-                                                                if let Err(e) = sender
-                                                                    .send((res, channel))
-                                                                    .await
-                                                                {
-                                                                    tracing::warn!("{e:?}");
+                                                                if let Err(e) = sender.send((res,peer.clone())).await {
+                                                                    tracing::error!("{e:?}");
                                                                 }
+                                                                
                                                             };
                                                         }
                                                     });
                                                 }
                                                 None => {
                                                     // do not route to any other relay node
+                                                    
                                                     if let Some(go) = self
                                                         .swarm
                                                         .behaviour_mut()
@@ -1516,45 +1575,13 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             TopicHash::from_raw(TOPIC_CHAT),
                                                             request.data().to_vec(),
                                                         ) {
-                                                            tracing::warn!("{e:?}");
+                                                            tracing::info!("{e:?}");
                                                         }
                                                     }
-                                                    let msg = Message::Feedback {
-                                                        crc,
-                                                        status:
-                                                            luffa_rpc_types::FeedbackStatus::Reach,
-                                                    };
-                                                    let evnt = luffa_rpc_types::Event::new(
-                                                        from_id, &msg, None, 0,
-                                                    );
-                                                    let res = evnt.encode().unwrap();
-                                                    let res = crate::behaviour::chat::Response(res);
-                                                    let chat = self
-                                                        .swarm
-                                                        .behaviour_mut()
-                                                        .chat
-                                                        .as_mut()
-                                                        .unwrap();
-                                                    tracing::warn!(
-                                                        "------offline---res [{evnt:?}]--"
-                                                    );
-                                                    if let Err(e) = chat.send_response(channel, res)
-                                                    {
-                                                        tracing::warn!(
-                                                            "chat response failed: >>{e:?}"
-                                                        );
-                                                    }
-                                                    // send offline notice
-                                                    self.emit_network_event(
-                                                        NetworkEvent::RequestResponse(
-                                                            ChatEvent::Request(
-                                                                request.data().to_vec(),
-                                                            ),
-                                                        ),
-                                                    );
                                                 }
                                             }
                                         } else {
+                                            //Group msg
                                             if let Some(go) =
                                                 self.swarm.behaviour_mut().gossipsub.as_mut()
                                             {
@@ -1565,7 +1592,6 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     tracing::error!("{e:?}");
                                                 }
                                             }
-                                            //Group msg
 
                                             let g_idx = self.get_contacts_index(to);
                                             let members = self.contacts.edges(g_idx);
@@ -1577,12 +1603,18 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     } else {
                                                         m.source()
                                                     }
+                                                    
                                                 })
                                                 .collect::<Vec<_>>();
                                             for t in targets {
+                                                if let Some(to_id) = self.contacts.node_weight(t) {
+                                                    let pending = self.pending_routing.entry(*to_id).or_insert(Vec::new());
+                                                    pending.push((crc,std::time::Instant::now()));
+                                                }
                                                 if let Ok(Some(rx)) =
                                                     self.local_send_if_connected(t, request.data())
                                                 {
+                                                    
                                                     tokio::spawn(async move {
                                                         if let Ok(res) = rx.await {
                                                             if let Ok(Some(cr)) = res {
@@ -1593,48 +1625,18 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             };
                                                         }
                                                     });
-                                                } else if self.connections.edges(t).count() == 0 {
-                                                    let to = self.contacts[t];
-                                                    let mut e =
-                                                        luffa_rpc_types::Event::decode_uncheck(
-                                                            request.data(),
-                                                        )
-                                                        .unwrap();
-                                                    e.to = to;
-                                                    // send offline notice
-                                                    self.emit_network_event(
-                                                        NetworkEvent::RequestResponse(
-                                                            ChatEvent::Request(e.encode().unwrap()),
-                                                        ),
-                                                    );
                                                 }
+                                                
                                             }
-
-                                            // // put record(crc,data)
-                                            // if let Err(e) =
-                                            //     self.put_to_dht(crc, request.data().to_vec())
-                                            // {
-                                            //     tracing::error!("{e:?}");
-                                            // }
-                                            let msg = Message::Feedback {
-                                                crc,
-                                                status: luffa_rpc_types::FeedbackStatus::Reach,
-                                            };
-                                            let evnt =
-                                                luffa_rpc_types::Event::new(from_id, &msg, None, 0);
-                                            let res = evnt.encode().unwrap();
-                                            let res = crate::behaviour::chat::Response(res);
-                                            let chat =
-                                                self.swarm.behaviour_mut().chat.as_mut().unwrap();
-
-                                            if let Err(e) = chat.send_response(channel, res) {
-                                                tracing::warn!("chat response failed: >>{e:?}");
-                                            }
+                                            
                                         }
                                     } else {
+                                        //contacts exchange
+                                        tracing::warn!("contacts edge not found [{from_id} -> {to}]");
                                         let mut rx_any = None;
                                         let t = self.get_peer_index(to);
-
+                                        let pending = self.pending_routing.entry(to).or_insert(Vec::new());
+                                        pending.push((crc,std::time::Instant::now()));
                                         if let Ok(Some(rx)) =
                                             self.local_send_if_connected(t, request.data())
                                         {
@@ -1666,21 +1668,21 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     }
                                                 }
                                             }
+                                            else{
+                                                tracing::warn!("2 not connect.");
+                                            }
                                         }
                                         match rx_any {
                                             Some(rx) => {
+                                                let pending = self.pending_routing.entry(to).or_insert(Vec::new());
+                                                    pending.retain(|(c,_t)| crc != *c);
                                                 let sender = self.chat_sender.clone();
                                                 tokio::spawn(async move {
                                                     if let Ok(res) = rx.await {
                                                         if let Ok(Some(cr)) = res {
-                                                            let res =
-                                                                crate::behaviour::chat::Response(
-                                                                    cr.data,
-                                                                );
-                                                            if let Err(e) =
-                                                                sender.send((res, channel)).await
-                                                            {
-                                                                tracing::warn!("{e:?}");
+                                                            let res = crate::behaviour::chat::Response(cr.data);
+                                                            if let Err(e) = sender.send((res,peer.clone())).await {
+                                                                tracing::error!("{e:?}");
                                                             }
                                                         };
                                                     }
@@ -1694,35 +1696,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         TopicHash::from_raw(TOPIC_CHAT),
                                                         request.data().to_vec(),
                                                     ) {
-                                                        tracing::warn!("{e:?}");
+                                                        tracing::warn!("not route,publish failed, {e:?}");
                                                     }
                                                 }
-                                                // put record(crc,data)
-                                                self.save_cache_crc(crc, from_id, to);
-                                                // if let Err(e) =
-                                                //     self.put_to_dht(crc, request.data().to_vec())
-                                                // {
-                                                //     tracing::error!("{e:?}");
-                                                // }
-                                                let msg = Message::Feedback {
-                                                    crc,
-                                                    status: luffa_rpc_types::FeedbackStatus::Reach,
-                                                };
-                                                let evnt = luffa_rpc_types::Event::new(
-                                                    from_id, &msg, None, 0,
-                                                );
-                                                let res = evnt.encode().unwrap();
-                                                let res = crate::behaviour::chat::Response(res);
-                                                let chat = self
-                                                    .swarm
-                                                    .behaviour_mut()
-                                                    .chat
-                                                    .as_mut()
-                                                    .unwrap();
-                                                eprintln!("====================");
-                                                if let Err(e) = chat.send_response(channel, res) {
-                                                    tracing::warn!("chat response failed: >>{e:?}");
-                                                }
+                                               
                                                 self.emit_network_event(
                                                     NetworkEvent::RequestResponse(
                                                         ChatEvent::Request(request.data().to_vec()),
@@ -1738,21 +1715,39 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 response,
                             } => {
                                 let data = response.0;
-                                if let Some(channel) = self.pending_request.remove(&request_id) {
-                                    if let Err(_e) =
-                                        channel.send(Ok(Some(ChatResponse { data: data.clone() })))
-                                    {
-                                        tracing::warn!("channel response failed");
+                                let luffa_rpc_types::Event {msg,nonce,..} = luffa_rpc_types::Event::decode(&data)?;
+                                if nonce.is_some() {
+                                    self.emit_network_event(NetworkEvent::RequestResponse(
+                                        ChatEvent::Response { request_id:Some(request_id), data },
+                                    ));
+                                }
+                                else{
+                                    let res = Message::decrypt(bytes::Bytes::from(msg), None, nonce)?;
+    
+                                    if let Some((crc,to,channel)) = self.pending_request.remove(&request_id) {
+                                        if let Err(_e) =
+                                            channel.send(Ok(Some(ChatResponse { data: data.clone() })))
+                                        {
+                                            tracing::error!("channel response failed");
+                                        }
+                                     
+                                        tracing::info!("route Feedback:>>>>{res:?}");
+                                        // let msg = Message::Feedback { crc:vec![crc], from_id:None, to_id: Some(to), status: FeedbackStatus::Send };
+                                        // tracing::warn!("res Feedback:>>>>{msg:?}");
+                                        self.local_feedback(Some(request_id), res );
+                                    }
+                                    else{
+                                        tracing::warn!("res Feedback:>>>>{res:?}");
+                                        self.emit_network_event(NetworkEvent::RequestResponse(
+                                            ChatEvent::Response { request_id:Some(request_id), data },
+                                        ));
                                     }
                                 }
-                                self.emit_network_event(NetworkEvent::RequestResponse(
-                                    ChatEvent::Response { request_id, data },
-                                ));
                             }
                         }
                     }
                     RequestResponseEvent::ResponseSent { peer, request_id } => {
-                        tracing::warn!("Chat Response Sent>>{peer:?}  {:?} ", request_id);
+                        tracing::info!("Chat Response Sent>>{peer:?}  {:?} ", request_id);
                         self.emit_network_event(NetworkEvent::RequestResponse(
                             ChatEvent::ResponseSent { peer, request_id },
                         ));
@@ -1796,12 +1791,37 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
     fn handle_chat_response(
         &mut self,
         res: crate::behaviour::chat::Response,
-        channel: libp2p::request_response::ResponseChannel<crate::behaviour::chat::Response>,
+        peer: PeerId,
     ) {
         if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-            if let Err(e) = chat.send_response(channel, res) {
-                tracing::warn!("{e:?}");
-            }
+            let req = crate::behaviour::chat::Request(res.0);
+            // let (tx, rx) = tokio::sync::oneshot::channel();
+            let req_id = chat.send_request(&peer, req);
+            // self.pending_request.insert(req_id, (0,0,tx));
+        }
+    }
+    fn handle_chat_routing(
+        &mut self,
+        peer_id:PeerId,
+        crc:Vec<u64>,
+    ) {
+        let local_id = self.local_peer_id();
+        let mut digest = crc64fast::Digest::new();
+        digest.write(&local_id.to_bytes());
+        let my_id = digest.sum64();
+
+        let mut digest = crc64fast::Digest::new();
+        digest.write(&peer_id.to_bytes());
+        let to_id = digest.sum64();
+        if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+            
+            tracing::warn!("routing to> {to_id} crc {crc:?}");
+            let msg = Message::Feedback { crc, from_id: None, to_id: Some(to_id), status: luffa_rpc_types::FeedbackStatus::Fetch };
+            let data = luffa_rpc_types::Event::new(to_id, &msg, None, my_id);
+            let data = data.encode().unwrap();
+            // let (tx, rx) = tokio::sync::oneshot::channel();
+            let req_id = chat.send_request(&peer_id, crate::behaviour::chat::Request(data));
+            // self.pending_request.insert(req_id, (0,to_id,tx));
         }
     }
 
@@ -1832,11 +1852,20 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         }
     }
     fn save_cache_crc(&mut self, crc: u64, from_id: u64, to: u64) -> EdgeIndex {
-        tracing::warn!("save cache crc:{crc}  {from_id}-> {to}");
+        tracing::info!("save cache crc:{crc}  {from_id}-> {to}");
         let from = self.get_node_index(from_id);
         let to = self.get_node_index(to);
         let now = Utc::now().timestamp_millis() as u64;
         self.cache.add_edge(from, to, (crc, now))
+    }
+    fn remove_cache_crc(&mut self, crc: u64, from_id: u64, to: u64) {
+        tracing::info!("save cache crc:{crc}  {from_id}-> {to}");
+        let from = self.get_node_index(from_id);
+        let to = self.get_node_index(to);
+        if let Some(edge) = self.cache.edges_connecting(from, to).filter(|c| c.weight().0 == crc).next() {
+            self.cache.remove_edge(edge.id());
+        }
+        
     }
     fn put_to_dht(&mut self, crc: u64, data: Vec<u8>) -> anyhow::Result<QueryId> {
         if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
@@ -1864,11 +1893,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         let (crc, time) = self.cache.edge_weight(n).unwrap();
                         if now - *time > 24 * 60 * 60 * 1000 {
                             remove_edges.push(n);
-                            tracing::warn!("remove edge {time}");
+                            tracing::info!("remove edge {time}");
                             continue;
                         }
                         if *time < have_time {
-                            tracing::warn!("skip edge:{time} < {have_time}");
+                            tracing::info!("skip edge:{time} < {have_time}");
                             if now - *time > 5 * 60 * 1000 {
                                 remove_edges.push(n);
                             }
@@ -1897,19 +1926,25 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         data: &Vec<u8>,
     ) -> Result<Option<tokio::sync::oneshot::Receiver<Result<Option<ChatResponse>, anyhow::Error>>>>
     {
+        
         // this node is connected to the target of this message?
         let mut edges = self.connections.edges(target);
         if let Some(local) = edges.find(|e| match e.weight() {
             ConnectionEdge::Local(_) => true,
             _ => false,
-        }) {
+        }) 
+        {
             match local.weight() {
                 ConnectionEdge::Local(p) => {
                     if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
                         let (tx, rx) = tokio::sync::oneshot::channel();
                         let data = data.to_vec();
+                        let luffa_rpc_types::Event { crc ,..} = luffa_rpc_types::Event::decode_uncheck(&data)?;
+                        let mut digest = crc64fast::Digest::new();
+                        digest.write(&p.clone().to_bytes());
+                        let to_id = digest.sum64();
                         let req_id = chat.send_request(p, crate::behaviour::chat::Request(data));
-                        self.pending_request.insert(req_id, tx);
+                        self.pending_request.insert(req_id, (crc,to_id,tx));
                         tracing::info!("chat send. {:?}", req_id);
 
                         return Ok(Some(rx));
@@ -1918,6 +1953,39 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 _ => {
                     unreachable!()
                 }
+            }
+        }
+        else{
+            if let Some(to) = self.contacts.node_weight(target) {
+                let peer_id =
+                match self.swarm.behaviour().peer_manager.all_peers().iter().find(|peer|{
+                    let mut digest = crc64fast::Digest::new();
+                    digest.write(&peer.clone().to_bytes());
+                    let to_id = digest.sum64();
+                    to_id == *to 
+                })
+                {
+                    Some(p)=>{
+                        Some(p.clone().clone())
+                    }
+                    None=>{
+                        None
+                    }
+                };
+                if let Some(p) = peer_id {
+                    let data = data.to_vec();
+                    let luffa_rpc_types::Event { crc ,..} = luffa_rpc_types::Event::decode_uncheck(&data)?;
+                    if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+                        
+                        let (tx, rx) = tokio::sync::oneshot::channel();
+                        let req_id = chat.send_request(&p, crate::behaviour::chat::Request(data));
+                        self.pending_request.insert(req_id, (crc,*to,tx));
+                        tracing::info!("chat send. {:?}", req_id);
+                        return Ok(Some(rx)); 
+                    }
+
+                }
+                
             }
         }
         Ok(None)
@@ -1977,30 +2045,64 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 
                 
                 if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+                    let luffa_rpc_types::Event {
+                        crc,
+                        to,
+                        from_id,
+                        ..
+                    } = luffa_rpc_types::Event::decode_uncheck(&data.msg).unwrap();
+                    if let Some((peer,_,_)) = peers.iter().find(|(p,_,_)| {
+                        let mut digest = crc64fast::Digest::new();
+                        digest.write(&p.to_bytes());
+                        to == digest.sum64()
+                    })
+                    {
+                        let req_id =
+                        chat.send_request(peer, crate::behaviour::chat::Request(data.msg));
+                        self.pending_request.insert(req_id, (crc,to,response_channel));
+                        self.local_feedback(Some(req_id.clone()), Message::Feedback { crc:vec![crc], from_id:Some(from_id), to_id: Some(to), status: FeedbackStatus::Sending });
+                        
+                        return Ok(false);
+                    }
                     if let Some((peer, _, ttl)) = peers.first() {
                         let req_id =
-                            chat.send_request(peer, crate::behaviour::chat::Request(data.msg));
-                        self.pending_request.insert(req_id, response_channel);
+                        chat.send_request(peer, crate::behaviour::chat::Request(data.msg));
+                        self.pending_request.insert(req_id, (crc,to,response_channel));
+                        self.local_feedback(Some(req_id.clone()), Message::Feedback { crc:vec![crc], from_id:Some(from_id), to_id: Some(to), status: FeedbackStatus::Sending });
                         if let Some((_,_,ttl2)) = peers.last() {
-                            tracing::info!("chat send fast relay ttl({ttl:?}) < ttl({ttl2:?}). {:?}", req_id);
+                            tracing::info!("chat send fast relay ttl({ttl:?}) < ttl({ttl2:?}). use {peer:?} req: {:?} ", req_id);
                         }
                         else{
-                            tracing::info!("chat send fast relay ttl({ttl:?}). {:?}", req_id);
+                            tracing::warn!("chat send fast relay ttl({ttl:?}). {:?}", req_id);
                         }
                         return Ok(false);
                     }
 
                     if let Some(dft_peer) = manager.first() {
-                        // let dft_peer = PeerId::from_str("12D3KooWEFUVBFL7g2Jtn4J9A49GvAY3D4y6iGjXU2Z7z8R62f8B").unwrap();
+                        let luffa_rpc_types::Event {
+                            crc,
+                            to,
+                            from_id,
+                            ..
+                        } = luffa_rpc_types::Event::decode_uncheck(&data.msg).unwrap();
+                        
                         let req_id =
-                            chat.send_request(&dft_peer, crate::behaviour::chat::Request(data.msg));
-                        self.pending_request.insert(req_id, response_channel);
-                        tracing::warn!("chat send to default ({dft_peer:?}). {:?}", req_id);
+                        chat.send_request(&dft_peer, crate::behaviour::chat::Request(data.msg));
+                        self.pending_request.insert(req_id, (crc,to,response_channel));
+                        self.local_feedback(Some(req_id.clone()), Message::Feedback { crc:vec![crc], from_id:Some(from_id), to_id: Some(to), status: FeedbackStatus::Sending });
+                        tracing::warn!("2 chat send to default ({dft_peer:?}). {:?}", req_id);
                         return Ok(false);
                     }
                 }
+                let luffa_rpc_types::Event {
+                    crc,
+                    to,
+                    from_id,
+                    ..
+                } = luffa_rpc_types::Event::decode_uncheck(&data.msg).unwrap();
+                self.local_feedback(None, Message::Feedback { crc:vec![crc], from_id:Some(from_id), to_id: Some(to), status: FeedbackStatus::Failed });
                 if let Err(_e) = response_channel.send(Err(anyhow!("not peers"))) {
-                    tracing::warn!("channel response failed");
+                    tracing::info!("channel response failed");
                 }
             }
             RpcMessage::ExternalAddrs(response_channel) => {
@@ -2070,7 +2172,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 let blob = data.clone();
                 tokio::spawn(async move {
                     if let Err(e) = store.put(cid, blob, vec![]) {
-                        tracing::warn!("store put> {:?}", e);
+                        tracing::info!("store put> {:?}", e);
                     }
                 });
                 let ret = cid.clone();
@@ -2164,7 +2266,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
                     let key = record.key.clone();
                     match kad
-                        .put_record(record, Quorum::N(NonZeroUsize::new(2).expect("3 != 1")))
+                        .put_record(record, Quorum::N(NonZeroUsize::new(1).expect("3 != 1")))
                         .map_err(|e| e.into())
                     {
                         Ok(q) => match self.record_on_dht_queries.entry(key.to_vec()) {
@@ -2270,7 +2372,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         .condition(libp2p::swarm::dial_opts::PeerCondition::Always)
                         .build();
                     if let Err(e) = Swarm::dial(&mut self.swarm, dial_opts) {
-                        tracing::warn!("invalid dial options: {:?}", e);
+                        tracing::info!("invalid dial options: {:?}", e);
                         while let Some(channel) = channels.pop() {
                             channel
                                 .send(Err(anyhow!("error dialing peer {:?}: {}", peer_id, e)))
@@ -2303,7 +2405,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 response_channel.send(addrs).ok();
             }
             RpcMessage::NetDisconnect(response_channel, _peer_id) => {
-                tracing::warn!("NetDisconnect API not yet implemented"); // TODO: implement NetDisconnect
+                tracing::info!("NetDisconnect API not yet implemented"); // TODO: implement NetDisconnect
 
                 response_channel
                     .send(())
@@ -2313,7 +2415,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 let gossipsub = match self.swarm.behaviour_mut().gossipsub.as_mut() {
                     Some(gossipsub) => gossipsub,
                     None => {
-                        tracing::warn!("Unexpected gossipsub message");
+                        tracing::info!("Unexpected gossipsub message");
                         return Ok(false);
                     }
                 };
@@ -2347,7 +2449,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     }
                     rpc::GossipsubMessage::Publish(response_channel, topic_hash, bytes) => {
                         let res = gossipsub.publish(topic_hash, bytes.to_vec());
-                        // tracing::warn!("rpc >> publish. {}",res.is_ok());
+                        // tracing::info!("rpc >> publish. {}",res.is_ok());
                         response_channel
                             .send(res)
                             .map_err(|_| anyhow!("sender dropped"))?;
@@ -2446,6 +2548,20 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
         Ok(false)
     }
+
+    fn local_feedback(&mut self,request_id:Option<RequestId>,msg:Message) {
+        match &msg {
+            Message::Feedback { from_id, to_id, .. }    =>{
+                let e = luffa_rpc_types::Event::new(to_id.unwrap_or_default(), &msg, None, from_id.unwrap_or_default());
+                let data = e.encode().unwrap();
+                self.emit_network_event(NetworkEvent::RequestResponse(ChatEvent::Response { request_id, data }));
+            }
+            _=>{
+
+            }
+        }
+    }
+
 }
 
 pub async fn load_identity<S: Storage>(

@@ -200,7 +200,7 @@ impl Cli {
                         tracing::info!("Fetch> {cid} not found.");
                     }
                     Err(e)=>{
-                        tracing::warn!("fetch error:{e:?}");
+                        tracing::info!("fetch error:{e:?}");
                     }
                 }
             }

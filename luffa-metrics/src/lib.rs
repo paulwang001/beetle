@@ -74,7 +74,7 @@ async fn init_metrics(cfg: Config) -> Option<JoinHandle<()>> {
                 let res = match push_client.post(&prom_gateway_uri).body(buff).send().await {
                     Ok(res) => res,
                     Err(e) => {
-                        tracing::warn!("failed to push metrics: {}", e);
+                        tracing::info!("failed to push metrics: {}", e);
                         continue;
                     }
                 };
@@ -83,9 +83,9 @@ async fn init_metrics(cfg: Config) -> Option<JoinHandle<()>> {
                         debug!("pushed metrics to gateway");
                     }
                     _ => {
-                        tracing::warn!("failed to push metrics to gateway: {:?}", res);
+                        tracing::info!("failed to push metrics to gateway: {:?}", res);
                         let body = res.text().await.unwrap();
-                        tracing::warn!("error body: {}", body);
+                        tracing::info!("error body: {}", body);
                     }
                 }
             }

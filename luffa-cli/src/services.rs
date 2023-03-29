@@ -109,7 +109,7 @@ async fn start_services(api: &Api, services: BTreeSet<&str>) -> Result<()> {
         if is_up {
             tracing::info!("{}", "success".green());
         } else {
-            tracing::warn!(
+            tracing::info!(
                 "{}",
                 format!(
                     "error: took more than {}s start.\ncheck log file for details: {}",
@@ -155,7 +155,7 @@ pub async fn stop_services(api: &Api, services: BTreeSet<&str>) -> Result<()> {
                         if is_down {
                             tracing::info!("{}", "stopped".red());
                         } else {
-                            tracing::warn!("{}", format!("{service} API is still running, but the lock is removed.\nYou may need to manually stop luffa via your operating system").red());
+                            tracing::info!("{}", format!("{service} API is still running, but the lock is removed.\nYou may need to manually stop luffa via your operating system").red());
                         }
                     }
                     Err(error) => {
@@ -165,7 +165,7 @@ pub async fn stop_services(api: &Api, services: BTreeSet<&str>) -> Result<()> {
             }
             Err(e) => match e {
                 LockError::NoLock(_) => {
-                    tracing::warn!("{}", format!("{daemon_name} is already stopped").white());
+                    tracing::info!("{}", format!("{daemon_name} is already stopped").white());
                 }
                 LockError::NoSuchProcess(_, _) => {
                     lock.destroy_without_checking().unwrap();
@@ -176,7 +176,7 @@ pub async fn stop_services(api: &Api, services: BTreeSet<&str>) -> Result<()> {
                     );
                 }
                 e => {
-                    tracing::warn!("{daemon_name} lock error: {e}");
+                    tracing::info!("{daemon_name} lock error: {e}");
                     continue;
                 }
             },

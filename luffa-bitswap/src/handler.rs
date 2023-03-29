@@ -230,7 +230,7 @@ impl ConnectionHandler for BitswapHandler {
             <Self::OutboundProtocol as OutboundUpgrade<NegotiatedSubstream>>::Error,
         >,
     ) {
-        tracing::warn!("Dial upgrade error {:?}", e);
+        tracing::info!("Dial upgrade error {:?}", e);
         self.upgrade_errors.push_back(e);
     }
 
@@ -304,10 +304,10 @@ fn inbound_substream(
                 }
                 Err(error) => match error {
                     BitswapHandlerError::MaxTransmissionSize => {
-                        tracing::warn!("Message exceeded the maximum transmission size");
+                        tracing::info!("Message exceeded the maximum transmission size");
                     }
                     _ => {
-                        tracing::warn!("Inbound stream error: {}", error);
+                        tracing::info!("Inbound stream error: {}", error);
                         // More serious errors, close this side of the stream. If the
                         // peer is still around, they will re-establish their connection
 
@@ -320,10 +320,10 @@ fn inbound_substream(
 
         // All responses received, close the stream.
         if let Err(err) = substream.flush().await {
-            tracing::warn!("failed to flush stream: {:?}", err);
+            tracing::info!("failed to flush stream: {:?}", err);
         }
         if let Err(err) = substream.close().await {
-            tracing::warn!("failed to close stream: {:?}", err);
+            tracing::info!("failed to close stream: {:?}", err);
         }
     }
 }
@@ -334,7 +334,7 @@ fn outbound_substream(
 ) -> impl Stream<Item = BitswapConnectionHandlerEvent> {
     async_stream::stream! {
         if let Err(error) = substream.feed(message).await {
-            tracing::warn!("failed to write item: {:?}", error);
+            tracing::info!("failed to write item: {:?}", error);
             response.send(Err(network::SendError::Other(error.to_string()))).ok();
             yield ConnectionHandlerEvent::Custom(
                 HandlerEvent::FailedToSendMessage { error }
@@ -345,11 +345,11 @@ fn outbound_substream(
         }
 
         if let Err(err) = substream.flush().await {
-            tracing::warn!("failed to flush stream: {:?}", err);
+            tracing::info!("failed to flush stream: {:?}", err);
         }
 
         if let Err(err) = substream.close().await {
-            tracing::warn!("failed to close stream: {:?}", err);
+            tracing::info!("failed to close stream: {:?}", err);
         }
     }
 }

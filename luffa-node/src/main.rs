@@ -69,9 +69,9 @@ fn main() -> Result<()> {
         let mut events = p2p.network_events(); 
         task::spawn(async move {
             while let Some(e) = events.recv().await {
-                tracing::warn!("e:{e:?}");
+                tracing::info!("e:{e:?}");
             }
-            tracing::warn!("---------event exit-----------");
+            tracing::info!("---------event exit-----------");
         });
         // Start services
         let p2p_task = task::spawn(async move {

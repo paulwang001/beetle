@@ -173,13 +173,13 @@ impl MessageQueue {
     async fn send_wants_update(&self, update: WantsUpdate) {
         if let Some(ref sender) = self.sender_wants {
             if let Err(err) = sender.send(update).await {
-                tracing::warn!(
+                tracing::info!(
                     "message_queue:{}: failed to send wants update: {:?}",
                     self.peer, err
                 );
             }
         } else {
-            tracing::warn!(
+            tracing::info!(
                 "message_queue:{}: failed to send message: not running",
                 self.peer
             );

@@ -16,7 +16,7 @@ async fn main() -> Result<()> {
     // match r {
     //     Ok(_) => Ok(()),
     //     Err(e) => {
-    //         tracing::warn!("Error: {e:?}");
+    //         tracing::info!("Error: {e:?}");
     //         std::process::exit(1);
     //     }
     // }

@@ -110,7 +110,7 @@ impl Client {
             }
         }
         else{
-            tracing::warn!("not use store!!!");
+            tracing::info!("not use store!!!");
         }
 
         Ok(Client { p2p, store })

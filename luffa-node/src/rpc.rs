@@ -112,7 +112,7 @@ impl P2p {
         let ctx = req.ctx;
         let cid = req.cid;
 
-        tracing::warn!("context:{}, received fetch_bitswap: {:?}", ctx, cid);
+        tracing::info!("context:{}, received fetch_bitswap: {:?}", ctx, cid);
         let providers = req.providers.into_iter().collect();
 
         let (s, r) = oneshot::channel();

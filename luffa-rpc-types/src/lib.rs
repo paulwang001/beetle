@@ -138,7 +138,9 @@ pub enum Message {
     },
 
     Feedback {
-       crc:u64,
+       crc:Vec<u64>,
+       from_id:Option<u64>,
+       to_id:Option<u64>,
        status: FeedbackStatus, 
     },
     
@@ -217,10 +219,15 @@ pub enum AppStatus {
 #[derive(Debug,Serialize,Deserialize,Clone, Copy)]
 #[repr(u8)]
 pub enum FeedbackStatus {
+    Sending,
+    Send,
+    Routing,
+    Route,
     Reach,
     Read,
     Fetch,
     Notice,
+    Failed,
 }
 
 impl Message {
@@ -237,9 +244,9 @@ impl Message {
                 match key {
                     Some(k)=> Some(Aes256Gcm::new_from_slice(k.as_ref()).unwrap()),
                     None=>{
-                        tracing::warn!("----------");
+                        tracing::info!("----------");
                         self.exchange_key().map(|v| {
-                            tracing::warn!("----------{:?}",v);
+                            tracing::info!("----------{:?}",v);
                             
                             match Aes256Gcm::new_from_slice(&v) {
                                 Ok(a)=> a,
@@ -251,7 +258,7 @@ impl Message {
                     }
                 };
                 if cipher.is_none() {
-                    tracing::warn!("cipher is none");
+                    tracing::info!("cipher is none");
                     return Err(anyhow::anyhow!("cipher is none"));
                 }
                 tracing::info!("00000000000000");

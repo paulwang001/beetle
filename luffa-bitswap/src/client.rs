@@ -101,7 +101,7 @@ impl<S: Store> Client<S> {
                         break;
                     }
                     Err(e) => {
-                        tracing::warn!("broadcast error: {:?}", e);
+                        tracing::info!("broadcast error: {:?}", e);
                     }
                 }
             }
@@ -205,7 +205,7 @@ impl<S: Store> Client<S> {
             .await;
 
         for block in not_wanted {
-            tracing::warn!("recv block not in wantlist: {} from {}", block.cid(), from);
+            tracing::info!("recv block not in wantlist: {} from {}", block.cid(), from);
         }
 
         // Inform the PeerManager so that we can calculate per-peer latency.
@@ -265,7 +265,7 @@ impl<S: Store> Client<S> {
                 .receive_blocks_from(peer, incoming, &haves, &dont_haves)
                 .await
             {
-                tracing::warn!("ReceiveMessage recvBlockFrom error: {:?}", err);
+                tracing::info!("ReceiveMessage recvBlockFrom error: {:?}", err);
             }
         }
     }

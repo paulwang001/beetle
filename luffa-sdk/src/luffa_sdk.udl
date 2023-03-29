@@ -23,6 +23,7 @@ dictionary EventMeta {
     string from_tag;
     string to_tag;
     u64 event_time;
+    u32 status;
     sequence<u8> msg;
 };
 

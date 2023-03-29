@@ -219,7 +219,7 @@ impl<S: Store> Engine<S> {
                                     .await {
                                         Ok(blocks) => blocks,
                                         Err(err) => {
-                                            tracing::warn!("failed to load blocks: {:?}", err);
+                                            tracing::info!("failed to load blocks: {:?}", err);
                                             continue;
                                         }
                                     };
@@ -352,7 +352,7 @@ impl<S: Store> Engine<S> {
         {
             Ok(s) => s,
             Err(err) => {
-                tracing::warn!("failed to fetch block sizes: {:?}", err);
+                tracing::info!("failed to fetch block sizes: {:?}", err);
                 return;
             }
         };

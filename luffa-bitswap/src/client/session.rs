@@ -150,7 +150,7 @@ impl Session {
                             }
                             Err(err) => {
                                 // incoming channel gone, shutdown/panic
-                                tracing::warn!("incoming channel error: {:?}", err);
+                                tracing::info!("incoming channel error: {:?}", err);
                                 break;
                             }
                         }
@@ -225,7 +225,7 @@ impl Session {
         haves: &[Cid],
         dont_haves: &[Cid],
     ) {
-        tracing::warn!(
+        tracing::info!(
             "session:{}: received updates from: {:?} keys: {:?}\n  haves: {:?}\n  dont_haves: {:?}",
             self.inner.id,
             from.map(|s| s.to_string()),
@@ -259,7 +259,7 @@ impl Session {
                 })
                 .await
             {
-                tracing::warn!("failed to send update want sender: {:?}", err);
+                tracing::info!("failed to send update want sender: {:?}", err);
             }
         }
 
@@ -269,7 +269,7 @@ impl Session {
 
         // Inform the session that blocks have been received.
         if let Err(err) = self.inner.incoming.send(Op::Receive(keys)).await {
-            tracing::warn!("failed to send receive: {:?}", err);
+            tracing::info!("failed to send receive: {:?}", err);
         }
     }
 
@@ -298,7 +298,7 @@ impl Session {
     /// guaranteed on the returned blocks.
     pub async fn get_blocks(&self, keys: &[Cid]) -> Result<BlockReceiver> {
         ensure!(!keys.is_empty(), "missing keys");
-        tracing::warn!("get blocks: {:?}", keys);
+        tracing::info!("get blocks: {:?}", keys);
 
         let (s, r) = async_channel::bounded(8);
         let mut remaining: AHashSet<Cid> = keys.iter().copied().collect();
@@ -319,7 +319,7 @@ impl Session {
                             Ok(block) => {
                                 let cid = *block.cid();
                                 if remaining.contains(&cid) {
-                                    tracing::warn!("received wanted block {}", cid);
+                                    tracing::info!("received wanted block {}", cid);
                                     match s.send(block).await {
                                         Ok(_) => {
                                             remaining.remove(&cid);
@@ -332,7 +332,7 @@ impl Session {
                                 }
 
                                 if remaining.is_empty() {
-                                    tracing::warn!("found all requested blocks");
+                                    tracing::info!("found all requested blocks");
                                     break;
                                 }
                             }
@@ -340,7 +340,7 @@ impl Session {
                                 break;
                             }
                             Err(async_broadcast::RecvError::Overflowed(n)) => {
-                                tracing::warn!("receiver is overflowing by {}", n);
+                                tracing::info!("receiver is overflowing by {}", n);
                                 continue;
                             }
                         }
@@ -354,7 +354,7 @@ impl Session {
                     .send(Op::Cancel(remaining.into_iter().collect()))
                     .await
                 {
-                    tracing::warn!("failed to send cancel: {:?}", err);
+                    tracing::info!("failed to send cancel: {:?}", err);
                 }
             }
         });

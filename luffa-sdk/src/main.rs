@@ -75,20 +75,20 @@ fn main() -> Result<()> {
     let msg = Box::new(process);
     
     client_ctl.start(None,tag.clone(),msg).unwrap();
-    tracing::warn!("started.");
+    tracing::info!("started.");
     // std::thread::spawn(move || {
     //     loop {
     //         let process = Process::new(tx.clone());                                                                                                                                  
     //         let msg = Box::new(process);
             
     //         client_ctl.start(None,tag.clone(),msg).unwrap();
-    //         tracing::warn!("started.");
+    //         tracing::info!("started.");
     //         if timer.elapsed().as_secs() < 3600 {
     //             std::thread::sleep(std::time::Duration::from_secs(3600));
     //         }
     //         timer = std::time::Instant::now();
     //         client_ctl.stop().unwrap();
-    //         tracing::warn!("stoped.");
+    //         tracing::info!("stoped.");
     //         std::thread::sleep(std::time::Duration::from_secs(5));
     //     }
     // });
@@ -97,7 +97,7 @@ fn main() -> Result<()> {
         let mut x = 0;
         let mut code = String::new();
         loop {
-            std::thread::sleep(Duration::from_secs(60));
+            std::thread::sleep(Duration::from_secs(5));
             let peer_id = client.get_local_id();
             std::thread::sleep(Duration::from_secs(1));
             let peer_id = client.get_local_id().unwrap().unwrap();
@@ -110,7 +110,7 @@ fn main() -> Result<()> {
                     match client.find_contacts_tag(to_id).unwrap() {
                         Some(tag) => {
                             x += 1;
-                            tracing::warn!("is man");
+                            tracing::info!("is man");
                           
                             // let msg = Message::WebRtc { stream_id: 1000, action: RtcAction::Push { audio_id: 2, video_id: 3 } };
                             let mnemonic = Mnemonic::new(MnemonicType::Words24, Language::English);
@@ -168,7 +168,7 @@ fn main() -> Result<()> {
                                 let ls = client.recent_messages(c.did, 10).unwrap();
                                 {
                                     let msg_len = ls.len();
-                                    tracing::warn!(" contacts>> {:?} msg_len>>{}", c,msg_len);
+                                    tracing::info!(" contacts>> {:?} msg_len>>{}", c,msg_len);
             
                                     for crc in ls {
                                         if let Some(meta) = client.read_msg_with_meta(c.did, crc).unwrap() {
@@ -184,7 +184,7 @@ fn main() -> Result<()> {
 
                                                 }
                                                 _=>{
-                                                    tracing::warn!("[{msg_len}] {:?}",msg);
+                                                    tracing::info!("[{msg_len}] {:?}",msg);
                                                 }
                                             }    
                                         }
@@ -192,13 +192,13 @@ fn main() -> Result<()> {
                                 }
                             }
                             let list = client.session_list(10).unwrap();
-                            tracing::warn!(" session>> {:?}", list);
+                            tracing::info!(" session>> {:?}", list);
             
                             for s in list {
                                 let did = s.did;
                                 for crc in s.reach_crc {
                                     if let Some(meta) = client.read_msg_with_meta(did, crc).unwrap() {
-                                        tracing::warn!("{:?}",meta);
+                                        tracing::info!("{:?}",meta);
                                     }
                                 }
                             }
@@ -219,7 +219,7 @@ fn main() -> Result<()> {
                     
                 }
                 RtcAction::Push { audio_id, video_id }=>{
-                    tracing::warn!("{}-----push-----{}",stream_id,audio_id);
+                    tracing::info!("{}-----push-----{}",stream_id,audio_id);
                 }
                 _ => {}
             },
@@ -254,9 +254,19 @@ fn main() -> Result<()> {
                     };
                     let msg = message_to(msg).unwrap();
                     let crc = client_t.send_msg(to, msg).unwrap();
-                    tracing::warn!("Answer from:offer_id {} ,did {}  ==> {}", from_id, to,crc);
+                    tracing::info!("Answer from:offer_id {} ,did {}  ==> {}", from_id, to,crc);
                 }
             },
+            Message::Chat { .. }=>{
+                match client_t.read_msg_with_meta(from_id, crc)? {
+                    Some(meta)=>{
+                        tracing::warn!("on message meta:{:?}",meta);
+                    }
+                    None=>{
+                        tracing::error!("msg not found {}->{}",from_id,crc);
+                    }
+                }
+            }
             _ => {
                 let list = client_t.contacts_list(0)?;
                 tracing::debug!("contacts>> {:?}", list);
@@ -273,14 +283,7 @@ fn main() -> Result<()> {
                     }
                 }
 
-                match client_t.read_msg_with_meta(from_id, crc)? {
-                    Some(meta)=>{
-
-                    }
-                    None=>{
-                        tracing::error!("msg not found {}->{}",from_id,crc);
-                    }
-                }
+                
             }
         }
     }

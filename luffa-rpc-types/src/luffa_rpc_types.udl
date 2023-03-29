@@ -15,7 +15,7 @@ dictionary Event {
 [Enum]
 interface Message {
   StatusSync(u64 to,u64 from_id, AppStatus status);
-  Feedback (u64 crc,FeedbackStatus status);
+  Feedback (sequence<u64> crc,u64? from_id,u64? to_id,FeedbackStatus status);
   RelayNode(u64 did);
   ContactsSync(u64 did,sequence<Contacts> contacts);
   ContactsExchange(ContactsEvent exchange);
@@ -84,10 +84,15 @@ enum AppStatus {
 };
 
 enum FeedbackStatus {
+    "Sending",
+    "Send",
+    "Routing",
+    "Route",
     "Reach",
     "Read",
     "Fetch",
     "Notice",
+    "Failed",
 };
 
 enum ContactsTypes {

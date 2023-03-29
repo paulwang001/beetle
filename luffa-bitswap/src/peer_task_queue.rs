@@ -239,7 +239,7 @@ impl<T: Topic, D: Data, TM: TaskMerger<T, D>> Inner<T, D, TM> {
     async fn call_hook(&self, event: Event) {
         for hook in &self.hooks {
             if let Err(err) = hook.send(event.clone()).await {
-                tracing::warn!("failed to call hook for {:?}: {:?}", event, err);
+                tracing::info!("failed to call hook for {:?}: {:?}", event, err);
             }
         }
     }

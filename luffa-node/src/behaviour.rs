@@ -97,16 +97,16 @@ impl NodeBehaviour {
             } else {
                 BitswapConfig::default_client_mode()
             };
-            tracing::warn!("init bitswap:{bs_config:?}");
+            tracing::info!("init bitswap:{bs_config:?}");
             Some(Bitswap::new(peer_id, BitswapStore(db), bs_config).await)
         } else {
-            tracing::warn!("disabled bitswap");
+            tracing::info!("disabled bitswap");
             None
         }
         .into();
 
         let mdns = if config.mdns {
-            tracing::warn!("init mdns");
+            tracing::info!("init mdns");
             Some(Mdns::new(Default::default())?)
         } else {
             None
@@ -121,11 +121,11 @@ impl NodeBehaviour {
                 let mut addr = multiaddr.to_owned();
                 if let Some(Protocol::P2p(mh)) = addr.pop() {
                     let peer_id = PeerId::from_multihash(mh).unwrap();
-                    tracing::warn!("add boot to chat>> {:?}  {:?}",peer_id,addr);
+                    tracing::info!("add boot to chat>> {:?}  {:?}",peer_id,addr);
                     rq.add_address(&peer_id, addr);
                     peer_manager.inject_identify_info(peer_id, None);
                 } else {
-                    tracing::warn!("Could not parse bootstrap addr {}", multiaddr);
+                    tracing::info!("Could not parse bootstrap addr {}", multiaddr);
                 }
             }
         });
@@ -151,16 +151,16 @@ impl NodeBehaviour {
                 let mut addr = multiaddr.to_owned();
                 if let Some(Protocol::P2p(mh)) = addr.pop() {
                     let peer_id = PeerId::from_multihash(mh).unwrap();
-                    tracing::warn!("add boot>> {:?}  {:?}",peer_id,addr);
+                    tracing::info!("add boot>> {:?}  {:?}",peer_id,addr);
                     kademlia.add_address(&peer_id, addr);
                 } else {
-                    tracing::warn!("Could not parse bootstrap addr {}", multiaddr);
+                    tracing::info!("Could not parse bootstrap addr {}", multiaddr);
                 }
             }
 
             // Trigger initial bootstrap
             if let Err(e) = kademlia.bootstrap() {
-                tracing::warn!("Kademlia bootstrap failed: {}", e);
+                tracing::info!("Kademlia bootstrap failed: {}", e);
             }
 
             Some(kademlia)
@@ -252,7 +252,7 @@ impl NodeBehaviour {
             let client = bs.client().clone();
             tokio::task::spawn(async move {
                 if let Err(err) = client.notify_new_blocks(&blocks).await {
-                    tracing::warn!("failed to notify bitswap about blocks: {:?}", err);
+                    tracing::info!("failed to notify bitswap about blocks: {:?}", err);
                 }
             });
         }
