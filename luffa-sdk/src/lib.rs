@@ -36,8 +36,11 @@ use tokio::time::Instant;
 use tracing::{debug, error, info, warn};
 
 use anyhow::Result;
+use async_trait::async_trait;
 use chrono::Utc;
 use image::EncodableLayout;
+use rkyv::validation::CheckTypeError;
+use rkyv::validation::validators::DefaultValidator;
 use tantivy::collector::TopDocs;
 use tantivy::directory::{ManagedDirectory, MmapDirectory};
 use tantivy::query::QueryParser;
@@ -52,8 +55,10 @@ use crate::avatar_nickname::nickname::generate_nickname;
 mod api;
 mod config;
 pub mod avatar_nickname;
+pub mod group_members;
 
 use crate::config::Config;
+use crate::group_members::GroupMembers;
 
 const TOPIC_STATUS: &str = "luffa_status";
 // const TOPIC_CONTACTS: &str = "luffa_contacts";
@@ -101,7 +106,7 @@ pub struct EventMeta {
 pub type ClientResult<T> = anyhow::Result<T, ClientError>;
 
 #[derive(Debug, thiserror::Error)]
-pub enum ClientError {
+pub enum ClientError{
     #[error("Contancts parse error")]
     CodeParser,
     #[error("Send message failed")]
@@ -207,6 +212,8 @@ pub struct Client {
     config: Arc<RwLock<Option<Config>>>,
     store: Arc<RwLock<Option<Arc<luffa_store::Store>>>>,
 }
+
+impl GroupMembers for Client{}
 
 impl Client {
     pub fn new() -> Self {
@@ -420,6 +427,7 @@ impl Client {
                 exchange: ContactsEvent::Offer { token },
             }
         };
+        let members = invitee.clone();
         RUNTIME.block_on(async {
             let contacts = vec![Contacts {
                 did: g_id,
@@ -466,7 +474,7 @@ impl Client {
                 }
             });
         });
-
+        Self::group_member_insert(self.db.clone(), g_id, members).ok();
         Ok(g_id)
     }
 
@@ -544,7 +552,9 @@ impl Client {
                     }
                 }
             });
+
         });
+        Self::group_member_insert(self.db.clone(), g_id, vec![invitee]).ok();
         Ok(true)
     }
 
