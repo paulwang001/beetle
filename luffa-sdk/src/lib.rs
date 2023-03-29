@@ -522,7 +522,7 @@ impl Client {
                 }
             });
         });
-        Self::group_member_insert(self.db.clone(), g_id, members).ok();
+        Self::group_member_insert(self.db.clone(), g_id, members)?;
         Ok(g_id)
     }
 
@@ -602,7 +602,7 @@ impl Client {
             });
 
         });
-        Self::group_member_insert(self.db.clone(), g_id, vec![invitee]).ok();
+        Self::group_member_insert(self.db.clone(), g_id, vec![invitee])?;
         Ok(true)
     }
 

@@ -6,6 +6,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 use rkyv::ser::Serializer;
 use rkyv::ser::serializers::AllocSerializer;
 use bytecheck::CheckBytes;
+use crate::ClientError::CustomError;
 
 use crate::ClientResult;
 
@@ -24,15 +25,21 @@ impl Members {
         Self{ group_id, members}
     }
 
-    pub fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> ClientResult<Vec<u8>> {
         let mut serializer = AllocSerializer::<0>::default();
-        serializer.serialize_value(self).unwrap();
-        serializer.into_serializer().into_inner().into_vec()
+        if let Some(_) = serializer.serialize_value(self).ok() {
+            Ok(serializer.into_serializer().into_inner().into_vec())
+        } else {
+            Err(CustomError("Members to_bytes fail".to_string()))
+        }
     }
 
-    pub fn deserialize(data: &[u8]) -> Self {
-        let data = rkyv::check_archived_root::<Self>(data).unwrap();
-        Self{ group_id: data.group_id, members: data.members.to_vec() }
+    pub fn deserialize(data: &[u8]) -> ClientResult<Self> {
+        if let Some(data) = rkyv::check_archived_root::<Self>(data).ok() {
+            Ok(Self{ group_id: data.group_id, members: data.members.to_vec() })
+        } else {
+            Err(CustomError("Members deserialize fail".to_string()))
+        }
     }
 }
 
@@ -43,13 +50,13 @@ pub trait GroupMembers {
         let tree = db.open_tree(KVDB_GROUP_MEMBERS_TREE)?;
         let data = if let Some(data) = tree.get(key)? {
             let data = data.as_bytes();
-            let mut members = Members::deserialize(data);
+            let mut members = Members::deserialize(data)?;
             let _ = member_ids.iter().map(|member_id| {
                 members.members.push(*member_id);
             });
-            members.to_bytes()
+            members.to_bytes()?
         } else {
-            Members::new(group_id, member_ids).to_bytes()
+            Members::new(group_id, member_ids).to_bytes()?
         };
         tree.insert(key, data)?;
         Ok(())
@@ -59,7 +66,7 @@ pub trait GroupMembers {
         let key = format!("{}-{}", KVDB_GROUP_MEMBERS_TREE, group_id);
         let tree = db.open_tree(KVDB_GROUP_MEMBERS_TREE)?;
         let members = if let Some(data) = tree.get(key)? {
-            Members::deserialize(data.as_bytes())
+            Members::deserialize(data.as_bytes())?
         } else {
             Members::new(group_id, vec![])
         };
