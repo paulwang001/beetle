@@ -260,7 +260,7 @@ fn main() -> Result<()> {
             Message::Chat { .. }=>{
                 match client_t.read_msg_with_meta(from_id, crc)? {
                     Some(meta)=>{
-                        tracing::warn!("on message meta:{:?}",meta);
+                        tracing::info!("on message meta:{:?}",meta);
                     }
                     None=>{
                         tracing::error!("msg not found {}->{}",from_id,crc);
