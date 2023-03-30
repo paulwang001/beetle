@@ -22,7 +22,7 @@ use luffa_store::{Config as StoreConfig, Store};
 use luffa_util::{luffa_config_path, make_config};
 use serde::{Deserialize, Serialize};
 use sled::Db;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::fs;
 use std::ops::Deref;
@@ -1918,6 +1918,7 @@ impl Client {
         let idx_tt = idx.clone();
         let schema_t = schema.clone();
         let schema_tt = schema.clone();
+        let cb_local = cb.clone();
         let process = tokio::spawn(async move {
             while let Some(evt) = events.recv().await {
                 match evt {
@@ -2076,6 +2077,66 @@ impl Client {
                                                         }
                                                         else{
                                                             
+                                                        }
+                                                    }
+                                                    FeedbackStatus::Fetch | FeedbackStatus::Notice => {
+                                                        let ls_crc = crc;
+                                                        
+                                                        for crc in ls_crc {
+                                                            let client_t = client_t.clone();
+                                                            let db_tt = db_t.clone();
+                                                            let cb_t = cb.clone();
+                                                            let idx_t = idx.clone();
+                                                            let schema_t = schema.clone();
+                        
+                                                            tokio::spawn(async move {
+                                                                match client_t.get_crc_record(crc).await {
+                                                                    Ok(res) => {
+                                                                        let data = res.data;
+                                                                        tracing::warn!("response get record: {crc} , f> {from_id:?}, t> {to_id:?}");
+                                                                        let data = data.to_vec();
+                                                                        if let Ok(im) = Event::decode_uncheck(&data) {
+                                                                            let Event {
+                                                                                to,
+                                                                                from_id,
+                                                                                crc,
+                                                                                ..
+                                                                            } = im;
+                                
+                                                                            let did = if to == my_id { from_id } else { to };
+                                                                            let table = format!("message_{}", did);
+                                
+                                                                            if !Self::have_in_tree(db_tt.clone(), crc, &table) {
+                                                                                Self::process_event(
+                                                                                    db_tt, cb_t, client_t, idx_t, schema_t, &data, my_id,
+                                                                                )
+                                                                                .await;
+                                                                            }
+                                                                            else{
+                                                                                tracing::error!("have in tree {crc}");
+                                                                                // client_t.chat_request(bytes::Bytes::from());
+                                                                                let feed = luffa_rpc_types::Message::Feedback { crc:vec![crc], from_id:Some(my_id), to_id: Some(0), status: luffa_rpc_types::FeedbackStatus::Reach };
+                                                                                let event = luffa_rpc_types::Event::new(
+                                                                                    0,
+                                                                                    &feed,
+                                                                                    None,
+                                                                                    my_id,
+                                                                                );
+                                                                                tracing::warn!("having>>> send feedback reach to relay");
+                                                                                let event = event.encode().unwrap();
+                                                                                if let Err(e) =
+                                                                                    client_t.chat_request(bytes::Bytes::from(event)).await
+                                                                                {
+                                                                                    error!("{e:?}");
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    Err(e)=> {
+                                                                        error!("record not found {crc} error: {e:?}");
+                                                                    }
+                                                                }
+                                                            });
                                                         }
                                                     }
                                                     _ => {
@@ -2264,6 +2325,49 @@ impl Client {
         });
 
         let db_t = db.clone();
+        let pendings = VecDeque::<Event>::new();
+        let pendings = Arc::new(RwLock::new(pendings));
+        let pendings_t = pendings.clone();
+        let cb_tt = cb_local.clone();
+        let client_pending = client.clone();
+        let pending_task = tokio::spawn(async move {
+            loop {
+                {
+                    let p = pendings_t.read().await;
+                    if p.is_empty() {
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
+                }
+                if let Some(req) = {
+                    let mut p = pendings_t.write().await;
+                    tracing::warn!("pending size:{}",p.len());
+                    p.pop_front()
+                }
+                {
+                    let to = req.to;
+                    let data = req.encode().unwrap();
+                    match client_pending.chat_request(bytes::Bytes::from(data.clone())).await {
+                        Ok(res) => {
+                            let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Send };
+                            let feed = serde_cbor::to_vec(&feed).unwrap();
+                            cb_tt.on_message(req.crc, my_id, to, feed);
+                            tracing::debug!("{res:?}");
+                        }
+                        Err(e) => {
+                            tracing::error!("pending chat request failed [{}]: {e:?}",req.crc);
+                            let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Failed };
+                            let feed = serde_cbor::to_vec(&feed).unwrap();
+                            cb_tt.on_message(req.crc, my_id, to, feed);
+                            let mut push = pendings_t.write().await;
+                            push.push_back(req);
+                        }
+                    }
+                }
+
+            }
+        });
+
         while let Some((to, msg_data, from_id, channel, k)) = receiver.recv().await {
             if to == u64::MAX {
                 channel.send(Ok(u64::MAX)).unwrap();
@@ -2292,7 +2396,6 @@ impl Client {
             };
             match evt {
                 Some(e) => {
-                    let data = e.encode().unwrap();
                     let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
                     let tag_key = format!("TAG-{}", to);
                     let (tag, msg_type) = match tree.get(&tag_key.as_bytes()) {
@@ -2316,31 +2419,37 @@ impl Client {
                     };
                     if to != my_id {
                         let client = client.clone();
-                        let data = data.clone();
+                        let req = e.clone();
+                        let pendings_t = pendings.clone();
+                        let cb_t = cb_local.clone();
+                        let sending = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };
+                        let sending = serde_cbor::to_vec(&sending).unwrap();
+                        cb_t.on_message(req.crc, my_id, to, sending);
                         tokio::spawn(async move {
-                            let retry = Instant::now();
-                            loop {
-                                match client.chat_request(bytes::Bytes::from(data.clone())).await {
-                                    Ok(res) => {
-                                        tracing::debug!("{res:?}");
-                                        break;
-                                    }
-                                    Err(e) => {
-                                        tracing::error!("{e:?}");
-                                        if retry.elapsed().as_secs() > 60 {
-                                            tracing::error!("failed: retry 60s");
-                                            break;
-                                        }
-                                        tokio::time::sleep(Duration::from_millis(500)).await;
-                                    }
+                            let data = req.encode().unwrap();
+                            match client.chat_request(bytes::Bytes::from(data.clone())).await {
+                                Ok(res) => {
+                                    let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Send };
+                                    let feed = serde_cbor::to_vec(&feed).unwrap();
+                                    cb_t.on_message(req.crc, my_id, to, feed);
+                                    tracing::debug!("{res:?}");
+                                }
+                                Err(e) => {
+                                    tracing::error!("chat request failed [{}]: {e:?}",req.crc);
+                                    let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Failed };
+                                    let feed = serde_cbor::to_vec(&feed).unwrap();
+                                    cb_t.on_message(req.crc, my_id, to, feed);
+                                    let mut push = pendings_t.write().await;
+                                    push.push_back(req);
                                 }
                             }
                         });
                     } else {
-                        tracing::info!("is to me---->");
+                        tracing::error!("is to me---->");
                     }
                     if to > 0 {
                         let msg = serde_cbor::from_slice::<Message>(&msg_data).unwrap();
+                        let data = e.encode().unwrap();
                         let Event {
                             to,
                             event_time,
@@ -2475,6 +2584,7 @@ impl Client {
         sync_task.abort();
         process.abort();
         p2p_rpc.abort();
+        pending_task.abort();
         // metrics_handle.shutdown();
     }
 
