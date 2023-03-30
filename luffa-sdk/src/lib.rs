@@ -2071,7 +2071,7 @@ impl Client {
                                                         let to = to_id.unwrap_or_default();
                                                         if to > 0 {
                                                             // cb.on_message(crc, from_id, to, msg);
-                                                            tracing::warn!("clinet>>>>>on_message send {crc:?} from {from_id} to {to} msg:{msg_t:?}");
+                                                            tracing::info!("clinet>>>>>on_message send {crc:?} from {from_id} to {to} msg:{msg_t:?}");
                                                             let table = format!("message_{to}");
                                                             Self::save_to_tree_status(db_t.clone(),to,&table,1);
                                                         }
@@ -2672,7 +2672,7 @@ impl Client {
                 None,
                 my_id,
             );
-            tracing::warn!("send feedback reach to relay");
+            tracing::info!("send feedback reach to relay");
             let event = event.encode().unwrap();
             if let Err(e) =
                 client_t.chat_request(bytes::Bytes::from(event)).await
@@ -2689,7 +2689,7 @@ impl Client {
                         // TODO: did is me or I'm a member any local group
                         let msg_data = serde_cbor::to_vec(&msg).unwrap();
                         let evt_data = data.clone();
-                        tracing::warn!("from relay request e2e crc:[{crc}] msg>>>>{msg:?}");
+                        tracing::info!("from relay request e2e crc:[{crc}] msg>>>>{msg:?}");
                         let mut will_save = false;
                         match msg {
                             Message::Chat { content } => {
