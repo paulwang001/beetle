@@ -917,26 +917,24 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 libp2p_metrics().record(&*e);
                 // tracing::info!("tick: identify {:?}", e);
                 // let local_peer_id = local_id.to_string();
-                let is_client = match self.agent.as_ref() {
-                    Some(ag)=>{
-                        !ag.contains("Relay")
-                    }
-                    None=> false
-                };
+                // let is_client = match self.agent.as_ref() {
+                //     Some(ag)=>{
+                //         !ag.contains("Relay")
+                //     }
+                //     None=> false
+                // };
 
                 if let IdentifyEvent::Received { peer_id, info } = *e {
-                    let obs_addr = &info.observed_addr;
-                    if obs_addr.to_string().contains("quic-v1/p2p/") /*|| add_addr.clone().to_string().contains("/tcp/")*/ {
-                        if !is_client {
-                            if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-                                let on_addr = format!("{}/p2p-circuit/p2p/{}",obs_addr.clone().to_string(),peer_id);
-                                let on_addr = Multiaddr::from_str(&on_addr).unwrap();
-                                tracing::info!("relay chat client>>>>[{peer_id:?}] {on_addr:?}");
-                                chat.add_address(&peer_id, on_addr.clone());
-                            }
+                    // let obs_addr = &info.observed_addr;
+                    // if obs_addr.to_string().contains("quic-v1/p2p/") /*|| add_addr.clone().to_string().contains("/tcp/")*/ {
+                    //     if !is_client {
+                    //     }
+                    // }
+                    for addr in info.listen_addrs.iter() {
+                        if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+                            chat.add_address(&peer_id, addr.clone());
                         }
                     }
-                    
                     if info.agent_version.contains("Relay") {
                         // TODO: only in my relay white list;
                         for protocol in &info.protocols {
@@ -1014,79 +1012,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             }
             Event::Relay(event) => {
                 libp2p_metrics().record(&event);
-                tracing::info!("relay:{event:?}");
-                match event {
-                    libp2p::relay::v2::relay::Event::ReservationReqAccepted { src_peer_id, renewed } =>{
-                        let add_obs =
-                        match self.swarm.behaviour().peer_manager.info_for_peer(&src_peer_id) {
-                            Some(info) => {
-                                if let Some(last) = &info.last_info {
-                                    let obs = &last.observed_addr;
-                                    if obs.to_string().ends_with(&format!("{}",local_id)) {
-                                        Some(obs.clone())
-                                    }
-                                    else{
-                                        tracing::error!("peer info not found!{src_peer_id:?} >>>{obs:?}");
-                                        None
-                                    }
-                                }
-                                else{
-                                    tracing::error!("peer info not found!{src_peer_id:?}");
-                                    None
-                                }
-                            }
-                            None => {
-                                None
-                            }
-                        };
-                        if let Some(addr) = add_obs {
-                            let mut msg = None;
-                            if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-                    
-                                let l_addr = format!("{}/p2p-circuit/p2p/{}",addr.clone().to_string(),src_peer_id);
-                                    tracing::warn!("relay>>> {l_addr}");
-                                    let on_addr = Multiaddr::from_str(&l_addr).unwrap();
-                                tracing::warn!("relay>> chat client>>>>[{src_peer_id:?}] {on_addr:?}");
-                                chat.add_address(&src_peer_id, on_addr.clone());
-
-                               
-                                let mut digest = crc64fast::Digest::new();
-                                digest.write(&src_peer_id.to_bytes());
-                                let to_id = digest.sum64();
-                                let f = self.get_peer_index(my_id);
-                                let t = self.get_peer_index(to_id);
-                                // let time = Utc::now().timestamp_millis() as u64;
-                                tracing::info!("local relay connection >> {my_id} --> {to_id}");
-                                self.connections
-                                    .update_edge(f, t, ConnectionEdge::Local(src_peer_id.clone()));
-                                msg = Some(luffa_rpc_types::Message::StatusSync {
-                                    to: to_id,
-                                    from_id: my_id,
-                                    status: AppStatus::Connected,
-                                });
-                            }
-                            if let Some(m) = msg {
-
-                                let event = luffa_rpc_types::Event::new(0, &m, None, my_id);
-                                let event = event.encode().unwrap();
-                                if let Some(go) =
-                                    self.swarm.behaviour_mut().gossipsub.as_mut()
-                                {
-                                    if let Err(e) = go.publish(
-                                        TopicHash::from_raw(TOPIC_STATUS),
-                                        event,
-                                    ) {
-                                        tracing::error!("{e:?}");
-                                    }
-                                }
-                            }
-
-                        }
-                    }
-                    _=>{
-
-                    }
-                }
+                tracing::warn!("relay:{event:?}");
             }
             Event::Dcutr(e) => {
                 libp2p_metrics().record(&e);
