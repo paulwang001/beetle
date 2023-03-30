@@ -1735,15 +1735,17 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             let (tx, rx) = tokio::sync::oneshot::channel();
             let req_id = chat.send_request(&peer, req);
             self.pending_request.insert(req_id, (0,0,tx));
-            match rx.await {
-                Ok(Ok(Some(res))) =>{
-                    tracing::warn!("request successful:{:?}", res);
-                    Ok(())
+            tokio::spawn(async move {
+                match rx.await {
+                    Ok(Ok(Some(res))) =>{
+                        tracing::warn!("request successful:{:?}", res);
+                    }
+                    _=>{
+                        tracing::error!("Chat request failed");
+                    }
                 }
-                _=>{
-                    Err(anyhow!("Chat request failed"))
-                }
-            }
+            });
+            Ok(())
         }
         else{
             Err(anyhow!("handle_chat_response> Chat request failed"))
@@ -1773,15 +1775,17 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             let (tx, rx) = tokio::sync::oneshot::channel();
             let req_id = chat.send_request(&peer_id, crate::behaviour::chat::Request(data));
             self.pending_request.insert(req_id, (0,to_id,tx));
-            match rx.await {
-                Ok(Ok(Some(res))) =>{
-                    tracing::warn!("request successful:{:?}", res);
-                    Ok(())
+            tokio::spawn(async move {
+                match rx.await {
+                    Ok(Ok(Some(res))) =>{
+                        tracing::warn!("request successful:{:?}", res);
+                    }
+                    _=>{
+                        tracing::error!("request successful");
+                    }
                 }
-                _=>{
-                    Err(anyhow!("Chat request failed"))
-                }
-            }
+            });
+            Ok(())
         }
         else{
             Err(anyhow!("Chat request failed"))
