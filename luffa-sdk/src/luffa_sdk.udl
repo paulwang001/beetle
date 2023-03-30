@@ -51,7 +51,7 @@ enum ClientError {
 };
 
 callback interface Callback {
-    void on_message(u64 crc,u64 from,u64 to,sequence<u8> msg);
+    void on_message(u64 crc,u64 from,u64 to,u64 event_time,sequence<u8> msg);
 };
 
 interface Client {

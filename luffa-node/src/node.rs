@@ -1304,7 +1304,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             if let Some(peer_id) = self.connected_peers.get(&from_id) {
                                                                 let mut pending_crc = vec![];
                                                                 for (crc,t) in pending {
-                                                                    if t.elapsed().as_millis() > 3000 {
+                                                                    if t.elapsed().as_millis() > 2000 {
                                                                         tracing::warn!("active pending crc {crc} to {peer_id}");
                                                                         pending_crc.push(*crc);
                                                                         if pending_crc.len() > 32 {

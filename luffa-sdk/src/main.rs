@@ -44,7 +44,7 @@ impl Process {
 }
 
 impl Callback for Process {
-    fn on_message(&self, crc: u64, from_id: u64, to: u64, msg: Vec<u8>) {
+    fn on_message(&self, crc: u64, from_id: u64, to: u64, event_time:u64,msg: Vec<u8>) {
         self.tx.send((crc, from_id, to, msg)).unwrap();
     }
 }

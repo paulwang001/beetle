@@ -165,7 +165,7 @@ fn create_runtime() -> tokio::runtime::Runtime {
 }
 
 pub trait Callback: Send + Sync + Debug {
-    fn on_message(&self, crc: u64, from_id: u64, to: u64, msg: Vec<u8>);
+    fn on_message(&self, crc: u64, from_id: u64, to: u64,event_time:u64, msg: Vec<u8>);
 }
 
 pub fn public_key_to_id(public_key: Vec<u8>) -> u64 {
@@ -2082,14 +2082,18 @@ impl Client {
                                                     FeedbackStatus::Fetch | FeedbackStatus::Notice => {
                                                         let ls_crc = crc;
                                                         
-                                                        for crc in ls_crc {
+                                                        let client_t = client_t.clone();
+                                                        let db_tt = db_t.clone();
+                                                        let cb_t = cb.clone();
+                                                        let idx_t = idx.clone();
+                                                        let schema_t = schema.clone();
+                                                        tokio::spawn(async move {
                                                             let client_t = client_t.clone();
-                                                            let db_tt = db_t.clone();
-                                                            let cb_t = cb.clone();
-                                                            let idx_t = idx.clone();
-                                                            let schema_t = schema.clone();
-                        
-                                                            tokio::spawn(async move {
+                                                            let db_tt = db_tt.clone();
+                                                            let cb_t = cb_t.clone();
+                                                            let idx_t = idx_t.clone();
+                                                            let schema_t = schema_t.clone();
+                                                            for crc in ls_crc {
                                                                 match client_t.get_crc_record(crc).await {
                                                                     Ok(res) => {
                                                                         let data = res.data;
@@ -2108,7 +2112,7 @@ impl Client {
                                 
                                                                             if !Self::have_in_tree(db_tt.clone(), crc, &table) {
                                                                                 Self::process_event(
-                                                                                    db_tt, cb_t, client_t, idx_t, schema_t, &data, my_id,
+                                                                                    db_tt.clone(), cb_t.clone(), client_t.clone(), idx_t.clone(), schema_t.clone(), &data, my_id,
                                                                                 )
                                                                                 .await;
                                                                             }
@@ -2136,8 +2140,9 @@ impl Client {
                                                                         error!("record not found {crc} error: {e:?}");
                                                                     }
                                                                 }
-                                                            });
-                                                        }
+                                                                
+                                                            }
+                                                        });
                                                     }
                                                     _ => {
                                                         // tracing::warn!("clinet>>>>>on_message send {crc:?} from {from_id} to {to_id:?}");
@@ -2346,19 +2351,20 @@ impl Client {
                 }
                 {
                     let to = req.to;
+                    let event_time = req.event_time;
                     let data = req.encode().unwrap();
                     match client_pending.chat_request(bytes::Bytes::from(data.clone())).await {
                         Ok(res) => {
                             let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Send };
                             let feed = serde_cbor::to_vec(&feed).unwrap();
-                            cb_tt.on_message(req.crc, my_id, to, feed);
+                            cb_tt.on_message(req.crc, my_id, to, event_time,feed);
                             tracing::debug!("{res:?}");
                         }
                         Err(e) => {
                             tracing::error!("pending chat request failed [{}]: {e:?}",req.crc);
                             let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Failed };
                             let feed = serde_cbor::to_vec(&feed).unwrap();
-                            cb_tt.on_message(req.crc, my_id, to, feed);
+                            cb_tt.on_message(req.crc, my_id, to,event_time, feed);
                             let mut push = pendings_t.write().await;
                             push.push_back(req);
                         }
@@ -2420,25 +2426,26 @@ impl Client {
                     if to != my_id {
                         let client = client.clone();
                         let req = e.clone();
+                        let event_time = req.event_time;
                         let pendings_t = pendings.clone();
                         let cb_t = cb_local.clone();
                         let sending = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };
                         let sending = serde_cbor::to_vec(&sending).unwrap();
-                        cb_t.on_message(req.crc, my_id, to, sending);
+                        cb_t.on_message(req.crc, my_id, to,event_time, sending);
                         tokio::spawn(async move {
                             let data = req.encode().unwrap();
                             match client.chat_request(bytes::Bytes::from(data.clone())).await {
                                 Ok(res) => {
                                     let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Send };
                                     let feed = serde_cbor::to_vec(&feed).unwrap();
-                                    cb_t.on_message(req.crc, my_id, to, feed);
+                                    cb_t.on_message(req.crc, my_id, to,event_time, feed);
                                     tracing::debug!("{res:?}");
                                 }
                                 Err(e) => {
                                     tracing::error!("chat request failed [{}]: {e:?}",req.crc);
                                     let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Failed };
                                     let feed = serde_cbor::to_vec(&feed).unwrap();
-                                    cb_t.on_message(req.crc, my_id, to, feed);
+                                    cb_t.on_message(req.crc, my_id, to,event_time, feed);
                                     let mut push = pendings_t.write().await;
                                     push.push_back(req);
                                 }
@@ -2658,7 +2665,7 @@ impl Client {
             
             if nonce.is_none() {
                 tokio::spawn(async move {
-                    cb.on_message(crc, from_id, to, msg);
+                    cb.on_message(crc, from_id, to, event_time,msg);
                 });
                 return;
             }
@@ -2940,7 +2947,7 @@ impl Client {
                             );
                         }
                         tokio::spawn(async move {
-                            cb.on_message(crc, from_id, to, msg_data);
+                            cb.on_message(crc, from_id, to,event_time, msg_data);
                         });
                     } else {
                         eprintln!("decrypt failes!!! {:?}", nonce);
@@ -3045,7 +3052,7 @@ impl Client {
                                 }
                             }
                             tokio::spawn(async move {
-                                cb.on_message(crc, from_id, to, msg_data);
+                                cb.on_message(crc, from_id, to, event_time,msg_data);
                             });
                         } else {
                             tracing::error!("decrypt failed:>>>>");
