@@ -1190,10 +1190,16 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                             tokio::spawn(async move {
                                                 if let Ok(res) = rx.await {
                                                     if let Ok(Some(cr)) = res {
-                                                        let res = crate::behaviour::chat::Response(
-                                                            cr.data,
-                                                        );
-                                                        tracing::warn!("{res:?}");
+                                                        if let Ok(evt) = luffa_rpc_types::Event::decode(&cr.data) {
+                                                            let luffa_rpc_types::Event {
+                                                                crc,msg,nonce,..
+                                                            } = evt;
+                                                            if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), None, nonce)
+                                                            {
+                                                                tracing::warn!("[{crc}] res msg>> {msg:?}");
+                                                            }
+                                                        }
+                                                        
                                                     };
                                                 }
                                             });
@@ -1922,39 +1928,39 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 }
             }
         }
-        else{
-            if let Some(to) = self.contacts.node_weight(target) {
-                let peer_id =
-                match self.swarm.behaviour().peer_manager.all_peers().iter().find(|peer|{
-                    let mut digest = crc64fast::Digest::new();
-                    digest.write(&peer.clone().to_bytes());
-                    let to_id = digest.sum64();
-                    to_id == *to 
-                })
-                {
-                    Some(p)=>{
-                        Some(p.clone().clone())
-                    }
-                    None=>{
-                        None
-                    }
-                };
-                if let Some(p) = peer_id {
-                    let data = data.to_vec();
-                    let luffa_rpc_types::Event { crc ,..} = luffa_rpc_types::Event::decode_uncheck(&data)?;
-                    if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+        // else{
+        //     if let Some(to) = self.contacts.node_weight(target) {
+        //         let peer_id =
+        //         match self.swarm.behaviour().peer_manager.all_peers().iter().find(|peer|{
+        //             let mut digest = crc64fast::Digest::new();
+        //             digest.write(&peer.clone().to_bytes());
+        //             let to_id = digest.sum64();
+        //             to_id == *to 
+        //         })
+        //         {
+        //             Some(p)=>{
+        //                 Some(p.clone().clone())
+        //             }
+        //             None=>{
+        //                 None
+        //             }
+        //         };
+        //         if let Some(p) = peer_id {
+        //             let data = data.to_vec();
+        //             let luffa_rpc_types::Event { crc ,..} = luffa_rpc_types::Event::decode_uncheck(&data)?;
+        //             if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
                         
-                        let (tx, rx) = tokio::sync::oneshot::channel();
-                        let req_id = chat.send_request(&p, crate::behaviour::chat::Request(data));
-                        self.pending_request.insert(req_id, (crc,*to,tx));
-                        tracing::warn!("remote>> chat send. {:?}", req_id);
-                        return Ok(Some(rx)); 
-                    }
+        //                 let (tx, rx) = tokio::sync::oneshot::channel();
+        //                 let req_id = chat.send_request(&p, crate::behaviour::chat::Request(data));
+        //                 self.pending_request.insert(req_id, (crc,*to,tx));
+        //                 tracing::warn!("remote>> chat send. {:?}", req_id);
+        //                 return Ok(Some(rx)); 
+        //             }
 
-                }
+        //         }
                 
-            }
-        }
+        //     }
+        // }
         Ok(None)
     }
 
