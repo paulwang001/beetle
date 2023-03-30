@@ -1667,34 +1667,18 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 response,
                             } => {
                                 let data = response.0;
-                                let luffa_rpc_types::Event {msg,nonce,..} = luffa_rpc_types::Event::decode(&data)?;
-                                if nonce.is_some() {
-                                    self.emit_network_event(NetworkEvent::RequestResponse(
-                                        ChatEvent::Response { request_id:Some(request_id), data },
-                                    ));
-                                }
-                                else{
-                                    let res = Message::decrypt(bytes::Bytes::from(msg), None, nonce)?;
-    
-                                    if let Some((crc,to,channel)) = self.pending_request.remove(&request_id) {
-                                        if let Err(_e) =
-                                            channel.send(Ok(Some(ChatResponse { data: data.clone() })))
-                                        {
-                                            tracing::error!("channel response failed");
-                                        }
-                                     
-                                        tracing::info!("route Feedback:>>>>{res:?}");
-                                        // let msg = Message::Feedback { crc:vec![crc], from_id:None, to_id: Some(to), status: FeedbackStatus::Send };
-                                        // tracing::warn!("res Feedback:>>>>{msg:?}");
-                                        self.local_feedback(Some(request_id), res );
+                                if let Some((crc,to,channel)) = self.pending_request.remove(&request_id) {
+                                    if let Err(_e) =
+                                        channel.send(Ok(Some(ChatResponse { data: data.clone() })))
+                                    {
+                                        tracing::error!("channel response failed");
                                     }
-                                    else{
-                                        tracing::warn!("res Feedback:>>>>{res:?}");
-                                        self.emit_network_event(NetworkEvent::RequestResponse(
-                                            ChatEvent::Response { request_id:Some(request_id), data },
-                                        ));
-                                    }
+                                    let msg = Message::Feedback { crc:vec![crc], from_id:None, to_id: Some(to), status: FeedbackStatus::Send };
+                                    self.local_feedback(Some(request_id), msg );
                                 }
+                                self.emit_network_event(NetworkEvent::RequestResponse(
+                                    ChatEvent::Response { request_id:Some(request_id), data },
+                                ));
                             }
                         }
                     }
@@ -1924,7 +1908,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         let to_id = digest.sum64();
                         let req_id = chat.send_request(p, crate::behaviour::chat::Request(data));
                         self.pending_request.insert(req_id, (crc,to_id,tx));
-                        tracing::warn!("local chat send. {:?}", req_id);
+                        tracing::warn!("local chat to [{p:?}] send. {:?}", req_id);
 
                         return Ok(Some(rx));
                     }
