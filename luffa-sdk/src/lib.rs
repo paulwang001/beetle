@@ -2082,14 +2082,18 @@ impl Client {
                                                     FeedbackStatus::Fetch | FeedbackStatus::Notice => {
                                                         let ls_crc = crc;
                                                         
-                                                        for crc in ls_crc {
+                                                        let client_t = client_t.clone();
+                                                        let db_tt = db_t.clone();
+                                                        let cb_t = cb.clone();
+                                                        let idx_t = idx.clone();
+                                                        let schema_t = schema.clone();
+                                                        tokio::spawn(async move {
                                                             let client_t = client_t.clone();
-                                                            let db_tt = db_t.clone();
-                                                            let cb_t = cb.clone();
-                                                            let idx_t = idx.clone();
-                                                            let schema_t = schema.clone();
-                        
-                                                            tokio::spawn(async move {
+                                                            let db_tt = db_tt.clone();
+                                                            let cb_t = cb_t.clone();
+                                                            let idx_t = idx_t.clone();
+                                                            let schema_t = schema_t.clone();
+                                                            for crc in ls_crc {
                                                                 match client_t.get_crc_record(crc).await {
                                                                     Ok(res) => {
                                                                         let data = res.data;
@@ -2108,7 +2112,7 @@ impl Client {
                                 
                                                                             if !Self::have_in_tree(db_tt.clone(), crc, &table) {
                                                                                 Self::process_event(
-                                                                                    db_tt, cb_t, client_t, idx_t, schema_t, &data, my_id,
+                                                                                    db_tt.clone(), cb_t.clone(), client_t.clone(), idx_t.clone(), schema_t.clone(), &data, my_id,
                                                                                 )
                                                                                 .await;
                                                                             }
@@ -2136,8 +2140,9 @@ impl Client {
                                                                         error!("record not found {crc} error: {e:?}");
                                                                     }
                                                                 }
-                                                            });
-                                                        }
+                                                                
+                                                            }
+                                                        });
                                                     }
                                                     _ => {
                                                         // tracing::warn!("clinet>>>>>on_message send {crc:?} from {from_id} to {to_id:?}");
