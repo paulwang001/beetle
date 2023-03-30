@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate lazy_static;
+
 use aes_gcm::{
     aead::{KeyInit, OsRng},
     Aes256Gcm, // Or `Aes128Gcm`
@@ -8,8 +9,8 @@ use anyhow::Context;
 use api::P2pClient;
 use futures::StreamExt;
 use libp2p::identity::PublicKey;
-use libp2p::{gossipsub::TopicHash, identity::Keypair};
 use libp2p::{multihash, PeerId};
+use libp2p::{gossipsub::TopicHash, identity::Keypair};
 use luffa_node::{
     DiskStorage, GossipsubEvent, KeyFilter, Keychain, NetworkEvent, Node, ENV_PREFIX,
 };
@@ -23,8 +24,11 @@ use serde::{Deserialize, Serialize};
 use sled::Db;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::fs;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tantivy::tokenizer::{LowerCaser, SimpleTokenizer, Stemmer, TextAnalyzer};
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -38,19 +42,22 @@ use crate::avatar_nickname::avatar::generate_avatar;
 use crate::avatar_nickname::nickname::generate_nickname;
 use anyhow::Result;
 use chrono::Utc;
+use image::EncodableLayout;
 use tantivy::collector::TopDocs;
 use tantivy::directory::{ManagedDirectory, MmapDirectory};
 use tantivy::query::QueryParser;
-use tantivy::Index;
+use tantivy::{Index, TantivyError};
 use tantivy::{doc, DocAddress, Score};
 use tantivy::{schema::*, IndexWriter};
-use tokio::sync::oneshot::Sender as ShotSender;
+use tokio::sync::oneshot::{Sender as ShotSender};
 
 mod api;
-pub mod avatar_nickname;
 mod config;
+pub mod avatar_nickname;
+pub mod group_members;
 
 use crate::config::Config;
+use crate::group_members::GroupMembers;
 
 const TOPIC_STATUS: &str = "luffa_status";
 // const TOPIC_CONTACTS: &str = "luffa_contacts";
@@ -61,7 +68,6 @@ const CONFIG_FILE_NAME: &str = "luffa.config.toml";
 const KVDB_CONTACTS_FILE: &str = "contacts";
 const KVDB_CONTACTS_TREE: &str = "luffa_contacts";
 const KVDB_CHAT_SESSION_TREE: &str = "luffa_sessions";
-const TOPIC_RELAY: &str = "luffa_relay";
 const LUFFA_CONTENT: &str = "index_data";
 
 lazy_static! {
@@ -99,7 +105,7 @@ pub struct EventMeta {
 pub type ClientResult<T> = anyhow::Result<T, ClientError>;
 
 #[derive(Debug, thiserror::Error)]
-pub enum ClientError {
+pub enum ClientError{
     #[error("Contancts parse error")]
     CodeParser,
     #[error("Send message failed")]
@@ -128,9 +134,31 @@ pub enum ClientError {
     MultibaseError(#[from] multibase::Error),
     #[error(transparent)]
     MultihashError(#[from] multihash::Error),
+    #[error(transparent)]
+    Bs58DecodeError(#[from] bs58::decode::Error),
+    #[error(transparent)]
+    DecodingError(#[from] libp2p::identity::error::DecodingError),
     #[error("{0}")]
     CustomError(String),
 }
+
+#[derive(Default)]
+struct CloneableAtomicBool(AtomicBool);
+
+impl Clone for CloneableAtomicBool {
+    fn clone(&self) -> Self {
+        Self(AtomicBool::new(self.0.load(Ordering::SeqCst)))
+    }
+}
+
+impl Deref for CloneableAtomicBool {
+    type Target = AtomicBool;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 
 fn create_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Runtime::new().unwrap()
@@ -147,6 +175,12 @@ pub fn public_key_to_id(public_key: Vec<u8>) -> u64 {
     digest.write(&peer.to_bytes());
     let to = digest.sum64();
     to
+}
+
+pub fn bs58_decode(data: &str) -> ClientResult<u64> {
+    let mut to = [0u8; 8];
+    to.clone_from_slice(&bs58::decode(data).into_vec()?);
+    Ok(u64::from_be_bytes(to))
 }
 
 fn content_index(idx_path: &Path) -> (Index, Schema) {
@@ -194,16 +228,43 @@ pub struct Client {
     filter: Arc<RwLock<Option<KeyFilter>>>,
     config: Arc<RwLock<Option<Config>>>,
     store: Arc<RwLock<Option<Arc<luffa_store::Store>>>>,
+    is_init: CloneableAtomicBool,
+    is_started: CloneableAtomicBool,
 }
+
+impl GroupMembers for Client{}
 
 impl Client {
     pub fn new() -> Self {
+        RUNTIME.block_on(async {
+            if let Err(e) = luffa_metrics::MetricsHandle::new(luffa_node::metrics::metrics_config_with_compile_time_info(Default::default()))
+                .await
+            {
+                println!("failed to initialize metrics");
+            }
+        });
+
         let path = luffa_util::luffa_data_path(KVDB_CONTACTS_FILE).unwrap();
         let idx_path = luffa_util::luffa_data_path(LUFFA_CONTENT).unwrap();
-        tracing::info!("open db>>>>{:?}", &path);
-        let db = Arc::new(sled::open(path).unwrap());
+        info!("path >>>> {:?}", &path);
+        info!("idx_path >>>> {:?}", &idx_path);
+
+        let db = Arc::new(sled::open(path).expect("open db failed"));
         let (idx, schema) = content_index(idx_path.as_path());
-        let writer = idx.writer_with_num_threads(1, 12 * 1024 * 1024).unwrap();
+        let writer = idx.writer_with_num_threads(1, 12 * 1024 * 1024).or_else(|e| {
+            match e {
+                TantivyError::LockFailure(_, _) => {
+                    // 清除文件锁，再次尝试打开 indexWriter
+                    warn!("first open indexWriter failed because of acquire file lock failed");
+                    fs::remove_file(&idx_path.join(".tantivy-writer.lock")).expect("release indexWriter lock failed");
+
+                    idx.writer_with_num_threads(1, 12 * 1024 * 1024)
+                }
+                _ => panic!("acquire indexWriter failed: {:?}", e)
+            }
+        })
+            .expect("acquire indexWriter failed");
+
         Client {
             key: Arc::new(RwLock::new(None)),
             filter: Arc::new(RwLock::new(None)),
@@ -215,6 +276,8 @@ impl Client {
             idx: Arc::new(idx),
             schema,
             writer: Arc::new(RwLock::new(writer)),
+            is_init: Default::default(),
+            is_started: Default::default(),
         }
     }
 
@@ -263,16 +326,11 @@ impl Client {
             let mut digest = crc64fast::Digest::new();
             digest.write(&secret_key);
             let offer_id = digest.sum64();
-            tracing::info!("gen offer id:{}", offer_id);
+            tracing::warn!("gen offer id:{}", offer_id);
             self.save_contacts_offer(offer_id, secret_key.clone());
             if let Some(my_id) = self.get_local_id()? {
                 let tag = self.find_contacts_tag(my_id)?.unwrap_or_default();
-                Some(format!(
-                    "luffa://{}/{}/{}",
-                    uid,
-                    bs58::encode(secret_key).into_string(),
-                    tag
-                ))
+                Some(format!("luffa://{}/{}/{}", uid, bs58::encode(secret_key).into_string(), tag))
             } else {
                 None
             }
@@ -289,19 +347,14 @@ impl Client {
         let mut digest = crc64fast::Digest::new();
         digest.write(&secret_key);
         let offer_id = digest.sum64();
-        tracing::info!("gen offer id:{}", offer_id);
+        tracing::warn!("gen offer id:{}", offer_id);
         self.save_contacts_offer(offer_id, secret_key.clone());
         let tag = self.find_contacts_tag(did)?.unwrap_or_default();
         let g_id = bs58::encode(did.to_be_bytes()).into_string();
-        Ok(format!(
-            "luffa://{}/{}/{}",
-            g_id,
-            bs58::encode(secret_key).into_string(),
-            tag
-        ))
+        Ok(format!("luffa://{}/{}/{}", g_id, bs58::encode(secret_key).into_string(), tag))
     }
 
-    ///Offer contacts
+    ///Offer contacts 
     pub fn contacts_offer(&self, code: &String) -> ClientResult<u64> {
         let mut tmp = code.split('/');
         let _from_tag = tmp.next_back();
@@ -327,7 +380,7 @@ impl Client {
         let msg = {
             let offer_key = Aes256Gcm::generate_key(&mut OsRng);
             let offer_key = offer_key.to_vec();
-            tracing::info!("secret_key::: {}", secret_key.len());
+            tracing::warn!("secret_key::: {}", secret_key.len());
             let token = RUNTIME.block_on(async {
                 let filter = self.filter.read().await;
                 let key = self.get_keypair(filter.clone()).await;
@@ -337,13 +390,12 @@ impl Client {
                         tag,
                         offer_key.clone(),
                         luffa_rpc_types::ContactsTypes::Private,
-                    )
-                    .unwrap()
+                    ).unwrap()
                 });
                 token.unwrap()
             });
 
-            tracing::info!("gen offer id:{}", offer_id);
+            tracing::warn!("gen offer id:{}", offer_id);
             self.save_contacts_offer(offer_id, secret_key);
 
             Message::ContactsExchange {
@@ -352,7 +404,7 @@ impl Client {
         };
 
         let res = match self.send_to(to, msg, from_id, Some(key)).map_err(|e| {
-            tracing::info!("send_to failed:{e:?}");
+            tracing::warn!("send_to failed:{e:?}");
             ClientError::SendFailed
         }) {
             Ok(crc) => {
@@ -362,16 +414,14 @@ impl Client {
                 Self::save_to_tree(self.db.clone(), offer_id, &table, status, now);
                 crc
             }
-            Err(_) => 0,
+            Err(_) => {
+                0
+            }
         };
         Ok(res)
     }
-    ///Offer group contacts
-    pub fn contacts_group_create(
-        &self,
-        invitee: Vec<u64>,
-        tag: Option<String>,
-    ) -> ClientResult<u64> {
+    ///Offer group contacts 
+    pub fn contacts_group_create(&self, invitee: Vec<u64>, tag: Option<String>) -> ClientResult<u64> {
         let key_id = self.gen_key("", false)?.unwrap();
         let g_key = self.read_keypair(&key_id).unwrap();
         let g_id = bs58::decode(key_id).into_vec().unwrap();
@@ -394,9 +444,9 @@ impl Client {
                 offer_key.clone(),
                 luffa_rpc_types::ContactsTypes::Group,
             )
-            .unwrap();
+                .unwrap();
 
-            tracing::info!("gen offer id:{}", offer_id);
+            tracing::warn!("gen offer id:{}", offer_id);
             self.save_contacts_offer(offer_id, offer_key.clone());
             let ContactsToken {
                 public_key,
@@ -414,7 +464,89 @@ impl Client {
                 contacts_type,
                 sign,
                 comment,
+                g_key.to_protobuf_encoding().ok()
             );
+
+            Message::ContactsExchange {
+                exchange: ContactsEvent::Offer { token },
+            }
+        };
+        let members = invitee.clone();
+        RUNTIME.block_on(async {
+            let contacts = vec![Contacts {
+                did: g_id,
+                r#type: ContactsTypes::Group,
+                have_time: 0,
+                wants: vec![],
+            }];
+
+            let sync = Message::ContactsSync {
+                did: my_id,
+                contacts,
+            };
+
+            let event = Event::new(0, &sync, None, my_id);
+            let data = event.encode().unwrap();
+            let client_t = self.client.clone();
+            let sender = self.sender.clone();
+            tokio::spawn(async move {
+                let client_t = client_t.read().await;
+                let client_t = client_t.as_ref().unwrap();
+                if let Err(e) = client_t
+                    .gossipsub_publish(
+                        TopicHash::from_raw(format!("{}", TOPIC_STATUS)),
+                        bytes::Bytes::from(data),
+                    )
+                    .await
+                {
+                    tracing::warn!("pub contacts sync status >>> {e:?}");
+                }
+                let tx = sender.read().await;
+                for i_id in invitee {
+                    let tx = tx.as_ref().unwrap();
+                    let (req, res) = tokio::sync::oneshot::channel();
+                    let msg = serde_cbor::to_vec(&msg).unwrap();
+                    tx.send((i_id, msg, my_id, req, None)).await.unwrap();
+                    match res.await {
+                        Ok(r) => {
+                            tracing::info!("send group offer ok :{r:?}");
+                        }
+                        Err(e) => {
+                            tracing::warn!("{e:?}");
+                        }
+                    }
+                }
+            });
+        });
+        Self::group_member_insert(self.db.clone(), g_id, members)?;
+        Ok(g_id)
+    }
+
+    ///Offer group contacts invite member
+    pub fn contacts_group_invite_member(&self, g_id: u64, invitee: u64, tag: Option<String>) -> ClientResult<bool> {
+        let group_keypair = format!("GROUPKEYPAIR-{}", g_id);
+        let group_keypair = Self::get_key(self.db.clone(), &group_keypair);
+        let g_key = Keypair::from_protobuf_encoding(group_keypair.as_bytes())?;
+
+        let my_id = self.get_local_id()?.unwrap();
+        let offer_key = Aes256Gcm::generate_key(&mut OsRng);
+        let offer_key = offer_key.to_vec();
+
+        let msg = {
+            let mut digest = crc64fast::Digest::new();
+            digest.write(&offer_key);
+            let offer_id = digest.sum64();
+
+            let token = ContactsToken::new(
+                &g_key,
+                tag,
+                offer_key.clone(),
+                luffa_rpc_types::ContactsTypes::Group,
+            )
+                .unwrap();
+
+            tracing::warn!("gen offer id:{}", offer_id);
+            self.save_contacts_offer(offer_id, offer_key.clone());
 
             Message::ContactsExchange {
                 exchange: ContactsEvent::Offer { token },
@@ -447,48 +579,44 @@ impl Client {
                     )
                     .await
                 {
-                    tracing::info!("pub contacts sync status >>> {e:?}");
+                    tracing::warn!("pub contacts sync status >>> {e:?}");
                 }
                 let tx = sender.read().await;
-                for i_id in invitee {
-                    let tx = tx.as_ref().unwrap();
-                    let (req, res) = tokio::sync::oneshot::channel();
-                    let msg = serde_cbor::to_vec(&msg).unwrap();
-                    tx.send((i_id, msg, my_id, req, None)).await.unwrap();
-                    match res.await {
-                        Ok(r) => {
-                            tracing::info!("send group offer ok :{r:?}");
-                        }
-                        Err(e) => {
-                            tracing::info!("{e:?}");
-                        }
+
+                let tx = tx.as_ref().unwrap();
+                let (req, res) = tokio::sync::oneshot::channel();
+                let msg = serde_cbor::to_vec(&msg).unwrap();
+                tx.send((invitee, msg, my_id, req, None)).await.unwrap();
+                match res.await {
+                    Ok(r) => {
+                        tracing::info!("send group offer ok :{r:?}");
+                    }
+                    Err(e) => {
+                        tracing::warn!("{e:?}");
                     }
                 }
             });
-        });
 
-        Ok(g_id)
+        });
+        Self::group_member_insert(self.db.clone(), g_id, vec![invitee])?;
+        Ok(true)
     }
 
-    /// answer an offer and send it to from
-    pub fn contacts_anwser(
-        &self,
-        to: u64,
-        offer_id: u64,
-        secret_key: Vec<u8>,
-    ) -> ClientResult<u64> {
+    /// answer an offer and send it to from 
+    pub fn contacts_anwser(&self, to: u64, offer_id: u64, secret_key: Vec<u8>) -> ClientResult<u64> {
         let offer_key = Self::get_offer_by_offer_id(self.db.clone(), offer_id);
 
         let my_id = self.get_local_id()?.unwrap();
         let comment = self.find_contacts_tag(my_id)?;
-        tracing::info!("secret_key::: {}", secret_key.len());
-        let new_key = match self.get_secret_key(to) {
-            Some(key) => {
-                tracing::info!("contacts old s key");
-                key
-            }
-            None => secret_key.clone(),
-        };
+        tracing::warn!("secret_key::: {}",secret_key.len());
+        let new_key =
+            match self.get_secret_key(to) {
+                Some(key) => {
+                    tracing::warn!("contacts old s key");
+                    key
+                }
+                None => secret_key.clone(),
+            };
         let token = RUNTIME.block_on(async {
             let filter = self.filter.read().await;
             let key = self.get_keypair(filter.clone()).await;
@@ -499,7 +627,7 @@ impl Client {
                     new_key,
                     luffa_rpc_types::ContactsTypes::Private,
                 )
-                .unwrap()
+                    .unwrap()
             });
             token.unwrap()
         });
@@ -511,7 +639,7 @@ impl Client {
         };
 
         let res = match self.send_to(to, msg, offer_id, offer_key).map_err(|e| {
-            tracing::info!("send_to failed:{e:?}");
+            tracing::warn!("send_to failed:{e:?}");
             ClientError::SendFailed
         }) {
             Ok(crc) => {
@@ -522,7 +650,9 @@ impl Client {
                 Self::update_session(self.db.clone(), to, None, None, None, None, now);
                 crc
             }
-            Err(_) => 0,
+            Err(_) => {
+                0
+            }
         };
         Ok(res)
     }
@@ -535,6 +665,7 @@ impl Client {
         c_type: ContactsTypes,
         sign: Vec<u8>,
         comment: Option<String>,
+        g_keypair: Option<Vec<u8>>,
     ) {
         let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
         tracing::info!("save_contacts----->{to}");
@@ -552,9 +683,20 @@ impl Client {
             tag_key.as_bytes(),
             comment.unwrap_or(format!("{to}")).as_bytes(),
         )
-        .unwrap();
+            .unwrap();
+        if let Some(keypair) = g_keypair {
+            let group_keypair = format!("GROUPKEYPAIR-{}", to);
+            tree.insert(group_keypair, keypair).unwrap();
+        }
         tree.flush().unwrap();
     }
+
+    fn get_key(db: Arc<Db>, key: &str) -> Vec<u8> {
+        let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
+        let data = tree.get(key.as_bytes()).unwrap().unwrap();
+        data.to_vec()
+    }
+
     fn save_to_tree(db: Arc<Db>, crc: u64, table: &str, data: Vec<u8>, event_time: u64) {
         let tree = db.open_tree(&table).unwrap();
 
@@ -656,12 +798,12 @@ impl Client {
                 match res.await {
                     Ok(r) => r,
                     Err(e) => {
-                        tracing::info!("{e:?}");
+                        tracing::warn!("{e:?}");
                         Err(anyhow::anyhow!("{e:?}"))
                     }
                 }
             })
-            .await
+                .await
             {
                 Ok(Ok(crc)) => Ok(crc),
                 Ok(Err(e)) => Err(anyhow::anyhow!("{e:?}")),
@@ -675,7 +817,7 @@ impl Client {
         let res = match message_from(msg) {
             Some(msg) => {
                 match self.send_to(to, msg, 0, None).map_err(|e| {
-                    tracing::info!("{e:?}");
+                    tracing::warn!("{e:?}");
                     ClientError::SendFailed
                 }) {
                     Ok(crc) => crc,
@@ -706,13 +848,7 @@ impl Client {
     }
     pub fn meta_msg(&self, data: &[u8]) -> ClientResult<EventMeta> {
         let evt: Event = serde_cbor::from_slice(data)?;
-        let Event {
-            to,
-            event_time,
-            from_id,
-            msg,
-            ..
-        } = evt;
+        let Event { to, event_time, from_id, msg, .. } = evt;
         let (to_tag, _) = Self::get_contacts_tag(self.db.clone(), to).unwrap_or_default();
         let (from_tag, _) = Self::get_contacts_tag(self.db.clone(), from_id).unwrap_or_default();
 
@@ -938,6 +1074,7 @@ impl Client {
             //         key.to_vec().into_iter().fold(0, |acc, x| acc << 8 | (x as u64))
             //     });
 
+
             // if let Some(id) = id {
             //     Self::burn_from_tree(self.db.clone(), id, event_table)
             // } else {
@@ -948,8 +1085,11 @@ impl Client {
         Ok(())
     }
 
+
     pub fn get_local_id(&self) -> ClientResult<Option<u64>> {
-        let res = RUNTIME.block_on(async { self.local_id().await });
+        let res = RUNTIME.block_on(async {
+            self.local_id().await
+        });
         Ok(res)
     }
 
@@ -959,6 +1099,7 @@ impl Client {
             bs58::encode(d.to_be_bytes()).into_string()
         }))
     }
+
 
     async fn local_id(&self) -> Option<u64> {
         let filter = self.filter.read().await;
@@ -1025,20 +1166,12 @@ impl Client {
         RUNTIME.block_on(async {
             let keychain = self.key.read().await;
             if let Some(chain) = keychain.as_ref() {
-                let keys = chain
-                    .keys()
-                    .map(|m| match m {
-                        Ok(k) => Some(k.name()),
-                        Err(_e) => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .await;
+                let keys = chain.keys().map(|m| match m {
+                    Ok(k) => Some(k.name()),
+                    Err(_e) => None
+                }).collect::<Vec<_>>().await;
 
-                Ok(keys
-                    .into_iter()
-                    .filter(|x| x.is_some())
-                    .map(|x| x.unwrap())
-                    .collect::<Vec<_>>())
+                Ok(keys.into_iter().filter(|x| x.is_some()).map(|x| x.unwrap()).collect::<Vec<_>>())
             } else {
                 Err(ClientError::CustomError("get keychain fail".to_string()))
             }
@@ -1066,7 +1199,9 @@ impl Client {
                     }
                     Ok(Some(name))
                 }
-                Err(e) => Err(ClientError::CustomError(e.to_string())),
+                Err(e) => {
+                    Err(ClientError::CustomError(e.to_string()))
+                }
             }
         })
     }
@@ -1079,7 +1214,9 @@ impl Client {
                         let name = key.name();
                         Ok(Some(name))
                     }
-                    Err(e) => Err(ClientError::CustomError(e.to_string())),
+                    Err(e) => {
+                        Err(ClientError::CustomError(e.to_string()))
+                    }
                 }
             } else {
                 Err(ClientError::CustomError("get keychain fail".to_string()))
@@ -1125,7 +1262,9 @@ impl Client {
                             std::fs::remove_dir(idx_path)?;
                             Ok(true)
                         }
-                        Err(e) => Err(ClientError::CustomError(e.to_string())),
+                        Err(e) => {
+                            Err(ClientError::CustomError(e.to_string()))
+                        }
                     }
                 } else {
                     Err(ClientError::CustomError("get keychain fail".to_string()))
@@ -1449,23 +1588,52 @@ impl Client {
         Ok(ok)
     }
 
+    pub fn disconnect(&self) -> ClientResult<bool> {
+        let peer_id = self.get_peer_id()?.unwrap();
+        let (_, data) = multibase::decode(&peer_id)?;
+        let peer_id = PeerId::from_bytes(&data)?;
+        let client = self.client.clone();
+        let ok = RUNTIME.block_on(async {
+            let c = client.read().await;
+            if let Some(cc) = c.as_ref() {
+                match cc.disconnect(peer_id).await {
+                    Ok(_) => true,
+                    _ => false,
+                }
+            } else {
+                false
+            }
+        });
+        Ok(ok)
+    }
+
     pub fn stop(&self) -> ClientResult<()> {
-        if let Err(e) = self.send_to(
-            u64::MAX,
-            Message::StatusSync {
-                to: 0,
-                from_id: 0,
-                status: AppStatus::Bye,
-            },
-            u64::MAX,
-            None,
-        ) {
-            tracing::info!("{e:?}");
+        if let Err(e) =
+            self.send_to(
+                u64::MAX,
+                Message::StatusSync {
+                    to: 0,
+                    from_id: 0,
+                    status: AppStatus::Bye,
+                },
+                u64::MAX,
+                None,
+            ) {
+            tracing::warn!("{e:?}");
             return Err(ClientError::CustomError(e.to_string()));
         }
         Ok(())
     }
     pub fn init(&self, cfg_path: Option<String>) -> ClientResult<()> {
+        info!("is_init {}", self.is_init.load(Ordering::SeqCst));
+
+        if self.is_init.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+
+        info!("init: at => {}", chrono::Local::now());
+        info!("init: path => {cfg_path:?}");
+
         #[cfg(unix)]
         {
             match luffa_util::increase_fd_limit() {
@@ -1494,16 +1662,15 @@ impl Client {
         println!("config--->{config:?}");
         config.metrics = luffa_node::metrics::metrics_config_with_compile_time_info(config.metrics);
 
-        let metrics_config = config.metrics.clone();
+        // let metrics_config = config.metrics.clone();
         let store_config = config.store.clone();
         RUNTIME.block_on(async {
-            let metrics_handle = luffa_metrics::MetricsHandle::new(metrics_config)
-                .await
-                .expect("failed to initialize metrics");
+            // let metrics_handle = luffa_metrics::MetricsHandle::new(metrics_config)
+            //     .await
+            //     .expect("failed to initialize metrics");
 
             let kc = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone())
-                .await
-                .unwrap();
+                .await.unwrap();
 
             let mut m_key = self.key.write().await;
             *m_key = Some(kc.clone());
@@ -1513,15 +1680,19 @@ impl Client {
             let store = start_store(store_config).await.unwrap();
             *m_store = Some(Arc::new(store));
         });
+
+        self.is_init.store(true, Ordering::SeqCst);
         Ok(())
+
     }
 
-    pub fn start(
-        &self,
-        key: Option<String>,
-        tag: Option<String>,
-        cb: Box<dyn Callback>,
-    ) -> ClientResult<u64> {
+    pub fn start(&self, key: Option<String>, tag: Option<String>, cb: Box<dyn Callback>) -> ClientResult<u64>
+    {
+        info!("is_start {}", self.is_started.load(Ordering::SeqCst));
+        if self.is_started.load(Ordering::SeqCst) {
+            return Ok(self.get_local_id().ok().flatten().expect("client get local id"));
+        }
+
         // let keychain = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone());
         let filter = key.map(|k| KeyFilter::Name(format!("{}", k)));
         let (kc, config) = RUNTIME.block_on(async {
@@ -1552,13 +1723,12 @@ impl Client {
             let store = store.clone().unwrap().clone();
             tokio::spawn(async move {
                 debug!("runing...");
-                Self::run(
-                    db, config, kc, cb, client, rx, idx_writer, schema, filter, store,
-                )
-                .await;
+                Self::run(db, config, kc, cb, client, rx, idx_writer, schema, filter, store).await;
                 debug!("run exit!....");
             });
         });
+
+        self.is_started.store(true, Ordering::SeqCst);
         Ok(my_id)
     }
 
@@ -2811,6 +2981,7 @@ impl Client {
             contacts_type,
             sign.clone(),
             comment.clone(),
+            None
         );
 
         let msg_type = match contacts_type {

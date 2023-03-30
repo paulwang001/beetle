@@ -15,6 +15,7 @@ use libp2p::kad::record::Key;
 use libp2p::kad::{Quorum, Record};
 use libp2p::Multiaddr;
 use libp2p::PeerId;
+use libp2p::request_response::RequestId;
 use luffa_bitswap::Block;
 
 use luffa_rpc_types::{
@@ -112,7 +113,7 @@ impl P2p {
         let ctx = req.ctx;
         let cid = req.cid;
 
-        tracing::info!("context:{}, received fetch_bitswap: {:?}", ctx, cid);
+        tracing::warn!("context:{}, received fetch_bitswap: {:?}", ctx, cid);
         let providers = req.providers.into_iter().collect();
 
         let (s, r) = oneshot::channel();

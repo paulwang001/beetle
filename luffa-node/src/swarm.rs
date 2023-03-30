@@ -40,7 +40,12 @@ async fn build_transport(
     // let tcp_ws_transport = tcp_transport.or_transport(ws_tcp);
 
     // Quic
-    let quic_config = quic::Config::new(keypair);
+    let mut quic_config = quic::Config::new(keypair);
+    {
+        // 自定义配置
+        quic_config.handshake_timeout = Duration::from_secs(3);
+        quic_config.max_idle_timeout = Duration::from_secs(3).as_millis() as u32;
+    }
     let quic_transport = quic::tokio::Transport::new(quic_config);
 
     // Noise config for TCP & Websockets

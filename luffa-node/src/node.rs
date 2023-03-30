@@ -1,4 +1,5 @@
-use std::collections::{HashMap, HashSet,VecDeque};
+use std::collections::{HashMap, HashSet};
+use std::error::Error;
 use std::fmt;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
@@ -6,7 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
 use cid::Cid;
 use futures_util::stream::StreamExt;

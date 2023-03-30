@@ -6,6 +6,8 @@ fn test_avatar_nickname() {
     let peer_id = "123";
     let avatar = generate_avatar(peer_id);
     println!("{avatar}");
+    // let data:Vec<&str> = avatar.chars();
+    // println!("{}", data.len());
     let nickname = generate_nickname(peer_id);
     println!("{nickname}");
 }
