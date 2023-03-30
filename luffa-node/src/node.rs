@@ -1173,7 +1173,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         if let Ok(res) = rx.await {
                                                             if let Ok(Some(cr)) = res {
                                                                 let res = crate::behaviour::chat::Response(cr.data);
-                                                                tracing::info!("{res:?}");
+                                                                tracing::warn!("{res:?}");
                                                             };
                                                         }
                                                     });
@@ -1193,7 +1193,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         let res = crate::behaviour::chat::Response(
                                                             cr.data,
                                                         );
-                                                        tracing::info!("{res:?}");
+                                                        tracing::warn!("{res:?}");
                                                     };
                                                 }
                                             });
