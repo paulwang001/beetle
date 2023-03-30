@@ -1,0 +1,1 @@
+docker build -f luffa-relay.Dockerfile -t luffa-relay .

@@ -1,4 +1,5 @@
-use std::collections::{HashMap, HashSet,VecDeque};
+use std::collections::{HashMap, HashSet};
+use std::error::Error;
 use std::fmt;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
@@ -6,7 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
 use cid::Cid;
 use futures_util::stream::StreamExt;
@@ -345,7 +346,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 routing = self.routing_rx.recv() => {
                     match routing {
                         Some((peer_id,crc))=>{
-                            self.handle_chat_routing(peer_id,crc);
+                            if let Err(e) = self.handle_chat_routing(peer_id,crc).await {
+                                tracing::error!("chat routing to [{peer_id:?}] failed: {:?}", e);
+                            }
                         }
                         None=>{
 
@@ -355,7 +358,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 res_channel = self.chat_receiver.recv() => {
                     match res_channel {
                         Some((res,peer_id))=>{
-                            self.handle_chat_response(res,peer_id);
+                            if let Err(e) = self.handle_chat_response(res,peer_id).await {
+                                tracing::error!("chat response to [{peer_id:?}] failed: {:?}", e);
+                            }
                         }
                         None=>{
 
@@ -370,7 +375,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     }
                 }, if nice_interval.is_some() => {
                     // Print peer count on an interval.
-                    tracing::info!("[{}] Peers connected: {:?}",self.local_peer_id(), self.swarm.connected_peers().count());
+                    tracing::warn!("[{}] Peers connected: {:?}",self.local_peer_id(), self.swarm.connected_peers().count());
                     // self.dht_nice_tick().await;
                 }
                 _ = bootstrap_interval.tick() => {
@@ -415,7 +420,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
         Ok(())
     }
-
+    
+    /// Re put pending routing.
+    #[tracing::instrument(skip(self))]
+    async fn pub_routing_tick(&mut self) {
+       
+    }
     /// Check the next node in the DHT.
     #[tracing::instrument(skip(self))]
     async fn dht_nice_tick(&mut self) {
@@ -446,14 +456,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         }
 
         if let Some((dial_opts, range)) = to_dial {
-            trace!(
+            warn!(
                 "checking node {:?} in bucket range ({:?})",
                 dial_opts.get_peer_id().unwrap(),
                 range
             );
 
             if let Err(e) = self.swarm.dial(dial_opts) {
-                debug!("failed to dial: {:?}", e);
+                error!("failed to dial: {:?}", e);
             }
             self.kad_last_range = Some(range);
         }
@@ -471,25 +481,26 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         if let Some(bs) = self.swarm.behaviour().bitswap.as_ref() {
             let workers = self.bitswap_sessions.remove(&ctx);
             let client = bs.client().clone();
+            
             tokio::task::spawn(async move {
                 debug!("stopping session {}", ctx);
                 if let Some(workers) = workers {
-                    debug!("stopping workers {} for session {}", workers.len(), ctx);
+                    info!("stopping workers {} for session {}", workers.len(), ctx);
                     // first shutdown workers
                     for (closer, worker) in workers {
                         if closer.send(()).is_ok() {
                             worker.await.ok();
                         }
                     }
-                    debug!("all workers stopped for session {}", ctx);
+                    info!("all workers stopped for session {}", ctx);
                 }
                 if let Err(err) = client.stop_session(ctx).await {
                     tracing::info!("failed to stop session {}: {:?}", ctx, err);
                 }
                 if let Err(err) = response_channel.send(Ok(())) {
-                    tracing::info!("session {} failed to send stop response: {:?}", ctx, err);
+                    tracing::error!("session {} failed to send stop response: {:?}", ctx, err);
                 }
-                debug!("session {} stopped", ctx);
+                warn!("session {} stopped", ctx);
             });
         } else {
             let _ = response_channel.send(Err(anyhow!("no bitswap available")));
@@ -515,11 +526,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 tokio::select! {
                     _ = closer_r => {
                         // Explicit sesssion stop.
-                        debug!("session {}: stopped: closed", ctx);
+                        warn!("session {}: stopped: closed", ctx);
                     }
                     _ = chan.closed() => {
                         // RPC dropped
-                        debug!("session {}: stopped: request canceled", ctx);
+                        warn!("session {}: stopped: request canceled", ctx);
                     }
                     block = client.get_block_with_session_id(ctx, &cid, &providers) => match block {
                         Ok(block) => {
@@ -1345,18 +1356,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     nonce,
                                     ..
                                 } = event;
-                                {
-                                    let msg = Message::Feedback { crc:vec![crc],from_id:Some(from_id),to_id:Some(to),status: luffa_rpc_types::FeedbackStatus::Routing };
-                                    let evnt = luffa_rpc_types::Event::new(from_id,&msg,None,0);
-                                    let res = evnt.encode().unwrap();
-                                    let res = crate::behaviour::chat::Response(res);
-                                    let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
-
-                                    if let Err(e) = chat.send_response(channel, res) {
-                                        tracing::error!("chat response failed: >>{e:?}");
-                                    }
-                                    tracing::info!("-----{request_id:?}------");
-                                }
+                                let mut feed_crc = vec![crc];
+                                
+                                let mut feed_status = luffa_rpc_types::FeedbackStatus::Routing;
                                 if nonce.is_none() {
                                     if let Ok(msg) =
                                         Message::decrypt(bytes::Bytes::from(msg), None, nonce)
@@ -1373,9 +1375,15 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                                     if t.elapsed().as_millis() > 3000 {
                                                                         tracing::warn!("active pending crc {crc} to {peer_id}");
                                                                         pending_crc.push(*crc);
+                                                                        if pending_crc.len() > 32 {
+                                                                            break;
+                                                                        }
                                                                     }
                                                                 }
                                                                 if !pending_crc.is_empty() {
+                                                                    feed_crc.clear();
+                                                                    feed_crc.extend_from_slice(&pending_crc);
+                                                                    feed_status = luffa_rpc_types::FeedbackStatus::Fetch;
                                                                     self.routing_tx.send((peer_id.clone(),pending_crc)).await?;
                                                                 }
                                                             }
@@ -1497,7 +1505,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     if let Err(e) = self
                                     .put_to_dht(crc, request.data().to_vec())
                                     {
-                                        tracing::error!("{e:?}");
+                                        tracing::error!("put to dht {e:?}");
                                     }
                                     // tracing::info!("{crc}");
                                     // check that from and to was in any contacts ?
@@ -1525,7 +1533,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     |_e| 1,
                                                     |_| 0,
                                                 ) {
-                                                    println!("[{cost}] paths>>>>>> {paths:?}");
+                                                    tracing::warn!("[{cost}] paths>>>>>> {paths:?}");
                                                     //route this message to shortest node and then break if the node is connected.
                                                     for r in paths {
                                                         if r != f {
@@ -1550,8 +1558,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                             }
                                             match rx_any {
                                                 Some(rx) => {
-                                                    let pending = self.pending_routing.entry(to).or_insert(Vec::new());
-                                                    pending.retain(|(c,_t)| crc != *c);
+                                                    // let pending = self.pending_routing.entry(to).or_insert(Vec::new());
+                                                    // pending.retain(|(c,_t)| crc != *c);
                                                     let sender = self.chat_sender.clone();
                                                     tokio::spawn(async move {
                                                         if let Ok(res) = rx.await {
@@ -1578,7 +1586,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             TopicHash::from_raw(TOPIC_CHAT),
                                                             request.data().to_vec(),
                                                         ) {
-                                                            tracing::info!("{e:?}");
+                                                            tracing::error!("[tp] can not route to any relay node>>> {e:?}");
                                                         }
                                                     }
                                                 }
@@ -1592,7 +1600,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     TopicHash::from_raw(TOPIC_CHAT),
                                                     request.data().to_vec(),
                                                 ) {
-                                                    tracing::error!("{e:?}");
+                                                    tracing::error!("group msg pub>>>{e:?}");
                                                 }
                                             }
 
@@ -1622,7 +1630,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         if let Ok(res) = rx.await {
                                                             if let Ok(Some(cr)) = res {
                                                                 let res = crate::behaviour::chat::Response(cr.data);
-                                                                tracing::info!(
+                                                                tracing::warn!(
                                                                     "group msg to >>> {res:?}"
                                                                 );
                                                             };
@@ -1680,8 +1688,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         }
                                         match rx_any {
                                             Some(rx) => {
-                                                let pending = self.pending_routing.entry(to).or_insert(Vec::new());
-                                                    pending.retain(|(c,_t)| crc != *c);
+                                                // let pending = self.pending_routing.entry(to).or_insert(Vec::new());
+                                                //     pending.retain(|(c,_t)| crc != *c);
                                                 let sender = self.chat_sender.clone();
                                                 tokio::spawn(async move {
                                                     if let Ok(res) = rx.await {
@@ -1715,6 +1723,18 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         }
                                     }
                                 };
+                                let feed = Message::Feedback { crc:feed_crc,from_id:Some(from_id),to_id:Some(to),status:feed_status };
+                                {
+                                    let evnt = luffa_rpc_types::Event::new(from_id,&feed,None,0);
+                                    let res = evnt.encode().unwrap();
+                                    let res = crate::behaviour::chat::Response(res);
+                                    let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
+
+                                    if let Err(e) = chat.send_response(channel, res) {
+                                        tracing::error!("chat response failed: >>{e:?}");
+                                    }
+                                    tracing::info!("-----{request_id:?}------");
+                                }
                             }
                             RequestResponseMessage::Response {
                                 request_id,
@@ -1794,23 +1814,38 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         Ok(())
     }
 
-    fn handle_chat_response(
+    async fn handle_chat_response(
         &mut self,
         res: crate::behaviour::chat::Response,
         peer: PeerId,
-    ) {
+    )-> Result<()> 
+    {
         if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
             let req = crate::behaviour::chat::Request(res.0);
-            // let (tx, rx) = tokio::sync::oneshot::channel();
+            let (tx, rx) = tokio::sync::oneshot::channel();
             let req_id = chat.send_request(&peer, req);
-            // self.pending_request.insert(req_id, (0,0,tx));
+            self.pending_request.insert(req_id, (0,0,tx));
+            match rx.await {
+                Ok(Ok(Some(res))) =>{
+                    tracing::warn!("request successful:{:?}", res);
+                    Ok(())
+                }
+                _=>{
+                    Err(anyhow!("Chat request failed"))
+                }
+            }
+        }
+        else{
+            Err(anyhow!("handle_chat_response> Chat request failed"))
         }
     }
-    fn handle_chat_routing(
+    async fn handle_chat_routing(
         &mut self,
         peer_id:PeerId,
         crc:Vec<u64>,
-    ) {
+    )->Result<()> 
+    
+    {
         let local_id = self.local_peer_id();
         let mut digest = crc64fast::Digest::new();
         digest.write(&local_id.to_bytes());
@@ -1825,9 +1860,21 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             let msg = Message::Feedback { crc, from_id: None, to_id: Some(to_id), status: luffa_rpc_types::FeedbackStatus::Fetch };
             let data = luffa_rpc_types::Event::new(to_id, &msg, None, my_id);
             let data = data.encode().unwrap();
-            // let (tx, rx) = tokio::sync::oneshot::channel();
+            let (tx, rx) = tokio::sync::oneshot::channel();
             let req_id = chat.send_request(&peer_id, crate::behaviour::chat::Request(data));
-            // self.pending_request.insert(req_id, (0,to_id,tx));
+            self.pending_request.insert(req_id, (0,to_id,tx));
+            match rx.await {
+                Ok(Ok(Some(res))) =>{
+                    tracing::warn!("request successful:{:?}", res);
+                    Ok(())
+                }
+                _=>{
+                    Err(anyhow!("Chat request failed"))
+                }
+            }
+        }
+        else{
+            Err(anyhow!("Chat request failed"))
         }
     }
 
@@ -1951,7 +1998,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         let to_id = digest.sum64();
                         let req_id = chat.send_request(p, crate::behaviour::chat::Request(data));
                         self.pending_request.insert(req_id, (crc,to_id,tx));
-                        tracing::info!("chat send. {:?}", req_id);
+                        tracing::warn!("local chat send. {:?}", req_id);
 
                         return Ok(Some(rx));
                     }
@@ -1986,7 +2033,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         let (tx, rx) = tokio::sync::oneshot::channel();
                         let req_id = chat.send_request(&p, crate::behaviour::chat::Request(data));
                         self.pending_request.insert(req_id, (crc,*to,tx));
-                        tracing::info!("chat send. {:?}", req_id);
+                        tracing::warn!("remote>> chat send. {:?}", req_id);
                         return Ok(Some(rx)); 
                     }
 
@@ -2067,7 +2114,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         chat.send_request(peer, crate::behaviour::chat::Request(data.msg));
                         self.pending_request.insert(req_id, (crc,to,response_channel));
                         self.local_feedback(Some(req_id.clone()), Message::Feedback { crc:vec![crc], from_id:Some(from_id), to_id: Some(to), status: FeedbackStatus::Sending });
-                        
+                        tracing::warn!("found peer for event to >> chat send. {:?}", peer);
                         return Ok(false);
                     }
                     if let Some((peer, _, ttl)) = peers.first() {
@@ -2106,9 +2153,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     from_id,
                     ..
                 } = luffa_rpc_types::Event::decode_uncheck(&data.msg).unwrap();
+                tracing::error!("rpc chat send failed,not peers");
                 self.local_feedback(None, Message::Feedback { crc:vec![crc], from_id:Some(from_id), to_id: Some(to), status: FeedbackStatus::Failed });
                 if let Err(_e) = response_channel.send(Err(anyhow!("not peers"))) {
-                    tracing::info!("channel response failed");
+                    tracing::error!("channel response failed");
                 }
             }
             RpcMessage::ExternalAddrs(response_channel) => {
@@ -2563,7 +2611,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 self.emit_network_event(NetworkEvent::RequestResponse(ChatEvent::Response { request_id, data }));
             }
             _=>{
-
+                tracing::error!("not is a local feedback {msg:?}");
             }
         }
     }
