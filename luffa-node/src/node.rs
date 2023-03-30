@@ -1439,6 +1439,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     {
                                         tracing::error!("put to dht {e:?}");
                                     }
+                                    
                                     // tracing::info!("{crc}");
                                     // check that from and to was in any contacts ?
 
@@ -1447,6 +1448,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         let mut rx_any = None;
                                         if *tp == 0 {
                                             // contact is private
+                                            let notice = Message::Feedback {crc:vec![crc],from_id:None, to_id: Some(to), status: FeedbackStatus::Notice };
+                                            let event = luffa_rpc_types::Event::new(to,&notice,None,from_id);
+                                            let data = event.encode()?;
+                                            self.emit_network_event(NetworkEvent::RequestResponse(
+                                                ChatEvent::Response { request_id:Some(request_id), data },
+                                            ));
                                             let pending = self.pending_routing.entry(to).or_insert(Vec::new());
                                             pending.push((crc,std::time::Instant::now()));
                                             let t = self.get_peer_index(to);
@@ -1521,6 +1528,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             tracing::error!("[tp] can not route to any relay node>>> {e:?}");
                                                         }
                                                     }
+                                                    tracing::warn!("not connect.");
+                                                    self.emit_network_event(NetworkEvent::RequestResponse(
+                                                        ChatEvent::Request(request.data().to_vec()),
+                                                    ));
                                                 }
                                             }
                                         } else {
@@ -1553,6 +1564,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 if let Some(to_id) = self.contacts.node_weight(t) {
                                                     let pending = self.pending_routing.entry(*to_id).or_insert(Vec::new());
                                                     pending.push((crc,std::time::Instant::now()));
+                                                    let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(*to_id), status: FeedbackStatus::Notice };
+                                                    let event = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id);
+                                                    let data = event.encode()?;
+                                                    self.emit_network_event(NetworkEvent::RequestResponse(
+                                                        ChatEvent::Response { request_id:Some(request_id), data },
+                                                    ));
                                                 }
                                                 if let Ok(Some(rx)) =
                                                     self.local_send_if_connected(t, request.data())
@@ -1569,6 +1586,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         }
                                                     });
                                                 }
+                                                
                                                 
                                             }
                                             
