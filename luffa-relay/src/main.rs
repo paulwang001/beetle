@@ -126,7 +126,7 @@ async fn main() -> Result<()> {
         }
         let mut count = 0u64;
         loop {
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            tokio::time::sleep(Duration::from_secs(2)).await;
             if count % 6 == 0 {
                 if let Ok(_) = tokio::time::timeout(Duration::from_secs(10), async {
                     tracing::info!("client publicsh relay.");
@@ -144,7 +144,7 @@ async fn main() -> Result<()> {
                 {
                     tracing::info!("relay successfully.");
                     if let Ok(peers) = client_t.gossipsub_mesh_peers(TopicHash::from_raw(TOPIC_RELAY)).await {
-                        tracing::info!("mesh peers:{:?}",peers);
+                        tracing::warn!("mesh peers:{:?}",peers);
                     }
                 }
             }
@@ -154,16 +154,15 @@ async fn main() -> Result<()> {
                 // notice.iter().filter(|(_k,(t,f,c))| *t + 5000 < get_now()).map(|(k,_)| *k).collect::<Vec<_>>()
                 notice.iter().map(|(k,_)| *k).collect::<Vec<_>>()
             };
-            let mut notice = notice_queue_t.write().await;
             if tasks.is_empty() {
                 tracing::info!("notice task is empty!");
             }
-
+            
             for task in tasks {
+                let mut notice = notice_queue_t.write().await;
                 if let Some((t,f,c)) = notice.remove(&task) {
                     if let Some(api) = push_api.as_ref() {
                         let nb = NoticeBody {
-
 
                             id:format!("{task}"),
                             title:format!("luffa://open/chat?id={task}&type={c}"),
@@ -204,8 +203,47 @@ async fn main() -> Result<()> {
                                     let (time,count,_) = queue.entry(to).or_insert((get_now(),from_id,0));
                                     *time = get_now();
                                     *count += 1;
-                                    tracing::info!("TODO: offline notify");
+                                    tracing::warn!("TODO: offline notify");
 
+                                }
+                                _=>{
+
+                                }
+                            }
+                        }
+                        ChatEvent::Response {data,..} =>{
+                            match Event::decode_uncheck(&data) {
+                                Ok(im) => {
+                                    let Event {
+                                        to,
+                                        from_id,
+                                        nonce,
+                                        msg,
+                                        ..
+                                    } = im;
+
+                                    if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg),None,nonce) {
+                                        match msg  {
+                                            Message::Feedback { status,..} => {
+                                                match status {
+                                                    FeedbackStatus::Notice => {
+                                                        let notice = notice_queue.clone();
+                                                        let mut queue = notice.write().await;
+                                                        let (time,count,tp) = queue.entry(to).or_insert((get_now(),from_id,0));
+                                                        *time = get_now();
+                                                        *count += 1;
+                                                        tracing::warn!("offline notification");
+                                                    }
+                                                    _=>{
+
+                                                    }
+                                                }
+                                            }
+                                            _=>{
+
+                                            }
+                                        }
+                                    }
                                 }
                                 _=>{
 
