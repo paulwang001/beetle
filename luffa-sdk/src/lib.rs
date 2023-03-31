@@ -1314,8 +1314,11 @@ impl Client {
                         if !reach_crc.contains(&c) {
                             reach_crc.push(c);
                         }
-                        last_time = event_time;
-                        last_msg = msg.clone().unwrap_or(last_msg);
+                        if last_time < event_time {
+
+                            last_time = event_time;
+                            last_msg = msg.clone().unwrap_or(last_msg);
+                        }
                     }
                     if let Some(c) = read.as_ref() {
                         first_read = reach_crc.contains(c);
@@ -2030,6 +2033,7 @@ impl Client {
                                                         else{
                                                             
                                                         }
+                                                        will_to_ui = false;
                                                     }
                                                     FeedbackStatus::Fetch | FeedbackStatus::Notice => {
                                                         let ls_crc = crc;
@@ -2318,16 +2322,16 @@ impl Client {
                         Err(e) => {
                             tracing::error!("pending chat request failed [{}]: {e:?}",req.crc);
 
-                            tokio::time::sleep(Duration::from_millis(500)).await;
+                            tokio::time::sleep(Duration::from_millis(1000)).await;
                             let status = if count >= 20 {FeedbackStatus::Failed} else {FeedbackStatus::Sending};
                             let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status };
                             let feed = serde_cbor::to_vec(&feed).unwrap();
                             
                             cb_tt.on_message(req.crc, my_id, to,event_time, feed);
-                            if count < 20 {
+                            // if count < 20 {
                                 let mut push = pendings_t.write().await;
                                 push.push_back((req,count + 1));
-                            }
+                            // }
                         }
                     }
                 }
@@ -2464,7 +2468,7 @@ impl Client {
                                                     source,
                                                 } => (title, format!("{:?}", m_type)),
                                             };
-                                            Self::update_session(db_t.clone(), to, None, Some(crc), None, Some(body.clone()), event_time);
+                                            Self::update_session(db_t.clone(), to, None, Some(crc), Some(crc), Some(body.clone()), event_time);
                                             let schema = schema_t.clone();
                                             let fld_crc = schema.get_field("crc").unwrap();
                                             let fld_from = schema.get_field("from_id").unwrap();
@@ -2518,21 +2522,26 @@ impl Client {
                         let event_time = req.event_time;
                         let pendings_t = pendings.clone();
                         let cb_t = cb_local.clone();
-                        let sending = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };
-                        let sending = serde_cbor::to_vec(&sending).unwrap();
-                        cb_t.on_message(req.crc, my_id, to,event_time, sending);
+                        if req.nonce.is_some() {
+
+                            let sending = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };
+                            let sending = serde_cbor::to_vec(&sending).unwrap();
+                            cb_t.on_message(req.crc, my_id, to,event_time, sending);
+                        }
                         tokio::spawn(async move {
                             let data = req.encode().unwrap();
                             match client.chat_request(bytes::Bytes::from(data.clone())).await {
                                 Ok(res) => {
-                                    let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Send };
-                                    let feed = serde_cbor::to_vec(&feed).unwrap();
                                     if let Some(job) = save_job {
                                         if let Err(e) = job.await {
                                             tracing::error!("job>> {e:?}");
                                         }
                                     }
-                                    cb_t.on_message(req.crc, my_id, to,event_time, feed);
+                                    if req.nonce.is_some() {
+                                        let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Send };
+                                        let feed = serde_cbor::to_vec(&feed).unwrap();
+                                        cb_t.on_message(req.crc, my_id, to,event_time, feed);
+                                    }
                                     tracing::debug!("{res:?}");
                                     
                                 }
@@ -2545,9 +2554,11 @@ impl Client {
                                             }
                                         }
                                         tokio::time::sleep(Duration::from_millis(500)).await;
-                                        let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };
-                                        let feed = serde_cbor::to_vec(&feed).unwrap();
-                                        cb_t.on_message(req.crc, my_id, to,event_time, feed);
+                                        if req.nonce.is_some() {
+                                            let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };
+                                            let feed = serde_cbor::to_vec(&feed).unwrap();
+                                            cb_t.on_message(req.crc, my_id, to,event_time, feed);
+                                        }
                                         let mut push = pendings_t.write().await;
                                         push.push_back((req,1));
 
