@@ -731,7 +731,7 @@ impl Client {
 
         match tree_status.get(crc.to_be_bytes()) {
             Ok(Some(val)) => {
-                val[0]
+                val.to_vec()[0]
             }
             _ => {
                0
@@ -1940,15 +1940,17 @@ impl Client {
                                     
                                     if nonce.is_none() {
                                         
-                                        if let Ok(msg) = luffa_rpc_types::Message::decrypt(
-                                            bytes::Bytes::from(msg),
+                                        if let Ok(msg_d) = luffa_rpc_types::Message::decrypt(
+                                            bytes::Bytes::from(msg.clone()),
                                             None,
                                             nonce,
                                         ) {
-                                            tracing::info!("clinet>>>>>nonce {msg:?}");
-                                            let msg_t = msg.clone();
-                                            match msg {
+                                            tracing::info!("clinet>>>>>nonce {msg_d:?}");
+                                            let msg_t = msg_d.clone();
+                                            let mut will_to_ui = true;
+                                            match msg_d {
                                                 Message::ContactsSync { did, contacts } => {
+                                                    will_to_ui = false;
                                                     if did != my_id {
                                                         continue;
                                                     }
@@ -2069,13 +2071,12 @@ impl Client {
                                                             event_time,
                                                         );
                                                     }
-                                                    FeedbackStatus::Send=>{
+                                                    FeedbackStatus::Send | FeedbackStatus::Routing=>{
                                                         let to = to_id.unwrap_or_default();
                                                         if to > 0 {
-                                                            // cb.on_message(crc, from_id, to, msg);
                                                             tracing::info!("clinet>>>>>on_message send {crc:?} from {from_id} to {to} msg:{msg_t:?}");
                                                             let table = format!("message_{to}");
-                                                            Self::save_to_tree_status(db_t.clone(),to,&table,1);
+                                                            Self::save_to_tree_status(db_t.clone(),to,&table,2);
                                                         }
                                                         else{
                                                             
@@ -2083,7 +2084,7 @@ impl Client {
                                                     }
                                                     FeedbackStatus::Fetch | FeedbackStatus::Notice => {
                                                         let ls_crc = crc;
-                                                        
+                                                        will_to_ui = false;
                                                         let client_t = client_t.clone();
                                                         let db_tt = db_t.clone();
                                                         let cb_t = cb.clone();
@@ -2151,6 +2152,9 @@ impl Client {
                                                     }
                                                 },
                                                 _ => {}
+                                            }
+                                            if will_to_ui {
+                                                cb.on_message(crc,from_id,to,event_time,msg);
                                             }
                                         }
                                     } else {
@@ -2332,7 +2336,7 @@ impl Client {
         });
 
         let db_t = db.clone();
-        let pendings = VecDeque::<Event>::new();
+        let pendings = VecDeque::<(Event,u32)>::new();
         let pendings = Arc::new(RwLock::new(pendings));
         let pendings_t = pendings.clone();
         let cb_tt = cb_local.clone();
@@ -2346,7 +2350,7 @@ impl Client {
                         continue;
                     }
                 }
-                if let Some(req) = {
+                if let Some((req,count)) = {
                     let mut p = pendings_t.write().await;
                     tracing::warn!("pending size:{}",p.len());
                     p.pop_front()
@@ -2364,11 +2368,17 @@ impl Client {
                         }
                         Err(e) => {
                             tracing::error!("pending chat request failed [{}]: {e:?}",req.crc);
-                            let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Failed };
+
+                            tokio::time::sleep(Duration::from_millis(500)).await;
+                            let status = if count >= 20 {FeedbackStatus::Failed} else {FeedbackStatus::Sending};
+                            let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status };
                             let feed = serde_cbor::to_vec(&feed).unwrap();
+                            
                             cb_tt.on_message(req.crc, my_id, to,event_time, feed);
-                            let mut push = pendings_t.write().await;
-                            push.push_back(req);
+                            if count < 20 {
+                                let mut push = pendings_t.write().await;
+                                push.push_back((req,count + 1));
+                            }
                         }
                     }
                 }
@@ -2404,6 +2414,7 @@ impl Client {
             };
             match evt {
                 Some(e) => {
+                    let req = e.clone();
                     let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
                     let tag_key = format!("TAG-{}", to);
                     let (tag, msg_type) = match tree.get(&tag_key.as_bytes()) {
@@ -2425,37 +2436,7 @@ impl Client {
                         }
                         _ => (String::new(), format!("exchange")),
                     };
-                    if to != my_id {
-                        let client = client.clone();
-                        let req = e.clone();
-                        let event_time = req.event_time;
-                        let pendings_t = pendings.clone();
-                        let cb_t = cb_local.clone();
-                        let sending = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };
-                        let sending = serde_cbor::to_vec(&sending).unwrap();
-                        cb_t.on_message(req.crc, my_id, to,event_time, sending);
-                        tokio::spawn(async move {
-                            let data = req.encode().unwrap();
-                            match client.chat_request(bytes::Bytes::from(data.clone())).await {
-                                Ok(res) => {
-                                    let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Send };
-                                    let feed = serde_cbor::to_vec(&feed).unwrap();
-                                    cb_t.on_message(req.crc, my_id, to,event_time, feed);
-                                    tracing::debug!("{res:?}");
-                                }
-                                Err(e) => {
-                                    tracing::error!("chat request failed [{}]: {e:?}",req.crc);
-                                    let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Failed };
-                                    let feed = serde_cbor::to_vec(&feed).unwrap();
-                                    cb_t.on_message(req.crc, my_id, to,event_time, feed);
-                                    let mut push = pendings_t.write().await;
-                                    push.push_back(req);
-                                }
-                            }
-                        });
-                    } else {
-                        tracing::error!("is to me---->");
-                    }
+                    let save_job =
                     if to > 0 {
                         let msg = serde_cbor::from_slice::<Message>(&msg_data).unwrap();
                         let data = e.encode().unwrap();
@@ -2474,6 +2455,7 @@ impl Client {
                         let db_t = db_t.clone();
                         let schema_t = schema_t.clone();
                         let idx_t = idx_t.clone();
+                        let job =
                         tokio::spawn(async move {
                             let table = { format!("message_{to}") };
                             tracing::info!("send......");
@@ -2574,10 +2556,58 @@ impl Client {
                                 );
                             }
                         });
+                        Some(job)
                     } else {
                         if let Err(_e) = channel.send(Ok(0)) {
                             tracing::error!("channel send failed");
                         }
+                        None
+                    };
+                    if to != my_id {
+                        let client = client.clone();
+                        
+                        let event_time = req.event_time;
+                        let pendings_t = pendings.clone();
+                        let cb_t = cb_local.clone();
+                        let sending = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };
+                        let sending = serde_cbor::to_vec(&sending).unwrap();
+                        cb_t.on_message(req.crc, my_id, to,event_time, sending);
+                        tokio::spawn(async move {
+                            let data = req.encode().unwrap();
+                            match client.chat_request(bytes::Bytes::from(data.clone())).await {
+                                Ok(res) => {
+                                    let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Send };
+                                    let feed = serde_cbor::to_vec(&feed).unwrap();
+                                    if let Some(job) = save_job {
+                                        if let Err(e) = job.await {
+                                            tracing::error!("job>> {e:?}");
+                                        }
+                                    }
+                                    cb_t.on_message(req.crc, my_id, to,event_time, feed);
+                                    tracing::debug!("{res:?}");
+                                }
+                                Err(e) => {
+                                    tracing::error!("chat request failed [{}]: {e:?}",req.crc);
+                                    if req.nonce.is_some() {
+                                        if let Some(job) = save_job {
+                                            if let Err(e) = job.await {
+                                                tracing::error!("job>> {e:?}");
+                                            }
+                                        }
+                                        tokio::time::sleep(Duration::from_millis(500)).await;
+                                        let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };
+                                        let feed = serde_cbor::to_vec(&feed).unwrap();
+                                        cb_t.on_message(req.crc, my_id, to,event_time, feed);
+                                        let mut push = pendings_t.write().await;
+                                        push.push_back((req,1));
+
+                                    }
+                                    
+                                }
+                            }
+                        });
+                    } else {
+                        tracing::error!("is to me---->");
                     }
                 }
                 None => {
@@ -2890,6 +2920,19 @@ impl Client {
                                         }
                                         token
                                     }
+                                    ContactsEvent::Reject {crc,public_key} =>{
+                                        if let Ok(pk) = PublicKey::from_protobuf_encoding(&public_key) {
+                                            let peer = PeerId::from_public_key(&pk);
+                                            let mut digest = crc64fast::Digest::new();
+                                            digest.write(&peer.to_bytes());
+                                            let did = digest.sum64();
+                                            let table = format!("offer_{did}");
+                                            let status = vec![12u8; 1];
+                                            let now = Utc::now().timestamp_millis() as u64;
+                                            Self::save_to_tree(db_t.clone(), crc, &table, status, now);
+                                        }
+                                        return;
+                                    }
                                 };
 
                                 let pk =
@@ -2994,6 +3037,19 @@ impl Client {
                                                 token.secret_key = key;
                                             }
                                             (token, false)
+                                        }
+                                        ContactsEvent::Reject {crc,public_key} =>{
+                                            if let Ok(pk) = PublicKey::from_protobuf_encoding(&public_key) {
+                                                let peer = PeerId::from_public_key(&pk);
+                                                let mut digest = crc64fast::Digest::new();
+                                                digest.write(&peer.to_bytes());
+                                                let did = digest.sum64();
+                                                let table = format!("offer_{did}");
+                                                let status = vec![12u8; 1];
+                                                let now = Utc::now().timestamp_millis() as u64;
+                                                Self::save_to_tree(db_t.clone(), crc, &table, status, now);
+                                            }
+                                            return;
                                         }
                                     };
                                     let pk = PublicKey::from_protobuf_encoding(&token.public_key)
