@@ -893,14 +893,14 @@ impl Client {
                         match &msg {
                             Message::Chat { content } => match content {
                                 ChatContent::Send { data } => {
-                                    let (_title, body) = Self::extra_content(data);
+                                    // let (_title, body) = Self::extra_content(data);
                                     if Self::update_session(
                                         db_t.clone(),
                                         did,
                                         None,
                                         Some(crc),
                                         None,
-                                        Some(body),
+                                        None,
                                         now,
                                     ) {
                                         let msg = Message::Chat {
@@ -920,28 +920,11 @@ impl Client {
                                 _ => {
                                     tracing::warn!("read No send message crc> {} did:{did} ,content:{:?}",crc,content);
                                     return None;
-                                    // Self::update_session(
-                                    //     db_t.clone(),
-                                    //     did,
-                                    //     None,
-                                    //     Some(crc),
-                                    //     None,
-                                    //     None,
-                                    //     now,
-                                    // );
                                 }
                             },
                             _ => {
                                 tracing::warn!("read No chat message crc> {} did:{did} ,msg :{:?}",crc,msg);
-                                // Self::update_session(
-                                //     db_t.clone(),
-                                //     did,
-                                //     None,
-                                //     Some(crc),
-                                //     None,
-                                //     None,
-                                //     now,
-                                // );
+                                
                             }
                         }
 
@@ -966,15 +949,6 @@ impl Client {
                             if let Ok(msg) =
                                 Message::decrypt(bytes::Bytes::from(msg), Some(key), nonce)
                             {
-                                Self::update_session(
-                                    db_t.clone(),
-                                    did,
-                                    None,
-                                    Some(crc),
-                                    None,
-                                    None,
-                                    now,
-                                );
                                 let (to_tag, _) =
                                     Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
                                 let (from_tag, _) = Self::get_contacts_tag(db_t.clone(), from_id)
@@ -1006,12 +980,6 @@ impl Client {
                 });
 
                 let vv = vv.unwrap_or_default();
-
-                if vv.is_none() {
-                    let now = Utc::now().timestamp_millis() as u64;
-                    tracing::warn!("crc not found {crc}");
-                    Self::update_session(db_t.clone(), did, None, Some(crc), None, None, now);
-                }
 
                 vv
             }
@@ -2015,11 +1983,14 @@ impl Client {
                                                                                             Some((crc,status))=>{
                                                                                                 match status {
                                                                                                     FeedbackStatus::Read=>{
-
-                                                                                                        Self::update_session(db_tt.clone(),did,None,Some(crc),None,None,event_time);
+                                                                                                        let table = format!("message_{did}");
+                                                                                                        Self::save_to_tree_status(db_tt.clone(),did,&table,5);
+                                                                                                       
                                                                                                     }
                                                                                                     FeedbackStatus::Reach=>{
-                                                                                                        Self::update_session(db_tt.clone(),did,None,None,Some(crc),None,event_time);
+                                                                                                        let table = format!("message_{did}");
+                                                                                                        Self::save_to_tree_status(db_tt.clone(),did,&table,4);
+                                                                                                       
                                                                                                     }
                                                                                                     _=>{
 
@@ -2038,7 +2009,6 @@ impl Client {
                                                                         Err(e) => {
                                                                             tracing::info!("get crc record failed:{e:?}");
                                                                             Self::set_contacts_have_time(db_tt.clone(), did, event_time);
-                                                                            // Self::update_session(db_tt.clone(),did,None,None,Some(crc),None,event_time);
                                                                         }
                                                                     }
                                                                 }
@@ -2049,28 +2019,7 @@ impl Client {
                                                 Message::Feedback {
                                                     crc, to_id, status, ..
                                                 } => match status {
-                                                    FeedbackStatus::Reach => {
-                                                        Self::update_session(
-                                                            db_t.clone(),
-                                                            from_id,
-                                                            None,
-                                                            None,
-                                                            Some(crc[0]),
-                                                            None,
-                                                            event_time,
-                                                        );
-                                                    }
-                                                    FeedbackStatus::Read => {
-                                                        Self::update_session(
-                                                            db_t.clone(),
-                                                            from_id,
-                                                            None,
-                                                            Some(crc[0]),
-                                                            None,
-                                                            None,
-                                                            event_time,
-                                                        );
-                                                    }
+                                                    
                                                     FeedbackStatus::Send | FeedbackStatus::Routing=>{
                                                         let to = to_id.unwrap_or_default();
                                                         if to > 0 {
@@ -2515,7 +2464,7 @@ impl Client {
                                                     source,
                                                 } => (title, format!("{:?}", m_type)),
                                             };
-
+                                            Self::update_session(db_t.clone(), to, None, Some(crc), None, Some(body.clone()), event_time);
                                             let schema = schema_t.clone();
                                             let fld_crc = schema.get_field("crc").unwrap();
                                             let fld_from = schema.get_field("from_id").unwrap();
@@ -2585,6 +2534,7 @@ impl Client {
                                     }
                                     cb_t.on_message(req.crc, my_id, to,event_time, feed);
                                     tracing::debug!("{res:?}");
+                                    
                                 }
                                 Err(e) => {
                                     tracing::error!("chat request failed [{}]: {e:?}",req.crc);
@@ -2854,40 +2804,15 @@ impl Client {
                                     ChatContent::Feedback { crc, status } => match status {
                                         FeedbackStatus::Reach => {
                                             let table = format!("message_{did}");
-                                            Self::save_to_tree_status(db_t.clone(),did,&table,4);
-                                            Self::update_session(
-                                                db_t.clone(),
-                                                did,
-                                                None,
-                                                None,
-                                                Some(crc),
-                                                None,
-                                                event_time,
-                                            );
+                                            Self::save_to_tree_status(db_t.clone(),crc,&table,4);
                                         }
                                         FeedbackStatus::Read => {
                                             let table = format!("message_{did}");
-                                            Self::save_to_tree_status(db_t.clone(),did,&table,5);
-                                            Self::update_session(
-                                                db_t.clone(),
-                                                did,
-                                                None,
-                                                Some(crc),
-                                                None,
-                                                None,
-                                                event_time,
-                                            );
+                                            Self::save_to_tree_status(db_t.clone(),crc,&table,5);
+                                           
                                         }
                                         _ => {
-                                            Self::update_session(
-                                                db_t.clone(),
-                                                did,
-                                                None,
-                                                None,
-                                                None,
-                                                None,
-                                                event_time,
-                                            );
+                                           
                                         }
                                     }
                                 }
