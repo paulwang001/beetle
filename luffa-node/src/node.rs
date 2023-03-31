@@ -1307,7 +1307,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                                     if t.elapsed().as_millis() > 2000 {
                                                                         tracing::warn!("active pending crc {crc} to {peer_id}");
                                                                         pending_crc.push(*crc);
-                                                                        if pending_crc.len() > 32 {
+                                                                        if pending_crc.len() >= 32 {
                                                                             break;
                                                                         }
                                                                     }
