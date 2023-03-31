@@ -2033,6 +2033,7 @@ impl Client {
                                                         else{
                                                             
                                                         }
+                                                        will_to_ui = false;
                                                     }
                                                     FeedbackStatus::Fetch | FeedbackStatus::Notice => {
                                                         let ls_crc = crc;
@@ -2521,21 +2522,26 @@ impl Client {
                         let event_time = req.event_time;
                         let pendings_t = pendings.clone();
                         let cb_t = cb_local.clone();
-                        let sending = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };
-                        let sending = serde_cbor::to_vec(&sending).unwrap();
-                        cb_t.on_message(req.crc, my_id, to,event_time, sending);
+                        if req.nonce.is_some() {
+
+                            let sending = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };
+                            let sending = serde_cbor::to_vec(&sending).unwrap();
+                            cb_t.on_message(req.crc, my_id, to,event_time, sending);
+                        }
                         tokio::spawn(async move {
                             let data = req.encode().unwrap();
                             match client.chat_request(bytes::Bytes::from(data.clone())).await {
                                 Ok(res) => {
-                                    let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Send };
-                                    let feed = serde_cbor::to_vec(&feed).unwrap();
                                     if let Some(job) = save_job {
                                         if let Err(e) = job.await {
                                             tracing::error!("job>> {e:?}");
                                         }
                                     }
-                                    cb_t.on_message(req.crc, my_id, to,event_time, feed);
+                                    if req.nonce.is_some() {
+                                        let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Send };
+                                        let feed = serde_cbor::to_vec(&feed).unwrap();
+                                        cb_t.on_message(req.crc, my_id, to,event_time, feed);
+                                    }
                                     tracing::debug!("{res:?}");
                                     
                                 }
@@ -2548,9 +2554,11 @@ impl Client {
                                             }
                                         }
                                         tokio::time::sleep(Duration::from_millis(500)).await;
-                                        let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };
-                                        let feed = serde_cbor::to_vec(&feed).unwrap();
-                                        cb_t.on_message(req.crc, my_id, to,event_time, feed);
+                                        if req.nonce.is_some() {
+                                            let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };
+                                            let feed = serde_cbor::to_vec(&feed).unwrap();
+                                            cb_t.on_message(req.crc, my_id, to,event_time, feed);
+                                        }
                                         let mut push = pendings_t.write().await;
                                         push.push_back((req,1));
 
