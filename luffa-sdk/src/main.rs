@@ -1,12 +1,18 @@
 // #![feature(poll_ready)]
 use anyhow::Result;
-use bip39::{Mnemonic, MnemonicType, Language};
+use bip39::{Language, Mnemonic, MnemonicType};
+/// CLI arguments support.
+use clap::Parser;
 use futures::pending;
-use libp2p::PeerId;
 use libp2p::identity::PublicKey;
-use luffa_rpc_types::{message_to, ChatContent, ContactsEvent, ContactsToken, Message, RtcAction, message_from, AppStatus};
+use libp2p::PeerId;
+use luffa_rpc_types::{
+    message_from, message_to, AppStatus, ChatContent, ContactsEvent, ContactsToken, Message,
+    RtcAction,
+};
 use luffa_sdk::{Callback, Client};
 use std::future::{Future, IntoFuture};
+use std::path::PathBuf;
 use std::sync::mpsc::sync_channel;
 use std::sync::RwLock;
 use std::task::Poll;
@@ -15,9 +21,6 @@ use std::{collections::VecDeque, sync::Arc, sync::Mutex};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tracing::log::warn;
 use tracing::{error, info};
-/// CLI arguments support.
-use clap::Parser;
-use std::path::PathBuf;
 
 #[derive(Parser, Debug, Clone)]
 #[clap(author, version, about, long_about = None)]
@@ -44,14 +47,12 @@ impl Process {
 }
 
 impl Callback for Process {
-    fn on_message(&self, crc: u64, from_id: u64, to: u64, event_time:u64,msg: Vec<u8>) {
+    fn on_message(&self, crc: u64, from_id: u64, to: u64, event_time: u64, msg: Vec<u8>) {
         self.tx.send((crc, from_id, to, msg)).unwrap();
     }
 }
 
 fn main() -> Result<()> {
-
-
     let args = Args::parse();
     let client = Client::new();
     let mut timer = std::time::Instant::now();
@@ -71,16 +72,16 @@ fn main() -> Result<()> {
     let scan = args.scan;
     let tag = args.tag;
 
-    let process = Process::new(tx.clone());                                                                                                                                  
+    let process = Process::new(tx.clone());
     let msg = Box::new(process);
-    
-    client_ctl.start(None,tag.clone(),msg).unwrap();
+
+    client_ctl.start(None, tag.clone(), msg).unwrap();
     tracing::info!("started.");
     // std::thread::spawn(move || {
     //     loop {
-    //         let process = Process::new(tx.clone());                                                                                                                                  
+    //         let process = Process::new(tx.clone());
     //         let msg = Box::new(process);
-            
+
     //         client_ctl.start(None,tag.clone(),msg).unwrap();
     //         tracing::info!("started.");
     //         if timer.elapsed().as_secs() < 3600 {
@@ -106,12 +107,12 @@ fn main() -> Result<()> {
             // client.send_msg(to, msg)
             tracing::debug!("{:?}", peers);
             match to_id {
-                Some(to_id)=>{
+                Some(to_id) => {
                     match client.find_contacts_tag(to_id).unwrap() {
                         Some(tag) => {
                             x += 1;
                             tracing::info!("is man");
-                          
+
                             // let msg = Message::WebRtc { stream_id: 1000, action: RtcAction::Push { audio_id: 2, video_id: 3 } };
                             let mnemonic = Mnemonic::new(MnemonicType::Words24, Language::English);
                             let msg = Message::Chat {
@@ -127,17 +128,17 @@ fn main() -> Result<()> {
                             let msg = message_to(msg).unwrap();
                             let crc = client.send_msg(to_id, msg).unwrap();
                             tracing::info!("send seccess {crc}");
-                                                    }
+                        }
                         None => {
                             match scan.as_ref() {
-                                Some(scan)=>{
+                                Some(scan) => {
                                     client.contacts_offer(scan).unwrap();
                                 }
-                                None=>{
+                                None => {
                                     if code.is_empty() {
                                         code = client.show_code().unwrap().unwrap();
                                     }
-                                    tracing::warn!("scan me :{}",code);
+                                    tracing::warn!("scan me :{}", code);
                                 }
                             }
                             // client.contacts_offer(&code);
@@ -150,93 +151,100 @@ fn main() -> Result<()> {
                         }
                     };
                 }
-                None=>{
-                    match scan.as_ref() {
-                        Some(scan)=>{
-                            let crc = client.contacts_offer(scan);
-
+                None => match scan.as_ref() {
+                    Some(scan) => {
+                        let crc = client.contacts_offer(scan);
+                    }
+                    None => {
+                        if code.is_empty() {
+                            code = client.show_code().unwrap().unwrap();
                         }
-                        None=>{
-                            if code.is_empty() {
-                                code = client.show_code().unwrap().unwrap();
-                            }
-                            let relays = client.relay_list().unwrap();
-                            tracing::warn!("scan me :{}  --->>{:?}",code,relays);
-                            let list = client.contacts_list(0).unwrap();
-                            for c in list {
-                                
-                                let ls = client.recent_messages(c.did, 10).unwrap();
-                                {
-                                    let msg_len = ls.len();
-                                    tracing::info!(" contacts>> {:?} msg_len>>{}", c,msg_len);
-            
-                                    for crc in ls {
-                                        if let Some(meta) = client.read_msg_with_meta(c.did, crc).unwrap() {
-                                            let msg = message_from(meta.msg).unwrap();
-                                            match &msg {
-                                                Message::Chat { content }=>{
-            
-                                                }
-                                                Message::WebRtc { stream_id, action }=>{
-            
-                                                }
-                                                Message::ContactsExchange { exchange }=>{
+                        let relays = client.relay_list().unwrap();
+                        tracing::warn!("scan me :{}  --->>{:?}", code, relays);
+                        let list = client.contacts_list(0).unwrap();
+                        for c in list {
+                            let ls = client.recent_messages(c.did, 10).unwrap();
+                            {
+                                let msg_len = ls.len();
+                                tracing::info!(" contacts>> {:?} msg_len>>{}", c, msg_len);
 
-                                                }
-                                                _=>{
-                                                    tracing::info!("[{msg_len}] {:?}",msg);
-                                                }
-                                            }    
+                                for crc in ls {
+                                    if let Some(meta) =
+                                        client.read_msg_with_meta(c.did, crc).unwrap()
+                                    {
+                                        let msg = message_from(meta.msg).unwrap();
+                                        match &msg {
+                                            Message::Chat { content } => {}
+                                            Message::WebRtc { stream_id, action } => {}
+                                            Message::ContactsExchange { exchange } => {}
+                                            _ => {
+                                                tracing::info!("[{msg_len}] {:?}", msg);
+                                            }
                                         }
                                     }
                                 }
                             }
-                            let list = client.session_list(10).unwrap();
-                            tracing::info!(" session>> {:?}", list);
-            
-                            for s in list {
-                                let did = s.did;
-                                for crc in s.reach_crc {
-                                    if let Some(meta) = client.read_msg_with_meta(did, crc).unwrap() {
-                                        tracing::info!("{:?}",meta);
-                                    }
+                        }
+                        let list = client.session_list(10).unwrap();
+                        tracing::info!(" session>> {:?}", list);
+
+                        for s in list {
+                            let did = s.did;
+                            for crc in s.reach_crc {
+                                if let Some(meta) = client.read_msg_with_meta(did, crc).unwrap() {
+                                    tracing::info!("{:?}", meta);
                                 }
                             }
                         }
                     }
-                }
+                },
             }
         }
     });
-
 
     while let Ok((crc, from_id, to, data)) = rx.recv() {
         let msg: Message = serde_cbor::from_slice(&data).unwrap();
 
         match &msg {
             Message::WebRtc { stream_id, action } => match action {
-                RtcAction::Status { timestamp, code,info } => {
-                    
-                }
-                RtcAction::Push { audio_id, video_id }=>{
-                    tracing::info!("{}-----push-----{}",stream_id,audio_id);
+                RtcAction::Status {
+                    timestamp,
+                    code,
+                    info,
+                } => {}
+                RtcAction::Push { audio_id, video_id } => {
+                    tracing::info!("{}-----push-----{}", stream_id, audio_id);
                 }
                 _ => {}
             },
             Message::ContactsExchange { exchange } => match exchange {
                 ContactsEvent::Offer { token } => {
-                    let ContactsToken { public_key, create_at, sign, secret_key, contacts_type, comment } = token;
+                    let ContactsToken {
+                        public_key,
+                        create_at,
+                        sign,
+                        secret_key,
+                        contacts_type,
+                        comment,
+                        ..
+                    } = token;
                     let pk = PublicKey::from_protobuf_encoding(public_key).unwrap();
                     let peer = PeerId::from_public_key(&pk);
                     let mut digest = crc64fast::Digest::new();
                     digest.write(&peer.to_bytes());
                     let to = digest.sum64();
-                    let crc =
-                    client_t
-                    .contacts_anwser(to, from_id,secret_key.clone());
-            }
-            ContactsEvent::Answer { token } => {
-                    let ContactsToken { public_key, create_at, sign, secret_key, contacts_type, comment } = token;
+                    let crc = client_t.contacts_anwser(to, from_id, secret_key.clone());
+                }
+                ContactsEvent::Answer { token } => {
+                    let ContactsToken {
+                        public_key,
+                        create_at,
+                        sign,
+                        secret_key,
+                        contacts_type,
+                        comment,
+                        ..
+                    } = token;
                     let pk = PublicKey::from_protobuf_encoding(public_key).unwrap();
                     let peer = PeerId::from_public_key(&pk);
                     let mut digest = crc64fast::Digest::new();
@@ -246,7 +254,10 @@ fn main() -> Result<()> {
                         content: luffa_rpc_types::ChatContent::Send {
                             data: luffa_rpc_types::ContentData::Text {
                                 source: luffa_rpc_types::DataSource::Text {
-                                    content: format!("Hello {}",comment.clone().unwrap_or_default()),
+                                    content: format!(
+                                        "Hello {}",
+                                        comment.clone().unwrap_or_default()
+                                    ),
                                 },
                                 reference: None,
                             },
@@ -254,19 +265,20 @@ fn main() -> Result<()> {
                     };
                     let msg = message_to(msg).unwrap();
                     let crc = client_t.send_msg(to, msg).unwrap();
-                    tracing::info!("Answer from:offer_id {} ,did {}  ==> {}", from_id, to,crc);
+                    tracing::info!("Answer from:offer_id {} ,did {}  ==> {}", from_id, to, crc);
+                }
+                _=> {
+                    
                 }
             },
-            Message::Chat { .. }=>{
-                match client_t.read_msg_with_meta(from_id, crc)? {
-                    Some(meta)=>{
-                        tracing::info!("on message meta:{:?}",meta);
-                    }
-                    None=>{
-                        tracing::error!("msg not found {}->{}",from_id,crc);
-                    }
+            Message::Chat { .. } => match client_t.read_msg_with_meta(from_id, crc)? {
+                Some(meta) => {
+                    tracing::info!("on message meta:{:?}", meta);
                 }
-            }
+                None => {
+                    tracing::error!("msg not found {}->{}", from_id, crc);
+                }
+            },
             _ => {
                 let list = client_t.contacts_list(0)?;
                 tracing::debug!("contacts>> {:?}", list);
@@ -278,12 +290,10 @@ fn main() -> Result<()> {
                     let did = s.did;
                     for crc in s.reach_crc {
                         if let Some(meta) = client_t.read_msg_with_meta(did, crc)? {
-                            tracing::debug!("{:?}",meta);
+                            tracing::debug!("{:?}", meta);
                         }
                     }
                 }
-
-                
             }
         }
     }

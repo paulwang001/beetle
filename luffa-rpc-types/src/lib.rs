@@ -228,6 +228,7 @@ pub enum FeedbackStatus {
     Fetch,
     Notice,
     Failed,
+    Reject,
 }
 
 impl Message {
@@ -346,6 +347,7 @@ impl Message {
                     ContactsEvent::Offer { token }=>{
                         Some(token.secret_key.clone())
                     }
+                    _=> None
                     
                 }
             }
@@ -361,11 +363,13 @@ impl Message {
 pub enum ContactsEvent {
     Offer { token: ContactsToken },
     Answer { token: ContactsToken },
+    Reject { crc:u64,public_key:Vec<u8> },
 }
 
 #[derive(Debug, Serialize, Deserialize,Clone)]
 pub struct ContactsToken {
     pub public_key: Vec<u8>,
+    pub group_key: Option<Vec<u8>>,
     pub create_at: u64,
     pub sign: Vec<u8>,
     pub secret_key: Vec<u8>,
@@ -382,6 +386,16 @@ impl ContactsToken {
     ) -> Result<Self> {
         let create_at = Utc::now().timestamp_millis() as u64;
         let public_key = local_key.public().to_protobuf_encoding();
+        let group_key =
+        match contacts_type {
+            ContactsTypes::Group=>{
+                let key = local_key.to_protobuf_encoding()?;
+                Some(key)
+            }
+            ContactsTypes::Private=>{
+                None
+            }
+        };
         let mut buf = vec![];
         buf.extend_from_slice(&create_at.to_be_bytes());
         // buf.extend_from_slice(&secret_key);
@@ -393,6 +407,7 @@ impl ContactsToken {
         let sign = local_key.sign(&buf)?;
         Ok(Self {
             public_key,
+            group_key,
             create_at,
             sign,
             secret_key,

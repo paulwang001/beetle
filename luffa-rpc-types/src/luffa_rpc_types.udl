@@ -32,6 +32,7 @@ dictionary Contacts {
 
 dictionary ContactsToken {
     sequence<u8> public_key;
+    sequence<u8>? group_key;
     u64 create_at;
     sequence<u8> sign;
     sequence<u8> secret_key;
@@ -53,6 +54,7 @@ interface RtcAction {
 interface ContactsEvent {
     Offer(ContactsToken token);
     Answer(ContactsToken token);
+    Reject(u64 crc,sequence<u8> public_key);
 };
 
 [Enum]
@@ -93,6 +95,7 @@ enum FeedbackStatus {
     "Fetch",
     "Notice",
     "Failed",
+    "Reject",
 };
 
 enum ContactsTypes {

@@ -19,13 +19,13 @@ fileprivate extension RustBuffer {
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
-        try! rustCall { ffi_LuffaRpcTypes_fff4_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
+        try! rustCall { ffi_LuffaRpcTypes_f4d7_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
     // Frees the buffer in place.
     // The buffer must not be used after this is called.
     func deallocate() {
-        try! rustCall { ffi_LuffaRpcTypes_fff4_rustbuffer_free(self, $0) }
+        try! rustCall { ffi_LuffaRpcTypes_f4d7_rustbuffer_free(self, $0) }
     }
 }
 
@@ -431,6 +431,7 @@ public func FfiConverterTypeContacts_lower(_ value: Contacts) -> RustBuffer {
 
 public struct ContactsToken {
     public var `publicKey`: [UInt8]
+    public var `groupKey`: [UInt8]?
     public var `createAt`: UInt64
     public var `sign`: [UInt8]
     public var `secretKey`: [UInt8]
@@ -439,8 +440,9 @@ public struct ContactsToken {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(`publicKey`: [UInt8], `createAt`: UInt64, `sign`: [UInt8], `secretKey`: [UInt8], `contactsType`: ContactsTypes, `comment`: String?) {
+    public init(`publicKey`: [UInt8], `groupKey`: [UInt8]?, `createAt`: UInt64, `sign`: [UInt8], `secretKey`: [UInt8], `contactsType`: ContactsTypes, `comment`: String?) {
         self.`publicKey` = `publicKey`
+        self.`groupKey` = `groupKey`
         self.`createAt` = `createAt`
         self.`sign` = `sign`
         self.`secretKey` = `secretKey`
@@ -453,6 +455,9 @@ public struct ContactsToken {
 extension ContactsToken: Equatable, Hashable {
     public static func ==(lhs: ContactsToken, rhs: ContactsToken) -> Bool {
         if lhs.`publicKey` != rhs.`publicKey` {
+            return false
+        }
+        if lhs.`groupKey` != rhs.`groupKey` {
             return false
         }
         if lhs.`createAt` != rhs.`createAt` {
@@ -475,6 +480,7 @@ extension ContactsToken: Equatable, Hashable {
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(`publicKey`)
+        hasher.combine(`groupKey`)
         hasher.combine(`createAt`)
         hasher.combine(`sign`)
         hasher.combine(`secretKey`)
@@ -488,6 +494,7 @@ public struct FfiConverterTypeContactsToken: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ContactsToken {
         return try ContactsToken(
             `publicKey`: FfiConverterSequenceUInt8.read(from: &buf), 
+            `groupKey`: FfiConverterOptionSequenceUInt8.read(from: &buf), 
             `createAt`: FfiConverterUInt64.read(from: &buf), 
             `sign`: FfiConverterSequenceUInt8.read(from: &buf), 
             `secretKey`: FfiConverterSequenceUInt8.read(from: &buf), 
@@ -498,6 +505,7 @@ public struct FfiConverterTypeContactsToken: FfiConverterRustBuffer {
 
     public static func write(_ value: ContactsToken, into buf: inout [UInt8]) {
         FfiConverterSequenceUInt8.write(value.`publicKey`, into: &buf)
+        FfiConverterOptionSequenceUInt8.write(value.`groupKey`, into: &buf)
         FfiConverterUInt64.write(value.`createAt`, into: &buf)
         FfiConverterSequenceUInt8.write(value.`sign`, into: &buf)
         FfiConverterSequenceUInt8.write(value.`secretKey`, into: &buf)
@@ -751,6 +759,7 @@ public enum ContactsEvent {
     
     case `offer`(`token`: ContactsToken)
     case `answer`(`token`: ContactsToken)
+    case `reject`(`crc`: UInt64, `publicKey`: [UInt8])
 }
 
 public struct FfiConverterTypeContactsEvent: FfiConverterRustBuffer {
@@ -766,6 +775,11 @@ public struct FfiConverterTypeContactsEvent: FfiConverterRustBuffer {
         
         case 2: return .`answer`(
             `token`: try FfiConverterTypeContactsToken.read(from: &buf)
+        )
+        
+        case 3: return .`reject`(
+            `crc`: try FfiConverterUInt64.read(from: &buf), 
+            `publicKey`: try FfiConverterSequenceUInt8.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -784,6 +798,12 @@ public struct FfiConverterTypeContactsEvent: FfiConverterRustBuffer {
         case let .`answer`(`token`):
             writeInt(&buf, Int32(2))
             FfiConverterTypeContactsToken.write(`token`, into: &buf)
+            
+        
+        case let .`reject`(`crc`,`publicKey`):
+            writeInt(&buf, Int32(3))
+            FfiConverterUInt64.write(`crc`, into: &buf)
+            FfiConverterSequenceUInt8.write(`publicKey`, into: &buf)
             
         }
     }
@@ -1010,6 +1030,7 @@ public enum FeedbackStatus {
     case `fetch`
     case `notice`
     case `failed`
+    case `reject`
 }
 
 public struct FfiConverterTypeFeedbackStatus: FfiConverterRustBuffer {
@@ -1036,6 +1057,8 @@ public struct FfiConverterTypeFeedbackStatus: FfiConverterRustBuffer {
         case 8: return .`notice`
         
         case 9: return .`failed`
+        
+        case 10: return .`reject`
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -1079,6 +1102,10 @@ public struct FfiConverterTypeFeedbackStatus: FfiConverterRustBuffer {
         
         case .`failed`:
             writeInt(&buf, Int32(9))
+        
+        
+        case .`reject`:
+            writeInt(&buf, Int32(10))
         
         }
     }
@@ -1560,7 +1587,7 @@ public func `messageFrom`(`msg`: [UInt8])  -> Message? {
     
     rustCall() {
     
-    LuffaRpcTypes_fff4_message_from(
+    LuffaRpcTypes_f4d7_message_from(
         FfiConverterSequenceUInt8.lower(`msg`), $0)
 }
     )
@@ -1574,7 +1601,7 @@ public func `messageTo`(`msg`: Message)  -> [UInt8]? {
     
     rustCall() {
     
-    LuffaRpcTypes_fff4_message_to(
+    LuffaRpcTypes_f4d7_message_to(
         FfiConverterTypeMessage.lower(`msg`), $0)
 }
     )
