@@ -133,7 +133,7 @@ fn init_tracer(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "apple-ios")]
     let registry =
     {
-        let layer = tracing_oslog::OsLogger::new("com.meta.luffa", "default").with_filter(LevelFilter::INFO);
+        let layer = tracing_oslog::OsLogger::new("com.meta.luffa", "default").with_filter(log_level_from_str(&cfg.log_level).unwrap_or(LevelFilter::INFO));
         tracing_subscriber::registry().with(layer)
     };
 
@@ -143,7 +143,7 @@ fn init_tracer(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
         let android_layer = paranoid_android::layer(env!("CARGO_PKG_NAME"))
         .with_span_events(FmtSpan::CLOSE)
         .with_thread_names(true)
-        .with_filter(LevelFilter::INFO);
+        .with_filter(log_level_from_str(&cfg.log_level).unwrap_or(LevelFilter::INFO));
         tracing_subscriber::registry().with(android_layer)
     };
 
@@ -154,6 +154,18 @@ fn init_tracer(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+fn log_level_from_str(level: &str) -> Option<LevelFilter> {
+    match level.to_lowercase().as_str() {
+        "info" => Some(LevelFilter::INFO),
+        "debug" => Some(LevelFilter::DEBUG),
+        "warn" => Some(LevelFilter::WARN),
+        "error" | "err" => Some(LevelFilter::ERROR),
+        "trace" => Some(LevelFilter::TRACE),
+        _ => None
+    }
+}
+
 
 pub fn get_current_trace_id() -> TraceId {
     tracing::Span::current()

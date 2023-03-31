@@ -23,6 +23,8 @@ pub struct Config {
     /// The endpoint of the prometheus push gateway.
     #[serde(alias = "prom_gateway_endpoint")]
     pub prom_gateway_endpoint: String,
+    /// log level valid value of (Trace，Debug，Info，Warn，Error)
+    pub log_level: String,
 }
 
 impl Source for Config {
@@ -49,6 +51,7 @@ impl Source for Config {
             "prom_gateway_endpoint",
             self.prom_gateway_endpoint.clone(),
         );
+        insert_into_config_map(&mut map, "log_level", self.log_level.clone());
         Ok(map)
     }
 }
@@ -80,6 +83,7 @@ impl Default for Config {
             tracing: false,
             collector_endpoint: "http://localhost:4317".to_string(),
             prom_gateway_endpoint: "http://localhost:9091".to_string(),
+            log_level: "Info".to_string(),
         }
     }
 }
