@@ -3678,10 +3678,11 @@ dependencies = [
  "luffa-util",
  "multibase",
  "once_cell",
+ "parking_lot 0.12.1",
  "rand 0.8.5",
- "rkyv",
  "serde",
  "serde_cbor",
+ "serde_json",
  "sled",
  "ssh-key",
  "tantivy",
@@ -5618,9 +5619,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.93"
+version = "1.0.95"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cad406b69c91885b5107daf2c29572f6c8cdb3c66826821e286c533490c0bc76"
+checksum = "d721eca97ac802aa7777b701877c8004d950fc142651367300d21c1cc0194744"
 dependencies = [
  "itoa",
  "ryu",
