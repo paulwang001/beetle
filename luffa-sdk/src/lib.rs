@@ -54,10 +54,14 @@ use tokio::sync::oneshot::{Sender as ShotSender};
 mod api;
 mod config;
 pub mod avatar_nickname;
-pub mod group_members;
+mod sled_db;
 
 use crate::config::Config;
-use crate::group_members::GroupMembers;
+use crate::sled_db::contacts::{ContactsDb, KVDB_CONTACTS_TREE};
+use crate::sled_db::group_members::GroupMembersDb;
+use crate::sled_db::local_config::{KVDB_CONTACTS_FILE, LUFFA_CONTENT, write_local_id};
+use crate::sled_db::session::SessionDb;
+use crate::sled_db::SledDb;
 
 const TOPIC_STATUS: &str = "luffa_status";
 // const TOPIC_CONTACTS: &str = "luffa_contacts";
@@ -65,10 +69,10 @@ const TOPIC_STATUS: &str = "luffa_status";
 // const TOPIC_CHAT_PRIVATE: &str = "luffa_chat_private";
 // const TOPIC_CONTACTS_SCAN: &str = "luffa_contacts_scan_answer";
 const CONFIG_FILE_NAME: &str = "luffa.config.toml";
-const KVDB_CONTACTS_FILE: &str = "contacts";
-const KVDB_CONTACTS_TREE: &str = "luffa_contacts";
-const KVDB_CHAT_SESSION_TREE: &str = "luffa_sessions";
-const LUFFA_CONTENT: &str = "index_data";
+// const KVDB_CONTACTS_FILE: &str = "contacts";
+// const KVDB_CONTACTS_TREE: &str = "luffa_contacts";
+// const KVDB_CHAT_SESSION_TREE: &str = "luffa_sessions";
+// const LUFFA_CONTENT: &str = "index_data";
 
 lazy_static! {
     static ref RUNTIME: tokio::runtime::Runtime = create_runtime();
@@ -138,6 +142,8 @@ pub enum ClientError{
     Bs58DecodeError(#[from] bs58::decode::Error),
     #[error(transparent)]
     DecodingError(#[from] libp2p::identity::error::DecodingError),
+    #[error(transparent)]
+    SerdeJsonError(#[from] serde_json::error::Error),
     #[error("{0}")]
     CustomError(String),
 }
@@ -232,7 +238,13 @@ pub struct Client {
     is_started: CloneableAtomicBool,
 }
 
-impl GroupMembers for Client{}
+impl ContactsDb for Client {}
+
+impl SessionDb for Client {}
+
+impl GroupMembersDb for Client {}
+
+impl SledDb for Client{}
 
 impl Client {
     pub fn new() -> Self {
@@ -244,8 +256,8 @@ impl Client {
             }
         });
 
-        let path = luffa_util::luffa_data_path(KVDB_CONTACTS_FILE).unwrap();
-        let idx_path = luffa_util::luffa_data_path(LUFFA_CONTENT).unwrap();
+        let path =  luffa_util::luffa_data_path(&KVDB_CONTACTS_FILE.read()).unwrap();
+        let idx_path = luffa_util::luffa_data_path(&LUFFA_CONTENT.read()).unwrap();
         info!("path >>>> {:?}", &path);
         info!("idx_path >>>> {:?}", &idx_path);
 
@@ -684,129 +696,17 @@ impl Client {
         Ok(res)
     }
 
-    fn save_contacts(
-        db: Arc<Db>,
-        to: u64,
-        secret_key: Vec<u8>,
-        public_key: Vec<u8>,
-        c_type: ContactsTypes,
-        sign: Vec<u8>,
-        comment: Option<String>,
-        g_keypair: Option<Vec<u8>>,
-    ) {
-        let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-        tracing::info!("save_contacts----->{to}");
-        let s_key = format!("SKEY-{}", to);
-        let p_key = format!("PKEY-{}", to);
-        let sig_key = format!("SIG-{}", to);
-        let tag_key = format!("TAG-{}", to);
-        let type_key = format!("TYPE-{}", to);
-        tree.insert(s_key.as_bytes(), secret_key).unwrap();
-        tree.insert(p_key.as_bytes(), public_key).unwrap();
-        tree.insert(sig_key.as_bytes(), sign).unwrap();
-        tree.insert(type_key.as_bytes(), vec![c_type as u8])
-            .unwrap();
-        tree.insert(
-            tag_key.as_bytes(),
-            comment.unwrap_or(format!("{to}")).as_bytes(),
-        )
-            .unwrap();
-        if let Some(keypair) = g_keypair {
-            let group_keypair = format!("GROUPKEYPAIR-{}", to);
-            tree.insert(group_keypair, keypair).unwrap();
-        }
-        tree.flush().unwrap();
-    }
-
-    fn get_key(db: Arc<Db>, key: &str) -> Vec<u8> {
-        let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-        let data = tree.get(key.as_bytes()).unwrap().unwrap();
-        data.to_vec()
-    }
-
-    fn save_to_tree(db: Arc<Db>, crc: u64, table: &str, data: Vec<u8>, event_time: u64) {
-        let tree = db.open_tree(&table).unwrap();
-
-        match tree.insert(crc.to_be_bytes(), data) {
-            Ok(None) => {
-                let tree_time = db.open_tree(&format!("{table}_time")).unwrap();
-                tree_time
-                    .insert(event_time.to_be_bytes(), crc.to_be_bytes().to_vec())
-                    .unwrap();
-                tree_time.flush().unwrap();
-            }
-            _ => {}
-        }
-
-        tree.flush().unwrap();
-    }
-    fn save_to_tree_status(db: Arc<Db>, crc: u64, table: &str, status: u8) {
-        let tree_status = db.open_tree(&format!("{table}_status")).unwrap();
-
-        match tree_status.insert(crc.to_be_bytes(), vec![status]) {
-            Ok(None) => {
-                
-            }
-            _ => {
-
-            }
-        }
-        tree_status.flush().unwrap();
-    }
-    fn get_crc_tree_status(db: Arc<Db>, crc: u64, table: &str) -> u8 {
-        let tree_status = db.open_tree(&format!("{table}_status")).unwrap();
-
-        match tree_status.get(crc.to_be_bytes()) {
-            Ok(Some(val)) => {
-                val.to_vec()[0]
-            }
-            _ => {
-               0
-            }
-        }
-    }
-
-    fn have_in_tree(db: Arc<Db>, crc: u64, table: &str) -> bool {
-        let tree = db.open_tree(table).unwrap();
-        if let Ok(r) = tree.contains_key(crc.to_be_bytes()) {
-            r
-        } else {
-            false
-        }
-    }
-
-    fn burn_from_tree(db: Arc<Db>, crc: u64, table: String) {
-        let tree = db.open_tree(&table).unwrap();
-
-        tree.remove(crc.to_be_bytes()).unwrap();
-        tree.flush().unwrap();
-    }
-
     fn save_contacts_offer(&self, offer_id: u64, secret_key: Vec<u8>) {
-        let tree = self.db.open_tree(KVDB_CONTACTS_TREE).unwrap();
+        let tree = Self::open_contact_tree(self.db.clone()).unwrap();
         let offer_key = format!("OFFER-{}", offer_id);
         tree.insert(offer_key, secret_key).unwrap();
         tree.flush().unwrap();
     }
-    fn get_offer_by_offer_id(db: Arc<Db>, offer_id: u64) -> Option<Vec<u8>> {
-        let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-        let offer_key = format!("OFFER-{}", offer_id);
-        match tree.get(offer_key) {
-            Ok(Some(data)) => Some(data.to_vec()),
-            _ => None,
-        }
-    }
-    fn get_contacts_skey(db: Arc<Db>, did: u64) -> Option<Vec<u8>> {
-        let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-        let s_key = format!("SKEY-{}", did);
-        match tree.get(s_key) {
-            Ok(Some(data)) => Some(data.to_vec()),
-            _ => None,
-        }
-    }
+
     fn get_secret_key(&self, did: u64) -> Option<Vec<u8>> {
         Self::get_contacts_skey(self.db.clone(), did)
     }
+
     fn send_to(&self, to: u64, msg: Message, from_id: u64, key: Option<Vec<u8>>) -> Result<u64> {
         RUNTIME.block_on(async move {
             let sender = self.sender.clone();
@@ -1108,7 +1008,7 @@ impl Client {
     }
 
     pub fn session_list(&self, top: u32) -> ClientResult<Vec<ChatSession>> {
-        let tree = self.db.open_tree(KVDB_CHAT_SESSION_TREE)?;
+        let tree = Self::open_session_tree(self.db.clone())?;
         let my_id = self.get_local_id().unwrap().unwrap_or_default();
         let mut chats = tree
             .into_iter()
@@ -1131,29 +1031,6 @@ impl Client {
     pub fn session_page(&self, page: u32, size: u32) -> ClientResult<Vec<ChatSession>> {
         let my_id = self.get_local_id()?.unwrap_or_default();
         Ok(Self::db_session_list(self.db.clone(), page, size, my_id).unwrap_or_default())
-    }
-    /// pagination session list
-    fn db_session_list(
-        db: Arc<Db>,
-        page: u32,
-        page_size: u32,
-        my_id: u64,
-    ) -> Option<Vec<ChatSession>> {
-        let tree = db.open_tree(KVDB_CHAT_SESSION_TREE).unwrap();
-
-        let mut chats = tree
-            .into_iter()
-            .map(|item| {
-                let (_key, val) = item.unwrap();
-                let chat: ChatSession = serde_cbor::from_slice(&val[..]).unwrap();
-                chat
-            })
-            .filter(|c| c.did != my_id)
-            .collect::<Vec<_>>();
-        chats.sort_by(|a, b| a.last_time.partial_cmp(&b.last_time).unwrap());
-        chats.reverse();
-        let page = chats.chunks(page_size as usize).nth(page as usize);
-        page.map(|ls| ls.into_iter().map(|s| s.clone()).collect::<Vec<_>>())
     }
 
     pub fn keys(&self) -> ClientResult<Vec<String>> {
@@ -1251,8 +1128,8 @@ impl Client {
                 if let Some(chain) = keychain.as_mut() {
                     match chain.remove(name).await {
                         Ok(_) => {
-                            let path = luffa_util::luffa_data_path(KVDB_CONTACTS_FILE).unwrap();
-                            let idx_path = luffa_util::luffa_data_path(LUFFA_CONTENT).unwrap();
+                            let path = luffa_util::luffa_data_path(&KVDB_CONTACTS_FILE.read()).unwrap();
+                            let idx_path = luffa_util::luffa_data_path(&LUFFA_CONTENT.read()).unwrap();
                             std::fs::remove_dir(path)?;
                             std::fs::remove_dir(idx_path)?;
                             Ok(true)
@@ -1306,121 +1183,7 @@ impl Client {
         Self::update_session(self.db.clone(), did, Some(tag), read, reach, msg, now);
         Ok(())
     }
-    pub fn update_session(
-        db: Arc<Db>,
-        did: u64,
-        tag: Option<String>,
-        read: Option<u64>,
-        reach: Option<u64>,
-        msg: Option<String>,
-        event_time: u64,
-    ) -> bool {
-        if did == 0 {
-            return false;
-        }
-        let tree = db.open_tree(KVDB_CHAT_SESSION_TREE).unwrap();
-        // assert!(did > 0,"update_session:{msg:?} ,{tag:?}");
-        let mut first_read = false;
-        let n_tag = tag.clone();
-        if let Err(e) = tree.fetch_and_update(did.to_be_bytes(), |old| {
-            match old {
-                Some(val) => {
-                    let chat: ChatSession = serde_cbor::from_slice(val).unwrap();
-                    let ChatSession {
-                        did,
-                        session_type,
-                        last_time,
-                        tag,
-                        read_crc,
-                        mut reach_crc,
-                        last_msg,
-                    } = chat;
-                    let mut last_time = last_time;
-                    let mut last_msg = last_msg;
-                    if let Some(c) = reach {
-                        if !reach_crc.contains(&c) {
-                            reach_crc.push(c);
-                        }
-                        if last_time < event_time {
 
-                            last_time = event_time;
-                            last_msg = msg.clone().unwrap_or(last_msg);
-                        }
-                    }
-                    if let Some(c) = read.as_ref() {
-                        first_read = reach_crc.contains(c);
-                        reach_crc.retain(|x| *x != *c);
-                        // assert!(reach_crc.contains(c),"reach contain :{c}");
-                        // warn!("reach_crc:{reach_crc:?}   {c}");
-                    }
-                    let upd = ChatSession {
-                        did,
-                        session_type,
-                        last_time,
-                        tag: n_tag.clone().unwrap_or(tag),
-                        read_crc: read.unwrap_or(read_crc),
-                        reach_crc,
-                        last_msg,
-                    };
-                    Some(serde_cbor::to_vec(&upd).unwrap())
-                }
-                None => {
-                    let (dft, tp) =
-                        Self::get_contacts_tag(db.clone(), did).unwrap_or((format!("{did}"), 3));
-                    if tp == 3 {
-                        tracing::error!("update session failed:{did},{dft}");
-                        return None;
-                    }
-                    let mut reach_crc = vec![];
-                    if let Some(c) = reach {
-                        reach_crc.push(c);
-                    }
-                    let upd = ChatSession {
-                        did,
-                        session_type: tp,
-                        last_time: event_time,
-                        tag: n_tag.clone().unwrap_or(dft),
-                        read_crc: read.unwrap_or_default(),
-                        reach_crc,
-                        last_msg: msg.clone().unwrap_or_default(),
-                    };
-                    Some(serde_cbor::to_vec(&upd).unwrap())
-                }
-            }
-        }) {
-            tracing::info!("{e:?}");
-        }
-        tree.flush().unwrap();
-        first_read
-    }
-
-    fn get_contacts_tag(db: Arc<Db>, did: u64) -> Option<(String, u8)> {
-        let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-        let tag_key = format!("TAG-{}", did);
-        match tree.get(&tag_key) {
-            Ok(Some(v)) => {
-                let tp = Self::get_contacts_type(db, did).unwrap_or(ContactsTypes::Private);
-                Some((String::from_utf8(v.to_vec()).unwrap(), tp as u8))
-            }
-            _ => None,
-        }
-    }
-    fn get_contacts_type(db: Arc<Db>, did: u64) -> Option<ContactsTypes> {
-        let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-        let type_key = format!("TYPE-{}", did);
-        match tree.get(&type_key) {
-            Ok(Some(v)) => {
-                let tp = v[0];
-                let tp = if tp == 0 {
-                    ContactsTypes::Private
-                } else {
-                    ContactsTypes::Group
-                };
-                Some(tp)
-            }
-            _ => None,
-        }
-    }
     pub fn find_contacts_tag(&self, did: u64) -> ClientResult<Option<String>> {
         Ok(Self::get_contacts_tag(self.db.clone(), did).map(|(v, _)| v))
     }
@@ -1428,46 +1191,9 @@ impl Client {
     pub fn update_contacts_tag(&self, did: u64, tag: String) {
         Self::set_contacts_tag(self.db.clone(), did, tag)
     }
-    fn set_contacts_tag(db: Arc<Db>, did: u64, tag: String) {
-        let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-        let tag_key = format!("TAG-{}", did);
-        println!("set tag:{did} ==> {}", tag);
-        tree.insert(tag_key.as_bytes(), tag.as_bytes()).unwrap();
-        tree.flush().unwrap();
-    }
-    fn get_contacts_have_time(db: Arc<Db>, did: u64) -> u64 {
-        let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-        let tag_key = format!("H-TIME-{}", did);
-        if let Ok(Some(x)) = tree.get(tag_key.as_bytes()) {
-            let mut val = [0u8; 8];
-            val.clone_from_slice(&x);
-            u64::from_be_bytes(val)
-        } else {
-            0
-        }
-    }
-    fn set_contacts_have_time(db: Arc<Db>, did: u64, now: u64) {
-        let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-        let tag_key = format!("H-TIME-{}", did);
-        tree.fetch_and_update(tag_key.as_bytes(), |old| match old {
-            Some(old) => {
-                let mut val = [0u8; 8];
-                val.clone_from_slice(&old);
-                let old = u64::from_be_bytes(val);
-                if old < now {
-                    Some(now.to_be_bytes().to_vec())
-                } else {
-                    Some(old.to_be_bytes().to_vec())
-                }
-            }
-            None => Some(now.to_be_bytes().to_vec()),
-        })
-        .unwrap();
-        tree.flush().unwrap();
-    }
 
     pub fn contacts_list(&self, c_type: u8) -> ClientResult<Vec<ContactsView>> {
-        let tree = self.db.open_tree(KVDB_CONTACTS_TREE)?;
+        let tree = Self::open_contact_tree(self.db.clone())?;
         let tag_prefix = format!("TAG-");
         let itr = tree.scan_prefix(tag_prefix);
         let my_id = self.get_local_id()?;
@@ -1708,6 +1434,7 @@ impl Client {
             return Ok(0);
         }
         let my_id = my_id.unwrap();
+        write_local_id(my_id);
         self.update_contacts_tag(my_id, tag.unwrap_or(format!("{}", my_id)).to_string());
 
         let (tx, rx) = tokio::sync::mpsc::channel(4096);
@@ -2613,15 +2340,6 @@ impl Client {
         p2p_rpc.abort();
         pending_task.abort();
         // metrics_handle.shutdown();
-    }
-
-    fn get_aes_key_from_contacts(db: Arc<Db>, did: u64) -> Option<Vec<u8>> {
-        let tree = db.open_tree(KVDB_CONTACTS_TREE).unwrap();
-        let s_key = format!("SKEY-{}", did);
-        match tree.get(&s_key) {
-            Ok(Some(d)) => Some(d.to_vec()),
-            _ => None,
-        }
     }
 
     fn extra_content(data: &ContentData) -> (String, String) {

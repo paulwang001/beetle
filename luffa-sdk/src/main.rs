@@ -136,7 +136,7 @@ fn main() -> Result<()> {
                                 }
                                 None => {
                                     if code.is_empty() {
-                                        code = client.show_code().unwrap().unwrap();
+                                        code = client.show_code("https://luffa.putdev.com", "p").unwrap().unwrap();
                                     }
                                     tracing::warn!("scan me :{}", code);
                                 }
@@ -157,7 +157,7 @@ fn main() -> Result<()> {
                     }
                     None => {
                         if code.is_empty() {
-                            code = client.show_code().unwrap().unwrap();
+                            code = client.show_code("https://luffa.putdev.com", "p").unwrap().unwrap();
                         }
                         let relays = client.relay_list().unwrap();
                         tracing::warn!("scan me :{}  --->>{:?}", code, relays);

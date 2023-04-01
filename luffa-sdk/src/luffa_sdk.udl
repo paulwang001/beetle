@@ -47,6 +47,7 @@ enum ClientError {
   "MultihashError",
   "Bs58DecodeError",
   "DecodingError",
+  "SerdeJsonError",
   "CustomError"
 };
 
