@@ -16,10 +16,15 @@ pub static LUFFA_CONTENT:Lazy<Arc<RwLock<String>>> = Lazy::new(||{
 });
 
 pub fn write_local_id(local_id: u64) {
-    let mut w = LOCAL_ID.write();
-    *w = local_id;
-    let mut contacts = KVDB_CONTACTS_FILE.write();
-    *contacts = format!("contacts-{local_id}");
+    {
+        let mut w = LOCAL_ID.write();
+        *w = local_id;
+    }
+
+    {
+        let mut contacts = KVDB_CONTACTS_FILE.write();
+        *contacts = format!("contacts-{local_id}");
+    }
 
     let mut content = LUFFA_CONTENT.write();
     *content = format!("index_data-{local_id}");
