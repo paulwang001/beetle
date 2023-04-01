@@ -350,23 +350,43 @@ impl Client {
         tracing::warn!("gen offer id:{}", offer_id);
         self.save_contacts_offer(offer_id, secret_key.clone());
         let tag = self.find_contacts_tag(did)?.unwrap_or_default();
+        let c_type = if let Some(c_type) = Self::get_contacts_type(self.db.clone(), did) {
+            if c_type == ContactsTypes::Private {
+                format!("p")
+            } else {
+                format!("g")
+            }
+        } else {
+            format!("p")
+        };
         let g_id = bs58::encode(did.to_be_bytes()).into_string();
-        Ok(format!("luffa://{}/{}/{}", g_id, bs58::encode(secret_key).into_string(), tag))
+        Ok(format!("luffa://{}/{}/{}/{}",c_type, g_id, bs58::encode(secret_key).into_string(), tag))
     }
 
-    ///Offer contacts 
+    ///Offer contacts
     pub fn contacts_offer(&self, code: &String) -> ClientResult<u64> {
         let mut tmp = code.split('/');
         let _from_tag = tmp.next_back();
         let key = tmp.next_back();
         let uid = tmp.next_back();
-        let secret_key = key.unwrap();
+        let c_type = match tmp.next_back() {
+            Some(tp) => {
+                if tp == "g" {
+                    ContactsTypes::Group
+                } else {
+                    ContactsTypes::Private
+                }
+            }
+            _ => ContactsTypes::Private,
+        };
         let mut to = [0u8; 8];
         to.clone_from_slice(&bs58::decode(uid.unwrap()).into_vec().unwrap());
-
         let to = u64::from_be_bytes(to);
+
         let my_id = self.get_local_id()?.unwrap();
         let tag = self.find_contacts_tag(my_id)?;
+
+        let secret_key = key.unwrap();
         let key = bs58::decode(secret_key).into_vec().unwrap();
 
         let mut digest = crc64fast::Digest::new();
@@ -389,7 +409,7 @@ impl Client {
                         key,
                         tag,
                         offer_key.clone(),
-                        luffa_rpc_types::ContactsTypes::Private,
+                        c_type,
                     ).unwrap()
                 });
                 token.unwrap()
@@ -420,8 +440,12 @@ impl Client {
         };
         Ok(res)
     }
-    ///Offer group contacts 
-    pub fn contacts_group_create(&self, invitee: Vec<u64>, tag: Option<String>) -> ClientResult<u64> {
+    ///Offer group contacts
+    pub fn contacts_group_create(
+        &self,
+        invitee: Vec<u64>,
+        tag: Option<String>,
+    ) -> ClientResult<u64> {
         let key_id = self.gen_key("", false)?.unwrap();
         let g_key = self.read_keypair(&key_id).unwrap();
         let g_id = bs58::decode(key_id).into_vec().unwrap();
@@ -493,13 +517,12 @@ impl Client {
                 let client_t = client_t.read().await;
                 let client_t = client_t.as_ref().unwrap();
                 if let Err(e) = client_t
-                    .gossipsub_publish(
-                        TopicHash::from_raw(format!("{}", TOPIC_STATUS)),
+                    .chat_request(
                         bytes::Bytes::from(data),
                     )
                     .await
                 {
-                    tracing::warn!("pub contacts sync status >>> {e:?}");
+                    tracing::warn!("send contacts sync status >>> {e:?}");
                 }
                 let tx = sender.read().await;
                 for i_id in invitee {
@@ -523,7 +546,12 @@ impl Client {
     }
 
     ///Offer group contacts invite member
-    pub fn contacts_group_invite_member(&self, g_id: u64, invitee: u64, tag: Option<String>) -> ClientResult<bool> {
+    pub fn contacts_group_invite_member(
+        &self,
+        g_id: u64,
+        invitee: u64,
+        tag: Option<String>,
+    ) -> ClientResult<bool> {
         let group_keypair = format!("GROUPKEYPAIR-{}", g_id);
         let group_keypair = Self::get_key(self.db.clone(), &group_keypair);
         let g_key = Keypair::from_protobuf_encoding(group_keypair.as_bytes())?;
@@ -573,8 +601,7 @@ impl Client {
                 let client_t = client_t.read().await;
                 let client_t = client_t.as_ref().unwrap();
                 if let Err(e) = client_t
-                    .gossipsub_publish(
-                        TopicHash::from_raw(format!("{}", TOPIC_STATUS)),
+                    .chat_request(
                         bytes::Bytes::from(data),
                     )
                     .await

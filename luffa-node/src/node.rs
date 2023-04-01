@@ -672,7 +672,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         }
     }
 
-    #[tracing::instrument(skip(self,event))]
+    #[tracing::instrument(skip(self, event))]
     async fn handle_node_event(&mut self, event: Event) -> Result<()> {
         // tracing::info!("node>>> {event:?}");
         let local_id = self.local_peer_id();
@@ -1488,11 +1488,6 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             }
                                                         }
                                                     }
-                                                } else {
-                                                    tracing::warn!("not connect.");
-                                                    self.emit_network_event(NetworkEvent::RequestResponse(
-                                                        ChatEvent::Request(request.data().to_vec()),
-                                                    ));
                                                 }
                                             }
                                             match rx_any {
@@ -1571,6 +1566,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         ChatEvent::Response { request_id:Some(request_id), data },
                                                     ));
                                                 }
+                                                
                                                 if let Ok(Some(rx)) =
                                                     self.local_send_if_connected(t, request.data())
                                                 {
@@ -1586,7 +1582,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         }
                                                     });
                                                 }
-                                                
+                                             
                                                 
                                             }
                                             
@@ -2541,7 +2537,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         Ok(false)
     }
 
-    fn local_feedback(&mut self,request_id:Option<RequestId>,msg:Message) {
+    fn local_feedback(&mut self, request_id: Option<RequestId>, msg: Message) {
         match &msg {
             Message::Feedback { from_id, to_id, .. }    =>{
                 let e = luffa_rpc_types::Event::new(to_id.unwrap_or_default(), &msg, None, from_id.unwrap_or_default());
@@ -2553,7 +2549,6 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             }
         }
     }
-
 }
 
 pub async fn load_identity<S: Storage>(
