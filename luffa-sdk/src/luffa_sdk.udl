@@ -58,7 +58,7 @@ interface Client {
 
     constructor();
     [Throws=ClientError]
-    string? show_code();
+    string? show_code([ByRef] string domain_name, [ByRef] string link_type);
     [Throws=ClientError]
     u64 contacts_offer([ByRef] string code);
     [Throws=ClientError]
