@@ -60,6 +60,7 @@ use crate::config::Config;
 use crate::sled_db::contacts::{ContactsDb, KVDB_CONTACTS_TREE};
 use crate::sled_db::group_members::GroupMembersDb;
 use crate::sled_db::local_config::{KVDB_CONTACTS_FILE, LUFFA_CONTENT, write_local_id};
+use crate::sled_db::mnemonic::Mnemonic;
 use crate::sled_db::session::SessionDb;
 use crate::sled_db::SledDb;
 
@@ -243,6 +244,8 @@ impl ContactsDb for Client {}
 impl SessionDb for Client {}
 
 impl GroupMembersDb for Client {}
+
+impl Mnemonic for Client {}
 
 impl SledDb for Client{}
 
@@ -1057,18 +1060,7 @@ impl Client {
             match chain.create_ed25519_key_bip39(password, store).await {
                 Ok((phrase, key)) => {
                     let name = key.name();
-                    let tree = self.db.open_tree("bip39_keys")?;
-                    match key {
-                        luffa_node::Keypair::Ed25519(v) => {
-                            let data = v.to_bytes();
-                            let k_pair = format!("pair-{}", name);
-                            let k_phrase = format!("phrase-{}", name);
-                            tree.insert(k_pair, data.to_vec()).unwrap();
-                            tree.insert(k_phrase, phrase.as_bytes()).unwrap();
-                            tree.flush().unwrap();
-                        }
-                        _ => {}
-                    }
+                    Self::save_mnemonic_keypair(self.db.clone(), &phrase, key)?;
                     Ok(Some(name))
                 }
                 Err(e) => {
@@ -1084,6 +1076,7 @@ impl Client {
                 match chain.create_ed25519_key_from_seed(phrase, password).await {
                     Ok(key) => {
                         let name = key.name();
+                        Self::save_mnemonic_keypair(self.db.clone(), phrase, key)?;
                         Ok(Some(name))
                     }
                     Err(e) => {
@@ -1147,13 +1140,7 @@ impl Client {
         })
     }
     pub fn read_key_phrase(&self, name: &str) -> ClientResult<Option<String>> {
-        let tree = self.db.open_tree("bip39_keys")?;
-        let k_pair = format!("phrase-{}", name);
-        if let Ok(Some(k_val)) = tree.get(k_pair) {
-            Ok(Some(String::from_utf8(k_val.to_vec())?))
-        } else {
-            Ok(None)
-        }
+        Self::get_mnemonic(self.db.clone(), name)
     }
     pub fn read_keypair(&self, id: &str) -> Option<Keypair> {
         let tree = self.db.open_tree("bip39_keys").unwrap();
