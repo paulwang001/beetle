@@ -1091,9 +1091,9 @@ impl Client {
 
     pub fn save_key(&self, name: &str) -> ClientResult<bool> {
         RUNTIME.block_on(async {
-            let tree = self.db.open_tree("bip39_keys")?;
-            let k_pair = format!("pair-{}", name);
-            if let Ok(Some(k_val)) = tree.get(k_pair) {
+            // let tree = self.db.open_tree("bip39_keys")?;
+            // let k_pair = format!("pair-{}", name);
+            if let Ok(Some(k_val)) = Self::get_mnemonic_keypair(self.db.clone(), name) {
                 let mut keychain = self.key.write().await;
                 if let Some(chain) = keychain.as_mut() {
                     let mut data = [0u8; 64];
@@ -1114,9 +1114,7 @@ impl Client {
 
     pub fn remove_key(&self, name: &str) -> ClientResult<bool> {
         RUNTIME.block_on(async {
-            let tree = self.db.open_tree("bip39_keys")?;
-            let k_pair = format!("pair-{}", name);
-            if let Ok(Some(_)) = tree.remove(k_pair) {
+            if let Ok(Some(_)) = Self::remove_mnemonic_keypair(self.db.clone(), name) {
                 let mut keychain = self.key.write().await;
                 if let Some(chain) = keychain.as_mut() {
                     match chain.remove(name).await {
@@ -1143,9 +1141,7 @@ impl Client {
         Self::get_mnemonic(self.db.clone(), name)
     }
     pub fn read_keypair(&self, id: &str) -> Option<Keypair> {
-        let tree = self.db.open_tree("bip39_keys").unwrap();
-        let k_pair = format!("pair-{}", id);
-        if let Ok(Some(k_val)) = tree.get(k_pair) {
+        if let Ok(Some(k_val)) = Self::get_mnemonic_keypair(self.db.clone(), id) {
             let mut data = [0u8; 64];
             data.clone_from_slice(&k_val);
             if let Ok(keypair) = ssh_key::private::Ed25519Keypair::from_bytes(&data) {

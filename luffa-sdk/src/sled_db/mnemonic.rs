@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use image::EncodableLayout;
-use sled::{Db, Tree};
+use sled::{Db, IVec, Tree};
 use luffa_node::Keypair;
 use crate::ClientError::CustomError;
 use crate::ClientResult;
@@ -48,6 +48,20 @@ pub trait Mnemonic {
         } else {
             None
         };
+        Ok(data)
+    }
+
+    fn get_mnemonic_keypair(db: Arc<Db>, name: &str) -> ClientResult<Option<IVec>> {
+        let mut tree = Self::open_mnemonic_tree(db)?;
+        let key = Self::keypair_key(name);
+        let data = tree.get(key)?;
+        Ok(data)
+    }
+
+    fn remove_mnemonic_keypair(db: Arc<Db>, name: &str) -> ClientResult<Option<IVec>> {
+        let mut tree = Self::open_mnemonic_tree(db)?;
+        let key = Self::keypair_key(name);
+        let data = tree.remove(key)?;
         Ok(data)
     }
 }
