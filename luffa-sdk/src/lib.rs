@@ -292,7 +292,8 @@ impl Client {
                 }
             }
             Some(KeyFilter::Name(name)) => {
-                while let Some(key) = chain.keys().next().await {
+                let mut keys = chain.keys();
+                while let Some(key) = keys.next().await {
                     if let Ok(key) = key {
                         if key.name() == name {
                             let key: Keypair = key.into();
@@ -302,7 +303,8 @@ impl Client {
                 }
             }
             _ => {
-                while let Some(key) = chain.keys().next().await {
+                let mut keys = chain.keys();
+                while let Some(key) = keys.next().await {
                     if let Ok(key) = key {
                         let key: Keypair = key.into();
                         return Some(key);
