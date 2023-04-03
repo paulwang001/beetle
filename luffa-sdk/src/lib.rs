@@ -2822,6 +2822,8 @@ impl Client {
             secret_key,
             contacts_type,
             comment,
+            group_key,
+
             ..
         } = token;
         let pk = PublicKey::from_protobuf_encoding(&public_key).unwrap();
@@ -2837,7 +2839,7 @@ impl Client {
             contacts_type,
             sign.clone(),
             comment.clone(),
-            None
+            group_key
         );
 
         let msg_type = match contacts_type {
