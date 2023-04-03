@@ -13,6 +13,7 @@ dictionary ChatSession {
    sequence<u64> reach_crc;
    string last_msg;
    boolean enabled_silent;
+   u8 last_msg_status;
 };
 
 dictionary ContactsView {
@@ -116,6 +117,8 @@ interface Client {
 
     [Throws=ClientError]
     sequence<u64> recent_messages(u64 did,u32 top);
+    [Throws=ClientError]
+    sequence<u64> recent_offser(u32 top);
 
     [Throws=ClientError]
     string? find_contacts_tag(u64 did);

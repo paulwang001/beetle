@@ -46,6 +46,7 @@ pub trait SessionDb: ContactsDb {
         read: Option<u64>,
         reach: Option<u64>,
         msg: Option<String>,
+        status: Option<u8>,
         event_time: u64,
     ) -> bool {
         if did == 0 {
@@ -68,6 +69,7 @@ pub trait SessionDb: ContactsDb {
                         mut reach_crc,
                         last_msg,
                         enabled_silent,
+                        last_msg_status,
                     } = chat;
                     let mut last_time = last_time;
                     let mut last_msg = last_msg;
@@ -87,6 +89,12 @@ pub trait SessionDb: ContactsDb {
                         // assert!(reach_crc.contains(c),"reach contain :{c}");
                         // warn!("reach_crc:{reach_crc:?}   {c}");
                     }
+                    let mut last_msg_status = last_msg_status;
+                    if let Some(s) = status {
+                        if s > last_msg_status {
+                            last_msg_status = s;
+                        }
+                    }
                     let upd = ChatSession {
                         did,
                         session_type,
@@ -96,6 +104,7 @@ pub trait SessionDb: ContactsDb {
                         reach_crc,
                         last_msg,
                         enabled_silent,
+                        last_msg_status,
                     };
                     Some(serde_cbor::to_vec(&upd).unwrap())
                 }
@@ -119,6 +128,7 @@ pub trait SessionDb: ContactsDb {
                         reach_crc,
                         last_msg: msg.clone().unwrap_or_default(),
                         enabled_silent: true,
+                        last_msg_status: status.unwrap_or_default(),
                     };
                     Some(serde_cbor::to_vec(&upd).unwrap())
                 }
@@ -168,4 +178,3 @@ pub trait SessionDb: ContactsDb {
         tree.flush().unwrap();
     }
 }
-

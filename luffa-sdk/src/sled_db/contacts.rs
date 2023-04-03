@@ -1,15 +1,15 @@
-use std::sync::Arc;
-use sled::{Db, Tree};
-use tantivy::{doc, IndexWriter};
-use tantivy::schema::Schema;
-use luffa_rpc_types::{ChatContent, ContactsToken, ContactsTypes};
-use tokio::sync::RwLock;
+use crate::api::P2pClient;
+use crate::sled_db::local_config::read_local_id;
+use crate::{ClientResult, OfferStatus};
 use libp2p::identity::PublicKey;
 use libp2p::PeerId;
+use luffa_rpc_types::{ChatContent, ContactsToken, ContactsTypes};
+use sled::{Db, Tree};
+use std::sync::Arc;
+use tantivy::schema::Schema;
+use tantivy::{doc, IndexWriter};
+use tokio::sync::RwLock;
 use tracing::error;
-use crate::api::P2pClient;
-use crate::ClientResult;
-use crate::sled_db::local_config::read_local_id;
 
 pub const KVDB_CONTACTS_TREE: &str = "luffa_contacts";
 
@@ -46,7 +46,7 @@ pub trait ContactsDb {
             tag_key.as_bytes(),
             comment.unwrap_or(format!("{to}")).as_bytes(),
         )
-            .unwrap();
+        .unwrap();
         if let Some(keypair) = g_keypair {
             let group_keypair = format!("GROUPKEYPAIR-{}", to);
             tree.insert(group_keypair, keypair).unwrap();
@@ -74,6 +74,80 @@ pub trait ContactsDb {
             _ => {}
         }
 
+        tree.flush().unwrap();
+    }
+    fn save_offer_to_tree(
+        db: Arc<Db>,
+        crc: u64,
+        offer_id: u64,
+        secret_key: Vec<u8>,
+        status: OfferStatus,
+        event_time: u64,
+    ) {
+        let table = format!("offer");
+        let tree = db.open_tree(&table).unwrap();
+
+        match tree.insert(format!("SK_{crc}"), secret_key) {
+            Ok(None) => {
+                tree.insert(format!("ST_{crc}"), vec![status as u8])
+                    .unwrap();
+                tree.insert(format!("OF_{crc}"), offer_id.to_be_bytes().to_vec())
+                    .unwrap();
+                let tree_time = db.open_tree(&format!("{table}_time")).unwrap();
+                tree_time
+                    .insert(event_time.to_be_bytes(), crc.to_be_bytes().to_vec())
+                    .unwrap();
+                tree_time.flush().unwrap();
+            }
+            _ => {}
+        }
+
+        tree.flush().unwrap();
+    }
+    fn get_answer_from_tree(
+        db: Arc<Db>,
+        crc: u64,
+    )-> Option<(u64,Vec<u8>,u8)> {
+        let table = format!("offer");
+        let tree = db.open_tree(&table).unwrap();
+        if let Ok(Some(key)) = tree.get(&format!("SK_{crc}")) {
+            if let Some(offer_id) = Self::get_u64_from_tree(&tree,&format!("OF_{crc}")) {
+                if let Some(status) = Self::get_u8_from_tree(&tree,&format!("ST_{crc}")) {
+                    return Some((offer_id,key.to_vec(),status))    
+                }
+            }
+        }
+        None
+    }
+    fn get_u64_from_tree(tree:&Tree,key:&str)-> Option<u64> {
+        if let Ok(Some(v)) = tree.get(key) {
+            let mut val = [0u8;8];
+            val.copy_from_slice(&v);
+            let val = u64::from_be_bytes(val);
+            Some(val)    
+        }
+        else{
+            None
+        }
+    }
+    fn get_u8_from_tree(tree:&Tree,key:&str)-> Option<u8> {
+        if let Ok(Some(v)) = tree.get(key) {
+            let mut val = [0u8;1];
+            val.copy_from_slice(&v);
+            
+            Some(val[0])    
+        }
+        else{
+            None
+        }
+    }
+    fn update_offer_status(db: Arc<Db>,did:u64, crc: u64, status: OfferStatus) {
+        let table = format!("offer_{did}");
+        let tree = db.open_tree(&table).unwrap();
+
+        tree.insert(format!("ST_{crc}"), vec![status as u8])
+            .unwrap();
+        
         tree.flush().unwrap();
     }
     fn save_to_tree_status(db: Arc<Db>, crc: u64, table: &str, status: u8) {
