@@ -12,6 +12,7 @@ dictionary ChatSession {
    u64 read_crc;
    sequence<u64> reach_crc;
    string last_msg;
+   boolean enabled_silent;
 };
 
 dictionary ContactsView {
@@ -146,4 +147,8 @@ interface Client {
     string generate_nickname([ByRef] string peer_id);
     [Throws=ClientError]
     void remove_local_msg(u64 did,u64 crc);
+    [Throws=ClientError]
+    void enable_silent(u64 did);
+    [Throws=ClientError]
+    void disable_silent(u64 did);
 };

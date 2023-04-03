@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use chrono::Utc;
 use sled::{Db, Tree};
+use tracing::warn;
 use crate::{ChatSession, ClientResult};
 use crate::sled_db::contacts::ContactsDb;
 use crate::sled_db::local_config::read_local_id;
@@ -66,6 +67,7 @@ pub trait SessionDb: ContactsDb {
                         read_crc,
                         mut reach_crc,
                         last_msg,
+                        enabled_silent,
                     } = chat;
                     let mut last_time = last_time;
                     let mut last_msg = last_msg;
@@ -93,6 +95,7 @@ pub trait SessionDb: ContactsDb {
                         read_crc: read.unwrap_or(read_crc),
                         reach_crc,
                         last_msg,
+                        enabled_silent,
                     };
                     Some(serde_cbor::to_vec(&upd).unwrap())
                 }
@@ -115,6 +118,7 @@ pub trait SessionDb: ContactsDb {
                         read_crc: read.unwrap_or_default(),
                         reach_crc,
                         last_msg: msg.clone().unwrap_or_default(),
+                        enabled_silent: true,
                     };
                     Some(serde_cbor::to_vec(&upd).unwrap())
                 }
@@ -125,4 +129,43 @@ pub trait SessionDb: ContactsDb {
         tree.flush().unwrap();
         first_read
     }
+
+    fn enable_session_silent(
+        db: Arc<Db>,
+        did: u64,
+    )  {
+        Self::update_session_if_exists(db, did, &|chat| chat.enabled_silent = true);
+    }
+
+    fn disable_session_silent(
+        db: Arc<Db>,
+        did: u64,
+    ) {
+        Self::update_session_if_exists(db, did, &|chat| chat.enabled_silent = false);
+    }
+
+    fn update_session_if_exists(db: Arc<Db>, did: u64, callback: &dyn Fn(&mut ChatSession)) {
+        if did == 0 {
+            return;
+        }
+        let tree = Self::open_session_tree(db.clone()).unwrap();
+        if let Err(e) = tree.fetch_and_update(did.to_be_bytes(), |old| {
+            match old {
+                Some(val) => {
+                    let mut chat: ChatSession = serde_cbor::from_slice(val).unwrap();
+                    callback(&mut chat);
+
+                    Some(serde_cbor::to_vec(&chat).unwrap())
+                }
+                None => {
+                    warn!("session is not found {did}");
+                    None
+                }
+            }
+        }) {
+            tracing::info!("{e:?}");
+        }
+        tree.flush().unwrap();
+    }
 }
+

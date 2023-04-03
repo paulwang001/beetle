@@ -58,6 +58,7 @@ pub trait GroupMembersDb {
             Members::new(group_id, member_ids).to_bytes()?
         };
         tree.insert(key, data)?;
+        tree.flush()?;
         Ok(())
     }
 
