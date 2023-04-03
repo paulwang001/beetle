@@ -88,6 +88,7 @@ pub struct ChatSession {
     pub read_crc: u64,
     pub reach_crc: Vec<u64>,
     pub last_msg: String,
+    pub enabled_silent: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2866,6 +2867,16 @@ impl Client {
                 error!("{e:?}");
             }
         });
+    }
+
+    pub fn enable_silent(&self, did: u64) -> ClientResult<()> {
+        Self::enable_session_silent(self.db.clone(), did);
+        Ok(())
+    }
+
+    pub fn disable_silent(&self, did: u64) -> ClientResult<()> {
+        Self::disable_session_silent(self.db.clone(), did);
+        Ok(())
     }
 }
 /// Starts a new p2p node, using the given mem rpc channel.
