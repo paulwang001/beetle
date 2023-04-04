@@ -1218,6 +1218,9 @@ impl Client {
     }
 
     pub fn remove_key(&self, name: &str) -> ClientResult<bool> {
+        let _ = self.stop()?;
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
         RUNTIME.block_on(async {
             let tree = self.db.open_tree("bip39_keys")?;
             let k_pair = format!("pair-{}", name);
@@ -1228,8 +1231,8 @@ impl Client {
                         Ok(_) => {
                             let path = luffa_util::luffa_data_path(KVDB_CONTACTS_FILE).unwrap();
                             let idx_path = luffa_util::luffa_data_path(LUFFA_CONTENT).unwrap();
-                            std::fs::remove_dir(path)?;
-                            std::fs::remove_dir(idx_path)?;
+                            fs::remove_dir_all(path)?;
+                            fs::remove_dir_all(idx_path)?;
                             Ok(true)
                         }
                         Err(e) => {
@@ -1244,6 +1247,7 @@ impl Client {
             }
         })
     }
+
     pub fn read_key_phrase(&self, name: &str) -> ClientResult<Option<String>> {
         let tree = self.db.open_tree("bip39_keys")?;
         let k_pair = format!("phrase-{}", name);
