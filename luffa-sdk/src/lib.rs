@@ -1219,7 +1219,7 @@ impl Client {
 
     pub fn remove_key(&self, name: &str) -> ClientResult<bool> {
         let _ = self.stop()?;
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        std::thread::sleep(Duration::from_secs(1));
 
         RUNTIME.block_on(async {
             let tree = self.db.open_tree("bip39_keys")?;
