@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use image::EncodableLayout;
-use sled::{Db, IVec, Tree};
-use luffa_node::Keypair;
+use crate::sled_db::global_db::GlobalDb;
 use crate::ClientError::CustomError;
 use crate::ClientResult;
-use crate::sled_db::global_db::GlobalDb;
+use image::EncodableLayout;
+use luffa_node::Keypair;
+use sled::{Db, IVec, Tree};
+use std::sync::Arc;
 
 pub trait Mnemonic: GlobalDb {
     fn open_mnemonic_tree() -> ClientResult<Tree> {
@@ -42,7 +42,7 @@ pub trait Mnemonic: GlobalDb {
     }
 
     fn get_mnemonic(name: &str) -> ClientResult<Option<String>> {
-        let mut tree = Self::open_mnemonic_tree()?;
+        let tree = Self::open_mnemonic_tree()?;
         let key = Self::mnemonic_key(name);
         let data = if let Some(data) = tree.get(key)? {
             Some(String::from_utf8(data.to_vec())?)
@@ -53,22 +53,40 @@ pub trait Mnemonic: GlobalDb {
     }
 
     fn get_mnemonic_vec(name: &str) -> ClientResult<Option<IVec>> {
-        let mut tree = Self::open_mnemonic_tree()?;
+        let tree = Self::open_mnemonic_tree()?;
         let key = Self::mnemonic_key(name);
         Ok(tree.get(key)?)
     }
 
     fn get_mnemonic_keypair(name: &str) -> ClientResult<Option<IVec>> {
-        let mut tree = Self::open_mnemonic_tree()?;
+        let tree = Self::open_mnemonic_tree()?;
         let key = Self::keypair_key(name);
         let data = tree.get(key)?;
         Ok(data)
     }
 
     fn remove_mnemonic_keypair(name: &str) -> ClientResult<Option<IVec>> {
-        let mut tree = Self::open_mnemonic_tree()?;
+        let tree = Self::open_mnemonic_tree()?;
         let key = Self::keypair_key(name);
         let data = tree.remove(key)?;
+        Ok(data)
+    }
+
+    fn save_login_user(name: &str) -> ClientResult<()> {
+        let mut tree = Self::open_mnemonic_tree()?;
+        let key = "current_user";
+        tree.insert(key, name)?;
+        Ok(())
+    }
+
+    fn get_login_user() -> ClientResult<Option<String>> {
+        let tree = Self::open_mnemonic_tree()?;
+        let key = "current_user";
+        let data = if let Some(data) = tree.get(key)? {
+            Some(String::from_utf8(data.to_vec())?)
+        } else {
+            None
+        };
         Ok(data)
     }
 }

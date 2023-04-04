@@ -1676,15 +1676,20 @@ impl Client {
 
     }
 
+    pub fn get_current_user(&self) -> ClientResult<Option<String>> {
+        let data = Self::get_login_user()?;
+        Ok(data)
+    }
+
     pub fn start(&self, key: Option<String>, tag: Option<String>, cb: Box<dyn Callback>) -> ClientResult<u64>
     {
         info!("is_start {}", self.is_started.load(Ordering::SeqCst));
         if self.is_started.load(Ordering::SeqCst) {
             return Ok(self.get_local_id().ok().flatten().expect("client get local id"));
         }
-
+        
         // let keychain = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone());
-        let filter = key.map(|k| KeyFilter::Name(format!("{}", k)));
+        let filter = key.clone().map(|k| KeyFilter::Name(format!("{}", k)));
         let (kc, config) = RUNTIME.block_on(async {
             let mut f = self.filter.write().await;
             *f = filter.clone();
@@ -1698,7 +1703,7 @@ impl Client {
             return Ok(0);
         }
         let my_id = my_id.unwrap();
-
+        Self::save_login_user(&self.get_did().unwrap().unwrap()).unwrap();
         let sled_db = SledDb::new(my_id);
         {
             let mut s = self.sled_db.write();
