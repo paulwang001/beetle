@@ -1368,7 +1368,7 @@ impl Client {
                     let c_type = t as u8;
                     let c_to = ContactsView {
                         did: to,
-                        tag,
+                        tag:tag.clone(),
                         c_type,
                     };
                     engine.insert(c_to, &format!("{to_id} {tag}"));
