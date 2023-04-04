@@ -2,11 +2,15 @@ use crate::sled_db::contacts::ContactsDb;
 use crate::sled_db::group_members::GroupMembersDb;
 use crate::sled_db::mnemonic::Mnemonic;
 use crate::sled_db::session::SessionDb;
+use crate::sled_db::global_db::GlobalDb;
+use crate::sled_db::sled_db::SledDbTrait;
 
 pub mod group_members;
 pub mod contacts;
 pub mod session;
-pub mod local_config;
 pub mod mnemonic;
+pub mod global_db;
 
-pub trait SledDb: ContactsDb + SessionDb + GroupMembersDb + Mnemonic {}
+pub trait SledDbAll: ContactsDb + SessionDb + GroupMembersDb + Mnemonic{}
+
+

@@ -61,6 +61,11 @@ callback interface Callback {
 interface Client {
 
     constructor();
+	[Throws=ClientError]
+    string? get_current_user();
+
+    [Throws=ClientError]
+    string? share([ByRef] string domain_name, [ByRef] string link_type);
     [Throws=ClientError]
     string? show_code([ByRef] string domain_name, [ByRef] string link_type);
     [Throws=ClientError]
