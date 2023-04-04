@@ -231,9 +231,9 @@ fn content_index(idx_path: &Path) -> (Index, Schema) {
 
 #[derive(Clone)]
 pub struct Client {
-    sender: Option<
-        Arc<
-            RwLock<
+    sender: Arc<
+        RwLock<
+            Option<
                 tokio::sync::mpsc::Sender<(
                     u64,
                     Vec<u8>,
@@ -244,14 +244,14 @@ pub struct Client {
             >,
         >,
     >,
-    key: Option<Arc<RwLock<Keychain<DiskStorage>>>>,
-    db: Option<Arc<RwLock<Arc<Db>>>>,
-    key_db: Option<Arc<RwLock<Arc<Db>>>>,
-    client: Option<Arc<RwLock<P2pClient>>>,
-    idx: Option<Arc<RwLock<Index>>>,
-    filter: Option<Arc<RwLock<Option<KeyFilter>>>>,
-    config: Option<Arc<RwLock<Config>>>,
-    store: Option<Arc<RwLock<Arc<luffa_store::Store>>>>,
+    key: Arc<RwLock<Option<Keychain<DiskStorage>>>>,
+    db: Arc<RwLock<Option<Arc<Db>>>>,
+    key_db: Arc<RwLock<Option<Arc<Db>>>>,
+    client: Arc<RwLock<Option<P2pClient>>>,
+    idx: Arc<RwLock<Option<Index>>>,
+    filter: Arc<RwLock<Option<KeyFilter>>>,
+    config: Arc<RwLock<Option<Config>>>,
+    store: Arc<RwLock<Option<Arc<luffa_store::Store>>>>,
     is_init: CloneableAtomicBool,
     is_started: CloneableAtomicBool,
 }
@@ -277,15 +277,15 @@ impl Client {
         });
 
         Client {
-            key: None,
-            filter: None,
-            config: None,
-            store: None,
-            sender: None,
-            db:None,
-            key_db:None,
-            client: None,
-            idx: None,
+            key: Arc::new(RwLock::new(None)),
+            filter: Arc::new(RwLock::new(None)),
+            config: Arc::new(RwLock::new(None)),
+            store: Arc::new(RwLock::new(None)),
+            sender: Arc::new(RwLock::new(None)),
+            db:Arc::new(RwLock::new(None)),
+            key_db:Arc::new(RwLock::new(None)),
+            client: Arc::new(RwLock::new(None)),
+            idx: Arc::new(RwLock::new(None)),
             is_init: Default::default(),
             is_started: Default::default(),
         }
@@ -294,8 +294,7 @@ impl Client {
     async fn get_keypair(&self, filter: Option<KeyFilter>) -> Option<Keypair> {
         match filter {
             Some(KeyFilter::Phrase(phrase, password)) => {
-                if let Some(chain) = self.key.as_ref() {
-                    let mut chain = chain.write();
+                if let Some(chain) = self.key.write().as_mut() {
                     if let Ok(key) = chain.create_ed25519_key_from_seed(&phrase, &password).await {
                         let key: Keypair = key.into();
                         return Some(key);
@@ -303,8 +302,7 @@ impl Client {
                 }
             }
             Some(KeyFilter::Name(name)) => {
-                if let Some(chain) = self.key.as_ref() {
-                    let chain = chain.read();
+                if let Some(chain) = self.key.read().as_ref() {
                     let mut keys = chain.keys();
                     while let Some(key) = keys.next().await {
                         if let Ok(key) = key {
@@ -317,8 +315,7 @@ impl Client {
                 }
             }
             _ => {
-                if let Some(chain) = self.key.as_ref() {
-                    let chain = chain.read();
+                if let Some(chain) = self.key.read().as_ref() {
                     let mut keys = chain.keys();
                     while let Some(key) = keys.next().await {
                         if let Ok(key) = key {
@@ -329,8 +326,7 @@ impl Client {
                 }
             }
         }
-        if let Some(chain) = self.key.as_ref() {
-            let mut chain = chain.write();
+        if let Some(chain) = self.key.write().as_mut() {
             match chain.create_ed25519_key_bip39("", true).await {
                 Ok((_p, key)) => {
                     let key: Keypair = key.into();
@@ -426,7 +422,7 @@ impl Client {
             let offer_key = Aes256Gcm::generate_key(&mut OsRng);
             let offer_key = offer_key.to_vec();
             tracing::warn!("secret_key::: {}", secret_key.len());
-            let filter = self.filter.as_ref().map(|f| f.read().clone()).unwrap();
+            let filter = self.filter.read().clone();
             let token = RUNTIME.block_on(async {
                 let key = self.get_keypair(filter).await;
                 let token = key.as_ref().map(|key| {
@@ -534,9 +530,8 @@ impl Client {
 
             let event = Event::new(0, &sync, None, my_id);
             let data = event.encode().unwrap();
-            let client_t = self.client.as_ref().unwrap().read().clone();
-            let sender = self.sender.clone();
-            let tx = self.sender.as_ref().map(|x| x.read().clone()).unwrap();
+            let client_t = self.client.read().clone().unwrap();
+            let tx = self.sender.read().clone().unwrap();
             tokio::spawn(async move {
                 if let Err(e) = client_t
                     .chat_request(
@@ -561,7 +556,7 @@ impl Client {
                 }
             });
         });
-        Self::group_member_insert(self.db(), g_id, members)?;
+        // Self::group_member_insert(self.db(), g_id, members)?;
         Ok(g_id)
     }
 
@@ -569,7 +564,7 @@ impl Client {
     pub fn contacts_group_invite_member(
         &self,
         g_id: u64,
-        invitee: u64,
+        invitee: Vec<u64>,
         tag: Option<String>,
     ) -> ClientResult<bool> {
         let group_keypair = format!("GROUPKEYPAIR-{}", g_id);
@@ -600,48 +595,27 @@ impl Client {
                 exchange: ContactsEvent::Offer { token },
             }
         };
+        let tx = self.sender.read().clone().unwrap();
         RUNTIME.block_on(async {
-            let contacts = vec![Contacts {
-                did: g_id,
-                r#type: ContactsTypes::Group,
-                have_time: 0,
-                wants: vec![],
-            }];
-
-            let sync = Message::ContactsSync {
-                did: my_id,
-                contacts,
-            };
-
-            let event = Event::new(0, &sync, None, my_id);
-            let data = event.encode().unwrap();
-            let client_t = self.client.as_ref().unwrap().read().clone();
-            let sender = self.sender.as_ref().clone();
-            let tx = sender.unwrap().read().clone();
             tokio::spawn(async move {
-                if let Err(e) = client_t
-                    .chat_request(
-                        bytes::Bytes::from(data),
-                    )
-                    .await
-                {
-                    tracing::warn!("pub contacts sync status >>> {e:?}");
-                }
-                let (req, res) = tokio::sync::oneshot::channel();
-                let msg = serde_cbor::to_vec(&msg).unwrap();
-                tx.send((invitee, msg, my_id, req, None)).await.unwrap();
-                match res.await {
-                    Ok(r) => {
-                        tracing::info!("send group offer ok :{r:?}");
-                    }
-                    Err(e) => {
-                        tracing::warn!("{e:?}");
+                for iv in invitee {
+                    let (req, res) = tokio::sync::oneshot::channel();
+                    let msg = serde_cbor::to_vec(&msg).unwrap();
+                    tx.send((iv, msg, my_id, req, None)).await.unwrap();
+                    match res.await {
+                        Ok(r) => {
+                            tracing::info!("send group offer ok :{r:?}");
+                        }
+                        Err(e) => {
+                            tracing::warn!("{e:?}");
+                        }
                     }
                 }
             });
+            
 
         });
-        Self::group_member_insert(self.db(), g_id, vec![invitee])?;
+        // Self::group_member_insert(self.db(), g_id, vec![invitee])?;
         Ok(true)
     }
     pub fn contacts_anwser_from_crc(&self, to: u64, crc: u64) -> ClientResult<u64> {
@@ -712,9 +686,9 @@ impl Client {
                 }
                 None => secret_key.clone(),
             };
-        let filter = self.filter.as_ref().map(|f| f.read().clone()).unwrap();
+        let filter = self.filter.read().as_ref().map(|f|f.clone());
         let token = RUNTIME.block_on(async {
-            let key = self.get_keypair(filter.clone()).await;
+            let key = self.get_keypair(filter).await;
             let token = key.as_ref().map(|key| {
                 ContactsToken::new(
                     key,
@@ -809,15 +783,14 @@ impl Client {
     }
 
     fn send_to(&self, to: u64, msg: Message, from_id: u64, key: Option<Vec<u8>>) -> Result<u64> {
+        let tx = self.sender.read().clone().unwrap();
         RUNTIME.block_on(async move {
-            let sender = self.sender.as_ref().clone();
             let msg = serde_cbor::to_vec(&msg).unwrap();
             let from_id = if from_id > 0 {
                 from_id
             } else {
                 self.local_id().await.unwrap_or_default()
             };
-            let tx = sender.unwrap().read().clone();
             match tokio::time::timeout(Duration::from_secs(15), async move {
                 let (req, res) = tokio::sync::oneshot::channel();
                 tx.send((to, msg, from_id, req, key)).await.unwrap();
@@ -1124,7 +1097,7 @@ impl Client {
     }
 
     async fn local_id(&self) -> Option<u64> {
-        let filter = self.filter.as_ref().map(|x|x.read().clone()).unwrap_or_default();
+        let filter = self.filter.read();
         let key = self.get_keypair(filter.clone()).await;
         key.map(|k| {
             let data = PeerId::from_public_key(&k.public()).to_bytes();
@@ -1163,8 +1136,7 @@ impl Client {
     pub fn keys(&self) -> ClientResult<Vec<String>> {
         // luffa_node::Keychain::keys(&self)
         RUNTIME.block_on(async {
-            if let Some(chain) = self.key.as_ref() {
-                let chain = chain.read();
+            if let Some(chain) = self.key.read().as_ref() {
                 let keys = chain.keys().map(|m| match m {
                     Ok(k) => Some(k.name()),
                     Err(_e) => None
@@ -1179,8 +1151,7 @@ impl Client {
 
     pub fn gen_key(&self, password: &str, store: bool) -> ClientResult<Option<String>> {
         RUNTIME.block_on(async {
-            if let Some(chain) = self.key.as_ref() {
-                let mut chain = chain.write();
+            if let Some(chain) = self.key.write().as_mut() {
                 match chain.create_ed25519_key_bip39(password, store).await {
                     Ok((phrase, key)) => {
                         let name = key.name();
@@ -1199,8 +1170,7 @@ impl Client {
     }
     pub fn import_key(&self, phrase: &str, password: &str) -> ClientResult<Option<String>> {
         RUNTIME.block_on(async {
-            if let Some(chain) = self.key.as_ref() {
-                let mut chain = chain.write();
+            if let Some(chain) = self.key.write().as_mut() {
                 match chain.create_ed25519_key_from_seed(phrase, password).await {
                     Ok(key) => {
                         let name = key.name();
@@ -1222,8 +1192,7 @@ impl Client {
             // let tree = self.db.open_tree("bip39_keys")?;
             // let k_pair = format!("pair-{}", name);
             if let Ok(Some(k_val)) = Self::get_mnemonic_keypair(self.key_db(), name) {
-                if let Some(chain) = self.key.as_ref() {
-                    let mut chain = chain.write();
+                if let Some(chain) = self.key.write().as_mut() {
                     let mut data = [0u8; 64];
                     data.clone_from_slice(&k_val);
                     if let Ok(k) = chain.create_ed25519_key_from_bytes(&data).await {
@@ -1246,8 +1215,7 @@ impl Client {
         RUNTIME.block_on(async {
             tokio::time::sleep(Duration::from_secs(1)).await;
             if let Ok(Some(_)) = Self::remove_mnemonic_keypair(self.key_db(), name) {
-                if let Some(chain) = self.key.as_ref() {
-                    let mut chain = chain.write();
+                if let Some(chain) = self.key.write().as_mut() {
                     match chain.remove(name).await {
                         Ok(_) => {
                             let mut u_id = [0u8;8];
@@ -1383,7 +1351,7 @@ impl Client {
     }
 
     pub fn search(&self, query: String, offset: u32, limit: u32) -> ClientResult<Vec<String>> {
-        let idx = self.idx.as_ref().unwrap().read();
+        let idx = self.idx.read().clone().unwrap();
         let reader = idx.reader()?;
         let schema = idx.schema();
         let searcher = reader.searcher();
@@ -1426,7 +1394,7 @@ impl Client {
 
     pub fn get_peer_id(&self) -> ClientResult<Option<String>> {
         let res = RUNTIME.block_on(async {
-            let filter = self.filter.as_ref().map(|x|x.read().clone()).unwrap_or(None);
+            let filter = self.filter.read();
             let key = self.get_keypair(filter.clone()).await;
             key.map(|k| {
                 let data = PeerId::from_public_key(&k.public()).to_bytes();
@@ -1437,7 +1405,7 @@ impl Client {
     }
 
     pub fn relay_list(&self) -> ClientResult<Vec<String>> {
-        let client = self.client.as_ref().map(|x| x.read().clone());
+        let client = self.client.read();
 
         let list = RUNTIME.block_on(async {
 
@@ -1464,7 +1432,7 @@ impl Client {
     pub fn connect(&self, peer_id: String) -> ClientResult<bool> {
         let (_, data) = multibase::decode(&peer_id)?;
         let peer_id = PeerId::from_bytes(&data)?;
-        let client = self.client.as_ref().map(|x| x.read().clone());
+        let client = self.client.read();
         let ok = RUNTIME.block_on(async {
             if let Some(cc) = client.as_ref() {
                 match cc.connect(peer_id, vec![]).await {
@@ -1482,7 +1450,7 @@ impl Client {
         let peer_id = self.get_peer_id()?.unwrap();
         let (_, data) = multibase::decode(&peer_id)?;
         let peer_id = PeerId::from_bytes(&data)?;
-        let client = self.client.as_ref().map(|x| x.read().clone());
+        let client = self.client.read();
         let ok = RUNTIME.block_on(async {
             if let Some(cc) = client.as_ref() {
                 match cc.disconnect(peer_id).await {
@@ -1561,19 +1529,16 @@ impl Client {
             let kc = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone())
                 .await.unwrap();
 
-            self.key.as_ref().map(|x| {
-               let mut x = x.write();
-               *x = kc; 
-            });
-            self.config.as_ref().map(|x| {
-                let mut x = x.write();
-                *x = config;
-            });
+            let mut x = self.key.write();
+            *x = Some(kc); 
+
+            let mut x = self.config.write();
+            *x = Some(config);
+            
             let store = start_store(store_config).await.unwrap();
-            self.store.as_ref().map(|x|{
-                let mut x = x.write();
-                *x = Arc::new(store);
-            });
+            let mut x = self.store.write();
+            *x = Some(Arc::new(store));
+            
 
             let path = luffa_util::luffa_data_path(&KVDB_CONTACTS_FILE.read())
             .unwrap()
@@ -1582,10 +1547,9 @@ impl Client {
             info!("path >>>> {:?}", &path);
 
             let db = Arc::new(sled::open(path).expect("open db failed"));
-            self.key_db.as_ref().map(|x| {
-                let mut x = x.write();
-                *x = db.clone();
-            });
+            let mut x = self.key_db.write();
+            *x =Some(db);
+            
 
         });
 
@@ -1611,10 +1575,9 @@ impl Client {
 
         // let keychain = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone());
         let filter = key.map(|k| KeyFilter::Name(format!("{}", k)));
-        self.filter.as_ref().map(|x| {
-            let mut x = x.write();
-            *x = filter.clone();
-        });
+
+        let mut x = self.filter.write();
+        *x = filter.clone();
 
         let my_id = self.get_local_id()?;
         if my_id.is_none() {
@@ -1632,10 +1595,9 @@ impl Client {
         info!("idx_path >>>> {:?}", &idx_path);
 
         let db = Arc::new(sled::open(path).expect("open db failed"));
-        self.db.as_ref().map(|x| {
-            let mut x = x.write();
-            *x = db.clone();
-        });
+        let mut x = self.db.write();
+        *x = Some(db.clone());
+        
         let (idx, schema) = content_index(idx_path.as_path());
         let writer = idx
             .writer_with_num_threads(1, 12 * 1024 * 1024)
@@ -1658,16 +1620,15 @@ impl Client {
 
         let (tx, rx) = tokio::sync::mpsc::channel(4096);
 
-        self.sender.as_ref().map(|x| {
-            let mut x = x.write();
-            *x = tx;
-        });
+        let mut x = self.sender.write();
+        *x = Some(tx.clone());
+        
         let idx_writer = Arc::new(RwLock::new(writer));
         // self.schema.map(|x| x.replace(schema));
 
-        let store = self.store.as_ref().unwrap().read().clone();
-        let config = self.config.as_ref().unwrap().read().clone();
-        let kc = self.key.as_ref().unwrap().read().clone();
+        let store = self.store.read().clone().unwrap();
+        let config = self.config.read().clone().unwrap();
+        let kc = self.key.read().clone().unwrap();
         RUNTIME.block_on(async {
             let (peer, p2p_rpc, events, sender) = {
                 let (peer_id, p2p_rpc, events, sender) =
@@ -1678,10 +1639,9 @@ impl Client {
             };
             let client = Arc::new(luffa_node::rpc::P2p::new(sender));
             let client = P2pClient::new(client).unwrap();
-            self.client.as_ref().map(|x| {
-                let mut x = x.write();
-                *x = client.clone();
-            });
+            
+            let mut x = self.client.write();
+            *x = Some(client.clone());
             tokio::spawn(async move {
                 debug!("runing...");
                 Self::run(
@@ -3150,10 +3110,10 @@ impl Client {
         Ok(())
     }
     fn db(&self) -> Arc<Db> {
-        self.db.as_ref().unwrap().read().clone()
+        self.db.read().clone().unwrap()
     }
     fn key_db(&self) -> Arc<Db> {
-        self.key_db.as_ref().unwrap().read().clone()
+        self.key_db.read().clone().unwrap()
     }
 }
 /// Starts a new p2p node, using the given mem rpc channel.
