@@ -58,6 +58,8 @@ interface Client {
 
     constructor();
     [Throws=ClientError]
+    string? share([ByRef] string domain_name, [ByRef] string link_type);
+    [Throws=ClientError]
     string? show_code();
     [Throws=ClientError]
     u64 contacts_offer([ByRef] string code);

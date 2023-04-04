@@ -330,6 +330,28 @@ impl Client {
             Err(e) => None,
         }
     }
+
+    pub fn share(&self, domain_name: &str, link_type: &str) -> ClientResult<Option<String>> {
+        let res = if let Some(uid) = self.get_did()? {
+            let s_key = Aes256Gcm::generate_key(&mut OsRng);
+            let secret_key = s_key.to_vec();
+            let mut digest = crc64fast::Digest::new();
+            digest.write(&secret_key);
+            let offer_id = digest.sum64();
+            tracing::warn!("gen offer id:{}", offer_id);
+            self.save_contacts_offer(offer_id, secret_key.clone());
+            if let Some(my_id) = self.get_local_id()? {
+                let tag = self.find_contacts_tag(my_id)?.unwrap_or_default();
+                Some(format!("{}/{}/{}/{}/{}", domain_name, link_type, uid, bs58::encode(secret_key).into_string(), tag))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        Ok(res)
+    }
+
     /// show code
     pub fn show_code(&self) -> ClientResult<Option<String>> {
         let res = if let Some(uid) = self.get_did()? {
