@@ -1929,12 +1929,12 @@ impl Client {
                                                                                                 match status {
                                                                                                     FeedbackStatus::Read=>{
                                                                                                         let table = format!("message_{did}");
-                                                                                                        Self::save_to_tree_status(db_tt.clone(),did,&table,5);
+                                                                                                        Self::save_to_tree_status(db_tt.clone(),crc,&table,5);
                                                                                                        
                                                                                                     }
                                                                                                     FeedbackStatus::Reach=>{
                                                                                                         let table = format!("message_{did}");
-                                                                                                        Self::save_to_tree_status(db_tt.clone(),did,&table,4);
+                                                                                                        Self::save_to_tree_status(db_tt.clone(),crc,&table,4);
                                                                                                        
                                                                                                     }
                                                                                                     _=>{
@@ -1970,7 +1970,9 @@ impl Client {
                                                         if to > 0 {
                                                             tracing::info!("clinet>>>>>on_message send {crc:?} from {from_id} to {to} msg:{msg_t:?}");
                                                             let table = format!("message_{to}");
-                                                            Self::save_to_tree_status(db_t.clone(),to,&table,2);
+                                                            for c in crc {
+                                                                Self::save_to_tree_status(db_t.clone(),c,&table,2);
+                                                            }
                                                         }
                                                         else{
                                                             
