@@ -19,6 +19,7 @@ dictionary ChatSession {
 dictionary ContactsView {
   u64 did;
   string tag;
+  u8 c_type;
 };
 
 dictionary EventMeta {
