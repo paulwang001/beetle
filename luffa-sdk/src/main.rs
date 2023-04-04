@@ -61,10 +61,10 @@ fn main() -> Result<()> {
     // let tx = Arc::new(tx);
     let cfg_path = args.cfg;
     // let msg_t = msg.clone();
-    tracing::info!("starting");
+    tracing::info!("init...");
     client.init(cfg_path).unwrap();
 
-    tracing::info!("started.");
+    tracing::info!("inited.");
     let client = Arc::new(client);
     let client_t = client.clone();
     let client_ctl = client.clone();
@@ -75,8 +75,8 @@ fn main() -> Result<()> {
     let process = Process::new(tx.clone());
     let msg = Box::new(process);
 
-    client_ctl.start(None, tag.clone(), msg).unwrap();
-    tracing::info!("started.");
+    let id = client_ctl.start(None, tag.clone(), msg).unwrap();
+    tracing::info!("started. {id}");
     // std::thread::spawn(move || {
     //     loop {
     //         let process = Process::new(tx.clone());

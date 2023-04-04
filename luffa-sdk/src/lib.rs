@@ -1572,12 +1572,13 @@ impl Client {
                 .flatten()
                 .expect("client get local id"));
         }
-
+           
         // let keychain = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone());
         let filter = key.map(|k| KeyFilter::Name(format!("{}", k)));
-
-        let mut x = self.filter.write();
-        *x = filter.clone();
+        {
+            let mut x = self.filter.write();
+            *x = filter.clone();
+        }
 
         let my_id = self.get_local_id()?;
         if my_id.is_none() {
@@ -1595,8 +1596,10 @@ impl Client {
         info!("idx_path >>>> {:?}", &idx_path);
 
         let db = Arc::new(sled::open(path).expect("open db failed"));
-        let mut x = self.db.write();
-        *x = Some(db.clone());
+        {
+            let mut x = self.db.write();
+            *x = Some(db.clone());
+        }
         
         let (idx, schema) = content_index(idx_path.as_path());
         let writer = idx
@@ -1619,9 +1622,10 @@ impl Client {
         self.update_contacts_tag(my_id, tag.unwrap_or(format!("{}", my_id)).to_string());
 
         let (tx, rx) = tokio::sync::mpsc::channel(4096);
-
-        let mut x = self.sender.write();
-        *x = Some(tx.clone());
+        {
+            let mut x = self.sender.write();
+            *x = Some(tx.clone());
+        }    
         
         let idx_writer = Arc::new(RwLock::new(writer));
         // self.schema.map(|x| x.replace(schema));
@@ -1639,9 +1643,10 @@ impl Client {
             };
             let client = Arc::new(luffa_node::rpc::P2p::new(sender));
             let client = P2pClient::new(client).unwrap();
-            
-            let mut x = self.client.write();
-            *x = Some(client.clone());
+            {
+                let mut x = self.client.write();
+                *x = Some(client.clone());
+            }
             tokio::spawn(async move {
                 debug!("runing...");
                 Self::run(
