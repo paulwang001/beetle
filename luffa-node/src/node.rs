@@ -2578,7 +2578,8 @@ pub async fn load_identity<S: Storage>(
             return Ok(keypair);
         }
         Some(KeyFilter::Name(name)) => {
-            while let Some(first_key) = kc.keys().next().await {
+            let mut keys = kc.keys();
+            while let Some(first_key) = keys.next().await {
                 let k = first_key.unwrap();
                 if &k.name() == name {
                     let keypair: Keypair = k.into();
