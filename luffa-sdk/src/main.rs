@@ -163,7 +163,7 @@ fn main() -> Result<()> {
                         tracing::warn!("scan me :{}  --->>{:?}", code, relays);
                         let list = client.contacts_list(0).unwrap();
                         for c in list {
-                            let ls = client.recent_messages(c.did, 10).unwrap();
+                            let ls = client.recent_messages(c.did, 0,10).unwrap();
                             {
                                 let msg_len = ls.len();
                                 tracing::info!(" contacts>> {:?} msg_len>>{}", c, msg_len);

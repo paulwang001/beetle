@@ -1,16 +1,14 @@
-use std::sync::Arc;
-use chrono::Utc;
-use sled::{Db, Tree};
-use tracing::warn;
-use crate::{ChatSession, ClientResult};
 use crate::sled_db::contacts::ContactsDb;
-use crate::sled_db::local_config::read_local_id;
+use crate::{ChatSession, ClientResult};
+use sled::{Db, Tree};
+use std::sync::Arc;
+use tracing::warn;
 
 pub const KVDB_CHAT_SESSION_TREE: &str = "luffa_sessions";
 
 pub trait SessionDb: ContactsDb {
     fn open_session_tree(db: Arc<Db>) -> ClientResult<Tree> {
-        let table = format!("{}-{}", KVDB_CHAT_SESSION_TREE, read_local_id());
+        let table = format!("{}", KVDB_CHAT_SESSION_TREE);
         let tree = db.open_tree(table)?;
         Ok(tree)
     }

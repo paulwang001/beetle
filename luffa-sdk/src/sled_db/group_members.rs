@@ -7,7 +7,6 @@ use bytecheck::CheckBytes;
 use crate::ClientError::CustomError;
 
 use crate::ClientResult;
-use crate::sled_db::local_config::read_local_id;
 
 pub const KVDB_GROUP_MEMBERS_TREE: &str = "luffa_group_members";
 
@@ -36,10 +35,9 @@ impl Members {
     }
 }
 
-
 pub trait GroupMembersDb {
     fn open_group_member_tree(db: Arc<Db>) -> ClientResult<Tree> {
-        let table = format!("{}-{}", KVDB_GROUP_MEMBERS_TREE, read_local_id());
+        let table = format!("{}", KVDB_GROUP_MEMBERS_TREE);
         let tree = db.open_tree(table)?;
         Ok(tree)
     }

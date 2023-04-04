@@ -1,5 +1,4 @@
 use crate::api::P2pClient;
-use crate::sled_db::local_config::read_local_id;
 use crate::{ClientResult, OfferStatus};
 use libp2p::identity::PublicKey;
 use libp2p::PeerId;
@@ -15,7 +14,7 @@ pub const KVDB_CONTACTS_TREE: &str = "luffa_contacts";
 
 pub trait ContactsDb {
     fn open_contact_tree(db: Arc<Db>) -> ClientResult<Tree> {
-        let table = format!("{}-{}", KVDB_CONTACTS_TREE, read_local_id());
+        let table = format!("{}", KVDB_CONTACTS_TREE);
         let tree = db.open_tree(table)?;
         Ok(tree)
     }

@@ -19,7 +19,7 @@ pub trait Mnemonic {
     }
 
     fn save_mnemonic(db: Arc<Db>, name: &str, mnemonic: &str) -> ClientResult<()> {
-        let mut tree = Self::open_mnemonic_tree(db)?;
+        let tree = Self::open_mnemonic_tree(db)?;
         let key = Self::mnemonic_key(name);
         tree.insert(key, mnemonic)?;
         tree.flush()?;
@@ -30,7 +30,7 @@ pub trait Mnemonic {
         let name = &keypair.name();
         if let Keypair::Ed25519(v) = keypair {
             let data = v.to_bytes();
-            let mut tree = Self::open_mnemonic_tree(db)?;
+            let tree = Self::open_mnemonic_tree(db)?;
             let mnemonic_key = Self::mnemonic_key(name);
             let keypair_key = Self::keypair_key(name);
             tree.insert(mnemonic_key, mnemonic)?;
