@@ -127,7 +127,7 @@ chrono = "0.4.23"
 identicon-rs = "4.0.1"
 calamine = "0.19.1"
 image = "0.24.0"
-
+parking_lot = "0.12.1"
 
 
 
