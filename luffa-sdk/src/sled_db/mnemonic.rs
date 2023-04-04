@@ -6,6 +6,8 @@ use luffa_node::Keypair;
 use sled::{Db, IVec, Tree};
 use std::sync::Arc;
 
+const CURRENT_USER: &str = "current_user";
+
 pub trait Mnemonic: GlobalDb {
     fn open_mnemonic_tree() -> ClientResult<Tree> {
         Ok(Self::get_global_db().open_tree("bip39_keys")?)
@@ -74,15 +76,13 @@ pub trait Mnemonic: GlobalDb {
 
     fn save_login_user(name: &str) -> ClientResult<()> {
         let mut tree = Self::open_mnemonic_tree()?;
-        let key = "current_user";
-        tree.insert(key, name)?;
+        tree.insert(CURRENT_USER, name)?;
         Ok(())
     }
 
     fn get_login_user() -> ClientResult<Option<String>> {
         let tree = Self::open_mnemonic_tree()?;
-        let key = "current_user";
-        let data = if let Some(data) = tree.get(key)? {
+        let data = if let Some(data) = tree.get(CURRENT_USER)? {
             Some(String::from_utf8(data.to_vec())?)
         } else {
             None
