@@ -14,7 +14,7 @@ fn test() -> anyhow::Result<()>{
 
     println!("current_use{}", name.unwrap());
 
-    // client.remove_key(&name.clone().unwrap())?;
+    client.remove_key(&name.clone().unwrap())?;
     println!("{}", Utc::now().timestamp() - now);
     Ok(())
 }

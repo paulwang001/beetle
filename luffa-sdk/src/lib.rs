@@ -1332,6 +1332,8 @@ impl Client {
 
 
     pub fn remove_key(&self, name: &str) -> ClientResult<bool> {
+        println!("is init {}", self.is_init.load(Ordering::SeqCst));
+        tracing::error!("is init {}", self.is_init.load(Ordering::SeqCst));
         Self::remove_login_user(self.key_db())?;
         let ok = RUNTIME.block_on(async {
             tokio::time::sleep(Duration::from_secs(1)).await;
@@ -1357,7 +1359,7 @@ impl Client {
                 Ok(false)
             }
         });
-        if let Err(_) = self.stop() {};
+        // if let Err(_) = self.stop() {};
         ok
     }
 
