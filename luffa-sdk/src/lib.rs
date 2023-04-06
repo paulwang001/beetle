@@ -1353,7 +1353,7 @@ impl Client {
                 Ok(false)
             }
         });
-        self.stop()?;
+        if let Err(_) = self.stop() {};
         ok
     }
 
