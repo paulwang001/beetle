@@ -206,6 +206,9 @@ fn main() -> Result<()> {
         let msg: Message = serde_cbor::from_slice(&data).unwrap();
 
         match &msg {
+            Message::Ping { relay_id, ttl_ms }=>{
+                tracing::warn!("-----relay------{} ---ttl:{} ms",relay_id,ttl_ms);
+            }
             Message::WebRtc { stream_id, action } => match action {
                 RtcAction::Status {
                     timestamp,

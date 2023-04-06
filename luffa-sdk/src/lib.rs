@@ -24,7 +24,6 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use simsearch::{SearchOptions, SimSearch};
 use sled::Db;
-use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::fs;
 use std::fs::read;
@@ -33,6 +32,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use std::{
+    collections::{HashMap, VecDeque},
+    time::Instant,
+};
 use tantivy::tokenizer::{LowerCaser, NgramTokenizer, SimpleTokenizer, Stemmer, TextAnalyzer};
 
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -1010,6 +1013,7 @@ impl Client {
                             if let Ok(msg) =
                                 Message::decrypt(bytes::Bytes::from(msg), Some(key), nonce)
                             {
+                                let status = Self::get_crc_tree_status(db_t.clone(),crc,&table) as u32;
                                 let (to_tag, _) =
                                     Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
                                 let (from_tag, _) = Self::get_contacts_tag(db_t.clone(), from_id)
@@ -1021,7 +1025,7 @@ impl Client {
                                         from_tag,
                                         to_tag,
                                         event_time,
-                                        status:0,
+                                        status,
                                         msg,
                                     }),
                                     None => {
@@ -1328,6 +1332,8 @@ impl Client {
 
 
     pub fn remove_key(&self, name: &str) -> ClientResult<bool> {
+        println!("is init {}", self.is_init.load(Ordering::SeqCst));
+        tracing::error!("is init {}", self.is_init.load(Ordering::SeqCst));
         Self::remove_login_user(self.key_db())?;
         let ok = RUNTIME.block_on(async {
             tokio::time::sleep(Duration::from_secs(1)).await;
@@ -1335,9 +1341,9 @@ impl Client {
                 if let Some(chain) = self.key.write().as_mut() {
                     match chain.remove(name).await {
                         Ok(_) => {
-                            let mut u_id = bs58_decode(name)?;
-                            let path = luffa_util::luffa_data_path(&format!("{}/{}", KVDB_CONTACTS_FILE, u_id)).unwrap();
-                            let idx_path = luffa_util::luffa_data_path(&format!("{}/{}", LUFFA_CONTENT, u_id)).unwrap();
+                            let u_id = bs58_decode(name)?;
+                            let path = luffa_util::luffa_data_path(&format!("{}/{}", KVDB_CONTACTS_FILE, u_id)).expect(&format!("{u_id} KVDB_CONTACTS_FILE fail"));
+                            let idx_path = luffa_util::luffa_data_path(&format!("{}/{}", LUFFA_CONTENT, u_id)).expect(&format!("{u_id} LUFFA_CONTENT fail"));
                             fs::remove_dir_all(path)?;
                             fs::remove_dir_all(idx_path)?;
                             Ok(true)
@@ -1353,7 +1359,7 @@ impl Client {
                 Ok(false)
             }
         });
-        if let Err(_) = self.stop() {};
+        // if let Err(_) = self.stop() {};
         ok
     }
 
@@ -1646,37 +1652,35 @@ impl Client {
 
         // let metrics_config = config.metrics.clone();
         let store_config = config.store.clone();
-        RUNTIME.block_on(async {
+        let (kc, store) = RUNTIME.block_on(async {
             // let metrics_handle = luffa_metrics::MetricsHandle::new(metrics_config)
             //     .await
             //     .expect("failed to initialize metrics");
 
             let kc = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone())
                 .await.unwrap();
-
-            let mut x = self.key.write();
-            *x = Some(kc); 
-
-            let mut x = self.config.write();
-            *x = Some(config);
-            
             let store = start_store(store_config).await.unwrap();
-            let mut x = self.store.write();
-            *x = Some(Arc::new(store));
-            
+            (kc, store)
+        });
 
-            let path = luffa_util::luffa_data_path(KVDB_CONTACTS_FILE)
+        let mut x = self.key.write();
+        *x = Some(kc);
+
+        let mut x = self.config.write();
+        *x = Some(config);
+
+        let mut x = self.store.write();
+        *x = Some(Arc::new(store));
+
+        let path = luffa_util::luffa_data_path(KVDB_CONTACTS_FILE)
             .unwrap()
             .join(format!("keys"));
-        
-            info!("path >>>> {:?}", &path);
 
-            let db = Arc::new(sled::open(path).expect("open db failed"));
-            let mut x = self.key_db.write();
-            *x =Some(db);
-            
+        info!("path >>>> {:?}", &path);
 
-        });
+        let db = Arc::new(sled::open(path).expect("open db failed"));
+        let mut x = self.key_db.write();
+        *x =Some(db);
 
         self.is_init.store(true, Ordering::SeqCst);
         Ok(())
@@ -2350,10 +2354,10 @@ impl Client {
 
                         let mut digest = crc64fast::Digest::new();
                         digest.write(&info.peer.to_bytes());
-                        let crc = digest.sum64();
+                        let relay_id = digest.sum64();
 
                         cb.on_message(0,0,0,0, serde_cbor::to_vec(&Message::Ping{
-                            crc,
+                            relay_id,
                             ttl_ms: info.ttl.as_millis() as u64,
                         }).expect("deserialize message ping failed"));
                     }
@@ -2362,7 +2366,8 @@ impl Client {
         });
 
         let db_t = db.clone();
-        let pendings = VecDeque::<(Event, u32)>::new();
+        let db_t2 = db.clone();
+        let pendings = VecDeque::<(Event, u32,Instant)>::new();
         let pendings = Arc::new(tokio::sync::RwLock::new(pendings));
         let pendings_t = pendings.clone();
         let cb_tt = cb_local.clone();
@@ -2376,37 +2381,59 @@ impl Client {
                         continue;
                     }
                 }
-                if let Some((req,count)) = {
+                if let Some((req,count,time)) = {
                     let mut p = pendings_t.write().await;
                     tracing::warn!("pending size:{}",p.len());
-                    p.pop_front()
+                    let mut req = None;
+                    while let Some((r,c,t)) = p.pop_front() {
+                        if r.nonce.is_none() && c >= 20 {
+                            continue;
+                        }
+                        if t.elapsed().as_millis() <  c as u128 * 300 {
+                            p.push_back((r,c,t));
+                            continue;
+                        }
+                        req = Some((r,c,t));
+                        break;
+                    }
+                    req
                 }
                 {
                     let to = req.to;
                     let event_time = req.event_time;
+                    // let nonce = &req.nonce;
                     let data = req.encode().unwrap();
                     match client_pending.chat_request(bytes::Bytes::from(data.clone())).await {
                         Ok(res) => {
-                            let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Send };
-                            let feed = serde_cbor::to_vec(&feed).unwrap();
-                            cb_tt.on_message(req.crc, my_id, to, event_time,feed);
+                            if req.nonce.is_some() {
+
+                                let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Send };
+                                let feed = serde_cbor::to_vec(&feed).unwrap();
+                                cb_tt.on_message(req.crc, my_id, to, event_time,feed);
+                                let table = format!("message_{to}");
+                                Self::save_to_tree_status(db_t2.clone(),req.crc,&table,1);
+                            }
                             tracing::debug!("{res:?}");
                         }
                         Err(e) => {
                             tracing::error!("pending chat request failed [{}]: {e:?}",req.crc);
 
-                            tokio::time::sleep(Duration::from_millis(1000)).await;
-                            let status = if count >= 20 {FeedbackStatus::Failed} else {FeedbackStatus::Sending};
-                            let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status };
-                            let feed = serde_cbor::to_vec(&feed).unwrap();
-
-                            cb_tt.on_message(req.crc, my_id, to,event_time, feed);
-                            // if count < 20 {
+                            tokio::time::sleep(Duration::from_millis(50)).await;
+                            // let status = if count >= 20 {FeedbackStatus::Failed} else {FeedbackStatus::Sending};
+                            if req.nonce.is_some() {
+                                let status = FeedbackStatus::Sending;
+                                let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status };
+                                let feed = serde_cbor::to_vec(&feed).unwrap();
+    
+                                cb_tt.on_message(req.crc, my_id, to,event_time, feed);
+                            }
                             let mut push = pendings_t.write().await;
-                            push.push_back((req,count + 1));
-                            // }
+                            push.push_back((req,count + 1,time));
                         }
                     }
+                }
+                else{
+                    tokio::time::sleep(Duration::from_millis(500)).await;
                 }
 
             }
@@ -2601,6 +2628,7 @@ impl Client {
                             let sending = serde_cbor::to_vec(&sending).unwrap();
                             cb_t.on_message(req.crc, my_id, to,event_time, sending);
                         }
+                        let db_t2 = db_t.clone();
                         tokio::spawn(async move {
                             let data = req.encode().unwrap();
                             match client.chat_request(bytes::Bytes::from(data.clone())).await {
@@ -2614,28 +2642,30 @@ impl Client {
                                         let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Send };
                                         let feed = serde_cbor::to_vec(&feed).unwrap();
                                         cb_t.on_message(req.crc, my_id, to,event_time, feed);
+                                        let table = format!("message_{to}");
+                                        Self::save_to_tree_status(db_t2.clone(),req.crc,&table,1);
                                     }
                                     tracing::debug!("{res:?}");
 
                                 }
                                 Err(e) => {
                                     tracing::error!("chat request failed [{}]: {e:?}",req.crc);
-                                    if req.nonce.is_some() {
-                                        if let Some(job) = save_job {
-                                            if let Err(e) = job.await {
-                                                tracing::error!("job>> {e:?}");
-                                            }
+                                    // if req.nonce.is_some() {
+                                    if let Some(job) = save_job {
+                                        if let Err(e) = job.await {
+                                            tracing::error!("job>> {e:?}");
                                         }
-                                        tokio::time::sleep(Duration::from_millis(1000)).await;
-                                        if req.nonce.is_some() {
-                                            let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };
-                                            let feed = serde_cbor::to_vec(&feed).unwrap();
-                                            cb_t.on_message(req.crc, my_id, to,event_time, feed);
-                                        }
-                                        let mut push = pendings_t.write().await;
-                                        push.push_back((req,1));
-
                                     }
+                                    // // tokio::time::sleep(Duration::from_millis(1000)).await;
+                                    // if req.nonce.is_some() {
+                                    //     let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };
+                                    //     let feed = serde_cbor::to_vec(&feed).unwrap();
+                                    //     cb_t.on_message(req.crc, my_id, to,event_time, feed);
+                                    // }
+                                    let mut push = pendings_t.write().await;
+                                    push.push_back((req,1,Instant::now()));
+
+                                    // }
 
                                 }
                             }

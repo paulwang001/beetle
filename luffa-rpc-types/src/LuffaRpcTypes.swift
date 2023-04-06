@@ -19,13 +19,13 @@ fileprivate extension RustBuffer {
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
-        try! rustCall { ffi_LuffaRpcTypes_f4d7_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
+        try! rustCall { ffi_LuffaRpcTypes_349c_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
     // Frees the buffer in place.
     // The buffer must not be used after this is called.
     func deallocate() {
-        try! rustCall { ffi_LuffaRpcTypes_f4d7_rustbuffer_free(self, $0) }
+        try! rustCall { ffi_LuffaRpcTypes_349c_rustbuffer_free(self, $0) }
     }
 }
 
@@ -1214,6 +1214,7 @@ public enum Message {
     case `contactsExchange`(`exchange`: ContactsEvent)
     case `chat`(`content`: ChatContent)
     case `webRtc`(`streamId`: UInt32, `action`: RtcAction)
+    case `ping`(`crc`: UInt64, `ttlMs`: UInt64)
 }
 
 public struct FfiConverterTypeMessage: FfiConverterRustBuffer {
@@ -1256,6 +1257,11 @@ public struct FfiConverterTypeMessage: FfiConverterRustBuffer {
         case 7: return .`webRtc`(
             `streamId`: try FfiConverterUInt32.read(from: &buf), 
             `action`: try FfiConverterTypeRtcAction.read(from: &buf)
+        )
+        
+        case 8: return .`ping`(
+            `crc`: try FfiConverterUInt64.read(from: &buf), 
+            `ttlMs`: try FfiConverterUInt64.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -1306,6 +1312,12 @@ public struct FfiConverterTypeMessage: FfiConverterRustBuffer {
             writeInt(&buf, Int32(7))
             FfiConverterUInt32.write(`streamId`, into: &buf)
             FfiConverterTypeRtcAction.write(`action`, into: &buf)
+            
+        
+        case let .`ping`(`crc`,`ttlMs`):
+            writeInt(&buf, Int32(8))
+            FfiConverterUInt64.write(`crc`, into: &buf)
+            FfiConverterUInt64.write(`ttlMs`, into: &buf)
             
         }
     }
@@ -1587,7 +1599,7 @@ public func `messageFrom`(`msg`: [UInt8])  -> Message? {
     
     rustCall() {
     
-    LuffaRpcTypes_f4d7_message_from(
+    LuffaRpcTypes_349c_message_from(
         FfiConverterSequenceUInt8.lower(`msg`), $0)
 }
     )
@@ -1601,7 +1613,7 @@ public func `messageTo`(`msg`: Message)  -> [UInt8]? {
     
     rustCall() {
     
-    LuffaRpcTypes_f4d7_message_to(
+    LuffaRpcTypes_349c_message_to(
         FfiConverterTypeMessage.lower(`msg`), $0)
 }
     )
