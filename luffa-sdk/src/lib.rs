@@ -1110,8 +1110,92 @@ impl Client {
             // }
         }
 
+        // 触发更新最近消息预览
+        let _ = self.update_last_msg_preview(did)?;
         Ok(())
     }
+
+
+    fn update_last_msg_preview(&self, did: u64) -> ClientResult<()> {
+        let crc = self.recent_messages(did, 0, 108)?;
+        let (body,at) = match
+        crc.into_iter().map(|x| self.read_msg_with_meta(did, x).ok().flatten())
+            .filter(Option::is_some)
+            .map(|x| x.unwrap())
+            .map(|e| {
+                let msg = serde_cbor::from_slice::<Message>(&e.msg).ok()?;
+                match msg {
+                    Message::Chat {
+                        content: ChatContent::Send {
+                            data,
+                        }} => Some((data, e.event_time)),
+                    _ => None,
+                }
+            })
+            .filter(Option::is_some)
+            .map(|x| x.unwrap())
+            .map(|x| {
+                let at = x.1;
+                let (_, data) = Self::extra_content(&x.0);
+
+                (data, at)
+            })
+            .nth(0) {
+            Some(x) => x,
+            None => {
+                warn!("not found last message in session {did} use default argument");
+                (String::from(""), Utc::now().timestamp_millis() as u64)
+            }
+        };
+
+
+        // let last_msg = crc.get(0);
+        // let last_msg_meta = if let Some(crc) = last_msg {
+        //     self.read_msg_with_meta(did, *crc)?
+        // } else {
+        //     warn!("session list {did} has been msg");
+        //     None
+        // };
+        //
+        // let (body, at) = if let Some(meta) = last_msg_meta {
+        //     let at = meta.event_time;
+        //     let body = serde_cbor::from_slice::<Message>(&meta.msg).ok().and_then(|x| {
+        //         let data = match x {
+        //             Message::Chat {
+        //                 content: ChatContent::Send {
+        //                     data,
+        //                 }} => data,
+        //                 _ => return None,
+        //         };
+        //         // let Message::Chat {
+        //         //     content: ChatContent::Send {
+        //         //         data,
+        //         //     }
+        //         // } = x else {
+        //         //     return None
+        //         // };
+        //
+        //         let (_, body ) = Self::extra_content(&data);
+        //
+        //         Some(body)
+        //     }).unwrap_or(String::from(""));
+        //
+        //     (body, at)
+        // } else {
+        //     warn!("not found last message in session {did} use default argument");
+        //     (String::from(""), Utc::now().timestamp_millis() as u64)
+        // };
+
+        Self::update_session_for_last_msg(
+            self.db(),
+            did,
+            at,
+            &body,
+        );
+
+        Ok(())
+    }
+
 
 
     pub fn get_local_id(&self) -> ClientResult<Option<u64>> {

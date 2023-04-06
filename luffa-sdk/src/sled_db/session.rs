@@ -138,6 +138,42 @@ pub trait SessionDb: ContactsDb {
         first_read
     }
 
+    fn update_session_for_last_msg(
+        db: Arc<Db>,
+        did: u64,
+        at: u64,
+        msg: &str,
+    ) {
+        if did == 0 {return;}
+
+        let tree = Self::open_session_tree(db.clone()).unwrap();
+        if let Err(e) =
+            tree.fetch_and_update(did.to_be_bytes(), |old| {
+                let mut v = match
+                old.map(|x| serde_cbor::from_slice::<ChatSession>(x).ok()).flatten() {
+                    Some(v) => v,
+                    _ => return None,
+                };
+                // let Some(mut v) = old.map(|x| serde_cbor::from_slice::<ChatSession>(x).ok()).flatten() else {
+                //     return None;
+                // };
+                // let Some(mut v) = old.map(|x| serde_cbor::from_slice::<ChatSession>(x).ok()).flatten() else {
+                //     return None;
+                // };
+
+                v.last_time = at;
+                v.last_msg = msg.to_string();
+
+                Some(serde_cbor::to_vec(&v).unwrap())
+            })
+        {
+            warn!("update session for last msg failed {e:?}");
+        }
+
+        tree.flush().expect("tree flush failed");
+    }
+
+
     fn enable_session_silent(
         db: Arc<Db>,
         did: u64,
