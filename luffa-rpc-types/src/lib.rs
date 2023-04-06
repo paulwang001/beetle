@@ -167,6 +167,9 @@ pub enum Message {
         stream_id: u32,
         action: RtcAction,
     },
+    Ping {
+        ttl_ms: u64,
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize,Clone)]

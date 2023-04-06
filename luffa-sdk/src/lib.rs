@@ -2337,6 +2337,11 @@ impl Client {
                     NetworkEvent::CancelLookupQuery(peer_id) => {
                         tracing::debug!("---------CancelLookupQuery-----------{:?}", peer_id);
                     }
+                    NetworkEvent::Ping(info) => {
+                        cb.on_message(0,0,0,0, serde_cbor::to_vec(&Message::Ping{
+                            ttl_ms: info.ttl.as_millis() as u64,
+                        }).expect("deserialize message ping failed"));
+                    }
                 }
             }
         });
