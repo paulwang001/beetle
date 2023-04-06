@@ -72,6 +72,7 @@ pub enum NetworkEvent {
 
 #[derive(Debug, Clone)]
 pub struct PingInfo {
+    pub peer: PeerId,
     pub ttl: Duration,
 }
 
@@ -1017,6 +1018,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
                     if let Some(x) = ttl {
                         self.emit_network_event(NetworkEvent::Ping(PingInfo{
+                            peer: e.peer,
                             ttl: x,
                         }))
                     }

@@ -168,6 +168,7 @@ pub enum Message {
         action: RtcAction,
     },
     Ping {
+        crc: u64,
         ttl_ms: u64,
     }
 }

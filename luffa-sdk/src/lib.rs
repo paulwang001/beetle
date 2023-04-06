@@ -2339,7 +2339,13 @@ impl Client {
                         tracing::debug!("---------CancelLookupQuery-----------{:?}", peer_id);
                     }
                     NetworkEvent::Ping(info) => {
+
+                        let mut digest = crc64fast::Digest::new();
+                        digest.write(&info.peer.to_bytes());
+                        let crc = digest.sum64();
+
                         cb.on_message(0,0,0,0, serde_cbor::to_vec(&Message::Ping{
+                            crc,
                             ttl_ms: info.ttl.as_millis() as u64,
                         }).expect("deserialize message ping failed"));
                     }
