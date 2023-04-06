@@ -10,7 +10,7 @@ fn test() -> anyhow::Result<()>{
     client.start(name.clone(), None, Box::new(OnMessageImpl)).expect("start failed");
     let now = Utc::now().timestamp();
     println!("123");
-    client.stop()?;
+    client.remove_key(&name.clone().unwrap())?;
     println!("{}", Utc::now().timestamp() - now);
     Ok(())
 }

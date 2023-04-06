@@ -1333,8 +1333,7 @@ impl Client {
 
     pub fn remove_key(&self, name: &str) -> ClientResult<bool> {
         Self::remove_login_user(self.key_db())?;
-        if let Err(_) = self.stop() {}
-        RUNTIME.block_on(async {
+        let ok = RUNTIME.block_on(async {
             tokio::time::sleep(Duration::from_secs(1)).await;
             if let Ok(Some(_)) = Self::remove_mnemonic_keypair(self.key_db(), name) {
                 if let Some(chain) = self.key.write().as_mut() {
@@ -1357,7 +1356,9 @@ impl Client {
             } else {
                 Ok(false)
             }
-        })
+        });
+        if let Err(_) = self.stop() {};
+        ok
     }
 
     pub fn read_key_phrase(&self, name: &str) -> ClientResult<Option<String>> {
@@ -2340,6 +2341,17 @@ impl Client {
                     }
                     NetworkEvent::CancelLookupQuery(peer_id) => {
                         tracing::debug!("---------CancelLookupQuery-----------{:?}", peer_id);
+                    }
+                    NetworkEvent::Ping(info) => {
+
+                        let mut digest = crc64fast::Digest::new();
+                        digest.write(&info.peer.to_bytes());
+                        let crc = digest.sum64();
+
+                        cb.on_message(0,0,0,0, serde_cbor::to_vec(&Message::Ping{
+                            crc,
+                            ttl_ms: info.ttl.as_millis() as u64,
+                        }).expect("deserialize message ping failed"));
                     }
                 }
             }
