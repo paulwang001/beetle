@@ -1341,7 +1341,7 @@ impl Client {
                 if let Some(chain) = self.key.write().as_mut() {
                     match chain.remove(name).await {
                         Ok(_) => {
-                            let mut u_id = bs58_decode(name)?;
+                            let u_id = bs58_decode(name)?;
                             let path = luffa_util::luffa_data_path(&format!("{}/{}", KVDB_CONTACTS_FILE, u_id)).expect(&format!("{u_id} KVDB_CONTACTS_FILE fail"));
                             let idx_path = luffa_util::luffa_data_path(&format!("{}/{}", LUFFA_CONTENT, u_id)).expect(&format!("{u_id} LUFFA_CONTENT fail"));
                             fs::remove_dir_all(path)?;
