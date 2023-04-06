@@ -373,6 +373,10 @@ async fn main() -> Result<()> {
                 NetworkEvent::CancelLookupQuery(peer_id) => {
                     tracing::info!("---------CancelLookupQuery-----------{:?}", peer_id);
                 }
+                NetworkEvent::Ping(p_info)=>{
+                    
+                    tracing::info!("---------Ping-----------{:?}", p_info);
+                }
             }
         }
     });
