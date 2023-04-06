@@ -1245,8 +1245,7 @@ impl Client {
 
     pub fn remove_key(&self, name: &str) -> ClientResult<bool> {
         Self::remove_login_user(self.key_db())?;
-        if let Err(_) = self.stop() {}
-        RUNTIME.block_on(async {
+        let ok = RUNTIME.block_on(async {
             tokio::time::sleep(Duration::from_secs(1)).await;
             if let Ok(Some(_)) = Self::remove_mnemonic_keypair(self.key_db(), name) {
                 if let Some(chain) = self.key.write().as_mut() {
@@ -1269,7 +1268,9 @@ impl Client {
             } else {
                 Ok(false)
             }
-        })
+        });
+        self.stop()?;
+        ok
     }
 
     pub fn read_key_phrase(&self, name: &str) -> ClientResult<Option<String>> {
