@@ -1340,8 +1340,8 @@ impl Client {
                     match chain.remove(name).await {
                         Ok(_) => {
                             let mut u_id = bs58_decode(name)?;
-                            let path = luffa_util::luffa_data_path(&format!("{}/{}", KVDB_CONTACTS_FILE, u_id)).unwrap();
-                            let idx_path = luffa_util::luffa_data_path(&format!("{}/{}", LUFFA_CONTENT, u_id)).unwrap();
+                            let path = luffa_util::luffa_data_path(&format!("{}/{}", KVDB_CONTACTS_FILE, u_id)).expect(&format!("{u_id} KVDB_CONTACTS_FILE fail"));
+                            let idx_path = luffa_util::luffa_data_path(&format!("{}/{}", LUFFA_CONTENT, u_id)).expect(&format!("{u_id} LUFFA_CONTENT fail"));
                             fs::remove_dir_all(path)?;
                             fs::remove_dir_all(idx_path)?;
                             Ok(true)
@@ -1643,37 +1643,35 @@ impl Client {
 
         // let metrics_config = config.metrics.clone();
         let store_config = config.store.clone();
-        RUNTIME.block_on(async {
+        let (kc, store) = RUNTIME.block_on(async {
             // let metrics_handle = luffa_metrics::MetricsHandle::new(metrics_config)
             //     .await
             //     .expect("failed to initialize metrics");
 
             let kc = Keychain::<DiskStorage>::new(config.p2p.clone().key_store_path.clone())
                 .await.unwrap();
-
-            let mut x = self.key.write();
-            *x = Some(kc); 
-
-            let mut x = self.config.write();
-            *x = Some(config);
-            
             let store = start_store(store_config).await.unwrap();
-            let mut x = self.store.write();
-            *x = Some(Arc::new(store));
-            
+            (kc, store)
+        });
 
-            let path = luffa_util::luffa_data_path(KVDB_CONTACTS_FILE)
+        let mut x = self.key.write();
+        *x = Some(kc);
+
+        let mut x = self.config.write();
+        *x = Some(config);
+
+        let mut x = self.store.write();
+        *x = Some(Arc::new(store));
+
+        let path = luffa_util::luffa_data_path(KVDB_CONTACTS_FILE)
             .unwrap()
             .join(format!("keys"));
-        
-            info!("path >>>> {:?}", &path);
 
-            let db = Arc::new(sled::open(path).expect("open db failed"));
-            let mut x = self.key_db.write();
-            *x =Some(db);
-            
+        info!("path >>>> {:?}", &path);
 
-        });
+        let db = Arc::new(sled::open(path).expect("open db failed"));
+        let mut x = self.key_db.write();
+        *x =Some(db);
 
         self.is_init.store(true, Ordering::SeqCst);
         Ok(())
