@@ -199,7 +199,7 @@ pub fn public_key_to_id(public_key: Vec<u8>) -> u64 {
 
 pub fn bs58_decode(data: &str) -> ClientResult<u64> {
     let mut to = [0u8; 8];
-    to.clone_from_slice(&bs58::decode(data).into_vec()?);
+    to.copy_from_slice(&bs58::decode(data).into_vec()?);
     Ok(u64::from_be_bytes(to))
 }
 
@@ -1244,18 +1244,15 @@ impl Client {
 
 
     pub fn remove_key(&self, name: &str) -> ClientResult<bool> {
+        Self::remove_login_user(self.key_db())?;
         if let Err(_) = self.stop() {}
-
         RUNTIME.block_on(async {
             tokio::time::sleep(Duration::from_secs(1)).await;
             if let Ok(Some(_)) = Self::remove_mnemonic_keypair(self.key_db(), name) {
                 if let Some(chain) = self.key.write().as_mut() {
                     match chain.remove(name).await {
                         Ok(_) => {
-                            let mut u_id = [0u8;8];
-                            let tmp = bs58::decode(name).into_vec()?;
-                            u_id.copy_from_slice(&tmp);
-                            let u_id = u64::from_be_bytes(u_id);
+                            let mut u_id = bs58_decode(name)?;
                             let path = luffa_util::luffa_data_path(&format!("{}/{}", KVDB_CONTACTS_FILE, u_id)).unwrap();
                             let idx_path = luffa_util::luffa_data_path(&format!("{}/{}", LUFFA_CONTENT, u_id)).unwrap();
                             fs::remove_dir_all(path)?;

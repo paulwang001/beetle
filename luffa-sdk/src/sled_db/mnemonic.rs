@@ -84,4 +84,10 @@ pub trait Mnemonic: GlobalDb {
         };
         Ok(data)
     }
+
+    fn remove_login_user(db: Arc<Db>) -> ClientResult<()> {
+        let tree = Self::open_mnemonic_tree(db)?;
+        tree.remove(CURRENT_USER)?;
+        Ok(())
+    }
 }
