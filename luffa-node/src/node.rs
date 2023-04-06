@@ -30,6 +30,7 @@ use libp2p::mdns;
 use libp2p::metrics::Recorder;
 use libp2p::multiaddr::Protocol;
 use libp2p::ping::Result as PingResult;
+use libp2p::ping;
 use libp2p::request_response::{
     InboundFailure, OutboundFailure, RequestId, RequestResponseEvent, RequestResponseMessage,
 };
@@ -66,6 +67,13 @@ pub enum NetworkEvent {
     Gossipsub(GossipsubEvent),
     RequestResponse(ChatEvent),
     CancelLookupQuery(PeerId),
+    Ping(PingInfo),
+}
+
+#[derive(Debug, Clone)]
+pub struct PingInfo {
+    pub peer: PeerId,
+    pub ttl: Duration,
 }
 
 #[derive(Debug, Clone)]
@@ -589,7 +597,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             }
                         }
                         if !pending_crc.is_empty() {
-                            self.routing_tx.send((peer_id.clone(),pending_crc)).await?;
+                            if let Err(e) = self.routing_tx.send((peer_id.clone(),pending_crc)).await {
+                                tracing::error!("{e:?}");
+                            }
                         }
                     }
                     let local_id = self.local_peer_id();
@@ -1001,6 +1011,20 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 libp2p_metrics().record(&e);
                 tracing::info!("ping:{e:?}");
                 if let PingResult::Ok(ping) = e.result {
+                    let ttl = match &ping {
+                        ping::Success::Ping {
+                            rtt
+                        } => Some(rtt.clone()),
+                        _ => None,
+                    };
+
+                    if let Some(x) = ttl {
+                        self.emit_network_event(NetworkEvent::Ping(PingInfo{
+                            peer: e.peer,
+                            ttl: x,
+                        }))
+                    }
+
                     self.swarm
                         .behaviour_mut()
                         .peer_manager
@@ -1019,13 +1043,20 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             }
             Event::Gossipsub(e) => {
                 libp2p_metrics().record(&e);
-                if let libp2p::gossipsub::GossipsubEvent::Message {
-                    propagation_source,
-                    message_id,
-                    message,
-                } = e
-                {
-                    if self.agent == Some(format!("Relay")) {
+                match e {
+                    libp2p::gossipsub::GossipsubEvent::Message {
+                        propagation_source,
+                        message_id,
+                        message,
+                    }=>{
+                        if self.agent != Some(format!("Relay")) {
+                            self.emit_network_event(NetworkEvent::Gossipsub(GossipsubEvent::Message {
+                                from: propagation_source,
+                                id: message_id,
+                                message,
+                            }));
+                            return Ok(());
+                        }
                         match &message {
                             GossipsubMessage {
                                 source,
@@ -1062,6 +1093,17 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         if let Some(from) = from_id {
                                                             let pending = self.pending_routing.entry(from).or_insert(Vec::new());
                                                             pending.retain(|(c,_t)| !crc.contains(c));
+                                                        }
+                                                        else{
+                                                            tracing::warn!("reach or read feedback which from is None");
+                                                        }
+                                                    }
+                                                    FeedbackStatus::Routing=>{
+                                                        if let Some(from) = from_id {
+                                                            let pending = self.pending_routing.entry(from).or_insert(Vec::new());
+                                                            for c in crc {
+                                                                pending.push((c,std::time::Instant::now()));
+                                                            }
                                                         }
                                                         else{
                                                             tracing::warn!("reach or read feedback which from is None");
@@ -1116,11 +1158,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     // check that from and to was in any contacts ?
                                     if let Some(idx) = self.contacts.find_edge(f, t) {
                                         let tp = self.contacts.edge_weight(idx).unwrap();
+                                        let tp = *tp;
                                         let mut rx_any = None;
-                                        if *tp == 0 {
+                                        if tp == 0 {
                                             // contact is private
                                             let f = self.get_peer_index(my_id);
                                             let t = self.get_peer_index(to);
+                                            let pending = self.pending_routing.entry(to).or_insert(Vec::new());
+                                            pending.push((crc,std::time::Instant::now()));
 
                                             if let Ok(Some(rx)) =
                                                 self.local_send_if_connected(t, data)
@@ -1166,6 +1211,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 })
                                                 .collect::<Vec<_>>();
                                             for t in targets {
+                                                if let Some(to_id) = self.contacts.node_weight(t) {
+                                                    let did = *to_id;
+                                                    let pending = self.pending_routing.entry(did).or_insert(Vec::new());
+                                                    pending.push((crc,std::time::Instant::now()));
+                                                }
                                                 if let Ok(Some(rx)) =
                                                     self.local_send_if_connected(t, data)
                                                 {
@@ -1178,11 +1228,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         }
                                                     });
                                                 }
-                                                else{
-                                                    if let Some(to) = self.contacts.node_weight(t) {
-
-                                                    }
-                                                }
+                                                
                                             }
                                         }
 
@@ -1226,24 +1272,23 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 ));
                             }
                         }
-                    } else {
-                        self.emit_network_event(NetworkEvent::Gossipsub(GossipsubEvent::Message {
-                            from: propagation_source,
-                            id: message_id,
-                            message,
+                    }
+                    libp2p::gossipsub::GossipsubEvent::Subscribed { peer_id, topic } =>{
+                        self.emit_network_event(NetworkEvent::Gossipsub(GossipsubEvent::Subscribed {
+                            peer_id,
+                            topic,
                         }));
                     }
-                } else if let libp2p::gossipsub::GossipsubEvent::Subscribed { peer_id, topic } = e {
-                    self.emit_network_event(NetworkEvent::Gossipsub(GossipsubEvent::Subscribed {
-                        peer_id,
-                        topic,
-                    }));
-                } else if let libp2p::gossipsub::GossipsubEvent::Unsubscribed { peer_id, topic } = e
-                {
-                    self.emit_network_event(NetworkEvent::Gossipsub(
-                        GossipsubEvent::Unsubscribed { peer_id, topic },
-                    ));
+                    libp2p::gossipsub::GossipsubEvent::Unsubscribed { peer_id, topic }=>{
+                        self.emit_network_event(NetworkEvent::Gossipsub(
+                            GossipsubEvent::Unsubscribed { peer_id, topic },
+                        ));
+                    }
+                    _=>{
+
+                    }
                 }
+                
             }
             Event::Mdns(e) => match e {
                 mdns::Event::Discovered(peers) => {
@@ -1316,7 +1361,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                                     feed_crc.clear();
                                                                     feed_crc.extend_from_slice(&pending_crc);
                                                                     feed_status = luffa_rpc_types::FeedbackStatus::Fetch;
-                                                                    self.routing_tx.send((peer_id.clone(),pending_crc)).await?;
+                                                                    if let Err(e) = self.routing_tx.send((peer_id.clone(),pending_crc)).await {
+                                                                        tracing::error!("{e:?}");
+                                                                    }
                                                                 }
                                                             }
                                                             
@@ -1341,11 +1388,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 }
                                                 if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
                                                     let msg_t = Message::StatusSync {to:from_id,from_id:my_id,status};
-                                                    let event = luffa_rpc_types::Event::new(0,&msg_t,None,from_id);
-                                                    let event = event.encode()?;
+                                                    let evt = luffa_rpc_types::Event::new(0,&msg_t,None,from_id);
+                                                    let evt = evt.encode()?;
                                                     if let Err(e) = go.publish(
                                                         TopicHash::from_raw(TOPIC_STATUS),
-                                                        event,
+                                                        evt,
                                                     ) {
                                                         tracing::error!("[{from_id}]StatusSync pub>>>:{e:?}");
                                                     }
@@ -1359,12 +1406,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     let tp = ctt.r#type as u8;
                                                     self.contacts.update_edge(f, t, tp);
                                                 }
-                                                let event = luffa_rpc_types::Event::new(0,&msg_t,None,from_id);
-                                                let event = event.encode()?;
+                                                let evt = luffa_rpc_types::Event::new(0,&msg_t,None,from_id);
+                                                let evt = evt.encode()?;
                                                 if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
                                                     if let Err(e) = go.publish(
                                                         TopicHash::from_raw(TOPIC_STATUS),
-                                                        event,
+                                                        evt,
                                                     ) {
                                                         tracing::error!("[{did}]ContactsSync pub>>>:{e:?}");
                                                     }
@@ -1386,11 +1433,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             .as_mut()
                                                             {
                                                                 let msg_t = Message::Feedback {crc,from_id:Some(from),to_id:None,status};
-                                                                let event = luffa_rpc_types::Event::new(0,&msg_t,None,my_id);
-                                                                let event = event.encode()?;
+                                                                let evt = luffa_rpc_types::Event::new(0,&msg_t,None,my_id);
+                                                                let evt = evt.encode()?;
                                                                 if let Err(e) = go.publish(
                                                                     TopicHash::from_raw(TOPIC_STATUS),
-                                                                    event,
+                                                                    evt,
                                                                 ) {
                                                                     tracing::error!("Feedback>>>{e:?}  msg: {msg_t:?}");
                                                                 }
@@ -1446,11 +1493,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     if let Some(idx) = self.contacts.find_edge(f, t) {
                                         let tp = self.contacts.edge_weight(idx).unwrap();
                                         let mut rx_any = None;
-                                        if *tp == 0 {
+                                        let tp = *tp;
+                                        if tp == 0 {
                                             // contact is private
                                             let notice = Message::Feedback {crc:vec![crc],from_id:None, to_id: Some(to), status: FeedbackStatus::Notice };
-                                            let event = luffa_rpc_types::Event::new(to,&notice,None,from_id);
-                                            let data = event.encode()?;
+                                            let evt = luffa_rpc_types::Event::new(to,&notice,None,from_id);
+                                            let data = evt.encode()?;
                                             self.emit_network_event(NetworkEvent::RequestResponse(
                                                 ChatEvent::Response { request_id:Some(request_id), data },
                                             ));
@@ -1520,8 +1568,20 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             TopicHash::from_raw(TOPIC_CHAT),
                                                             request.data().to_vec(),
                                                         ) {
-                                                            tracing::error!("[tp] can not route to any relay node>>> {e:?}");
+                                                            tracing::error!("[{tp}]:Message can not route to any relay node>>> {e:?}");
                                                         }
+                                                        let status = FeedbackStatus::Routing;
+                                                        let msg_t = Message::Feedback {crc:vec![crc],from_id:Some(to),to_id:Some(to),status};
+                                                        let evt = luffa_rpc_types::Event::new(0,&msg_t,None,my_id);
+                                                        let evt = evt.encode().unwrap();
+                                                        if let Err(e) = go.publish(
+                                                            TopicHash::from_raw(TOPIC_CHAT),
+                                                            evt,
+                                                        ) {
+                                                            tracing::error!("[{tp}] Routing can not route to any relay node>>> {e:?}");
+                                                        }
+
+                                                        
                                                     }
                                                     tracing::warn!("not connect.");
                                                     self.emit_network_event(NetworkEvent::RequestResponse(
@@ -1560,8 +1620,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     let pending = self.pending_routing.entry(*to_id).or_insert(Vec::new());
                                                     pending.push((crc,std::time::Instant::now()));
                                                     let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(*to_id), status: FeedbackStatus::Notice };
-                                                    let event = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id);
-                                                    let data = event.encode()?;
+                                                    let evt = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id);
+                                                    let data = evt.encode()?;
                                                     self.emit_network_event(NetworkEvent::RequestResponse(
                                                         ChatEvent::Response { request_id:Some(request_id), data },
                                                     ));

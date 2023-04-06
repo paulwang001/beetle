@@ -65,6 +65,7 @@ pub trait Mnemonic: GlobalDb {
         let mut tree = Self::open_mnemonic_tree(db)?;
         let key = Self::keypair_key(name);
         let data = tree.remove(key)?;
+        tree.flush()?;
         Ok(data)
     }
 
@@ -72,6 +73,7 @@ pub trait Mnemonic: GlobalDb {
     fn save_login_user(db: Arc<Db>, name: &str) -> ClientResult<()> {
         let mut tree = Self::open_mnemonic_tree(db)?;
         tree.insert(CURRENT_USER, name)?;
+        tree.flush()?;
         Ok(())
     }
 
@@ -88,6 +90,7 @@ pub trait Mnemonic: GlobalDb {
     fn remove_login_user(db: Arc<Db>) -> ClientResult<()> {
         let tree = Self::open_mnemonic_tree(db)?;
         tree.remove(CURRENT_USER)?;
+        tree.flush()?;
         Ok(())
     }
 }

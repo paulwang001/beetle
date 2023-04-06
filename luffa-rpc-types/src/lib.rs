@@ -128,7 +128,7 @@ impl Event {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize,Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Message {
     /// App  status
     StatusSync {
@@ -138,12 +138,12 @@ pub enum Message {
     },
 
     Feedback {
-       crc:Vec<u64>,
-       from_id:Option<u64>,
-       to_id:Option<u64>,
-       status: FeedbackStatus, 
+        crc: Vec<u64>,
+        from_id: Option<u64>,
+        to_id: Option<u64>,
+        status: FeedbackStatus,
     },
-    
+
     /// I'm a relay
     RelayNode {
         did: u64,
@@ -166,6 +166,10 @@ pub enum Message {
     WebRtc {
         stream_id: u32,
         action: RtcAction,
+    },
+    Ping {
+        relay_id: u64,
+        ttl_ms: u64,
     },
 }
 
