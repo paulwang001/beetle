@@ -1067,6 +1067,17 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             tracing::warn!("reach or read feedback which from is None");
                                                         }
                                                     }
+                                                    FeedbackStatus::Routing=>{
+                                                        if let Some(from) = from_id {
+                                                            let pending = self.pending_routing.entry(from).or_insert(Vec::new());
+                                                            for c in crc {
+                                                                pending.push((c,std::time::Instant::now()));
+                                                            }
+                                                        }
+                                                        else{
+                                                            tracing::warn!("reach or read feedback which from is None");
+                                                        }
+                                                    }
                                                     _=>{
                                                         
                                                     }
@@ -1116,11 +1127,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     // check that from and to was in any contacts ?
                                     if let Some(idx) = self.contacts.find_edge(f, t) {
                                         let tp = self.contacts.edge_weight(idx).unwrap();
+                                        let tp = *tp;
                                         let mut rx_any = None;
-                                        if *tp == 0 {
+                                        if tp == 0 {
                                             // contact is private
                                             let f = self.get_peer_index(my_id);
                                             let t = self.get_peer_index(to);
+                                            let pending = self.pending_routing.entry(to).or_insert(Vec::new());
+                                            pending.push((crc,std::time::Instant::now()));
 
                                             if let Ok(Some(rx)) =
                                                 self.local_send_if_connected(t, data)
@@ -1166,6 +1180,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 })
                                                 .collect::<Vec<_>>();
                                             for t in targets {
+                                                if let Some(to_id) = self.contacts.node_weight(t) {
+                                                    let pending = self.pending_routing.entry(*to_id).or_insert(Vec::new());
+                                                    pending.push((crc,std::time::Instant::now()));
+                                                }
                                                 if let Ok(Some(rx)) =
                                                     self.local_send_if_connected(t, data)
                                                 {
@@ -1178,11 +1196,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         }
                                                     });
                                                 }
-                                                else{
-                                                    if let Some(to) = self.contacts.node_weight(t) {
-
-                                                    }
-                                                }
+                                                
                                             }
                                         }
 
@@ -1446,7 +1460,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     if let Some(idx) = self.contacts.find_edge(f, t) {
                                         let tp = self.contacts.edge_weight(idx).unwrap();
                                         let mut rx_any = None;
-                                        if *tp == 0 {
+                                        let tp = *tp;
+                                        if tp == 0 {
                                             // contact is private
                                             let notice = Message::Feedback {crc:vec![crc],from_id:None, to_id: Some(to), status: FeedbackStatus::Notice };
                                             let event = luffa_rpc_types::Event::new(to,&notice,None,from_id);
@@ -1520,8 +1535,20 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             TopicHash::from_raw(TOPIC_CHAT),
                                                             request.data().to_vec(),
                                                         ) {
-                                                            tracing::error!("[tp] can not route to any relay node>>> {e:?}");
+                                                            tracing::error!("[{tp}]:Message can not route to any relay node>>> {e:?}");
                                                         }
+                                                        let status = FeedbackStatus::Routing;
+                                                        let msg_t = Message::Feedback {crc:vec![crc],from_id:Some(to),to_id:Some(to),status};
+                                                        let event = luffa_rpc_types::Event::new(0,&msg_t,None,my_id);
+                                                        let event = event.encode()?;
+                                                        if let Err(e) = go.publish(
+                                                            TopicHash::from_raw(TOPIC_CHAT),
+                                                            event,
+                                                        ) {
+                                                            tracing::error!("[{tp}] Routing can not route to any relay node>>> {e:?}");
+                                                        }
+
+                                                        
                                                     }
                                                     tracing::warn!("not connect.");
                                                     self.emit_network_event(NetworkEvent::RequestResponse(
@@ -1561,7 +1588,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     pending.push((crc,std::time::Instant::now()));
                                                     let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(*to_id), status: FeedbackStatus::Notice };
                                                     let event = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id);
-                                                    let data = event.encode()?;
+                                                    let data = event.encode().unwrap();
                                                     self.emit_network_event(NetworkEvent::RequestResponse(
                                                         ChatEvent::Response { request_id:Some(request_id), data },
                                                     ));

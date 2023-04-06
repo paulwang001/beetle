@@ -151,15 +151,29 @@ pub trait ContactsDb {
     }
     fn save_to_tree_status(db: Arc<Db>, crc: u64, table: &str, status: u8) {
         let tree_status = db.open_tree(&format!("{table}_status")).unwrap();
-
-        match tree_status.insert(crc.to_be_bytes(), vec![status]) {
-            Ok(None) => {
-
+        if let Err(e) = tree_status.fetch_and_update(crc.to_be_bytes(), |old| {
+            match old {
+            Some(o) => {
+                if o[0] < status {
+                    Some(vec![status])
+                } else {
+                    let old = o[0];
+                    Some(vec![old])
+                }
             }
-            _ => {
-
+            None => Some(vec![status]),
             }
+        }) {
+            tracing::error!("{e:?}")
         }
+        // match tree_status.insert(crc.to_be_bytes(), vec![status]) {
+        //     Ok(None) => {
+
+        //     }
+        //     _ => {
+
+        //     }
+        // }
         tree_status.flush().unwrap();
     }
     fn get_crc_tree_status(db: Arc<Db>, crc: u64, table: &str) -> u8 {
