@@ -30,6 +30,7 @@ use libp2p::mdns;
 use libp2p::metrics::Recorder;
 use libp2p::multiaddr::Protocol;
 use libp2p::ping::Result as PingResult;
+use libp2p::ping;
 use libp2p::request_response::{
     InboundFailure, OutboundFailure, RequestId, RequestResponseEvent, RequestResponseMessage,
 };
@@ -66,6 +67,13 @@ pub enum NetworkEvent {
     Gossipsub(GossipsubEvent),
     RequestResponse(ChatEvent),
     CancelLookupQuery(PeerId),
+    Ping(PingInfo),
+}
+
+#[derive(Debug, Clone)]
+pub struct PingInfo {
+    pub peer: PeerId,
+    pub ttl: Duration,
 }
 
 #[derive(Debug, Clone)]
@@ -1001,6 +1009,20 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 libp2p_metrics().record(&e);
                 tracing::info!("ping:{e:?}");
                 if let PingResult::Ok(ping) = e.result {
+                    let ttl = match &ping {
+                        ping::Success::Ping {
+                            rtt
+                        } => Some(rtt.clone()),
+                        _ => None,
+                    };
+
+                    if let Some(x) = ttl {
+                        self.emit_network_event(NetworkEvent::Ping(PingInfo{
+                            peer: e.peer,
+                            ttl: x,
+                        }))
+                    }
+
                     self.swarm
                         .behaviour_mut()
                         .peer_manager
