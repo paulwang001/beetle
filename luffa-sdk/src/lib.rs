@@ -8,8 +8,8 @@ use aes_gcm::{
 use anyhow::Context;
 use api::P2pClient;
 use futures::StreamExt;
+use libp2p::identity::Keypair;
 use libp2p::identity::PublicKey;
-use libp2p::{gossipsub::TopicHash, identity::Keypair};
 use libp2p::{multihash, PeerId};
 use luffa_node::{
     DiskStorage, GossipsubEvent, KeyFilter, Keychain, NetworkEvent, Node, ENV_PREFIX,
@@ -26,8 +26,6 @@ use simsearch::{SearchOptions, SimSearch};
 use sled::Db;
 use std::fmt::Debug;
 use std::fs;
-use std::fs::read;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
