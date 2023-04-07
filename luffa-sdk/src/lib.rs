@@ -932,144 +932,199 @@ impl Client {
     }
 
     pub fn read_msg_with_meta(&self, did: u64, crc: u64) -> ClientResult<Option<EventMeta>> {
-        let table = format!("message_{did}");
-        let tree = self.db().open_tree(&table)?;
-        let db_t = self.db();
-        let ok = match tree.get(crc.to_be_bytes()) {
-            Ok(v) => {
-                let vv = v.map(|v| {
-                    let data = v.to_vec();
-                    let evt: Event = serde_cbor::from_slice(&data[..]).unwrap();
-                    let Event {
-                        to,
-                        event_time,
-                        crc,
-                        from_id,
-                        nonce,
-                        msg,
-                    } = evt;
-                    let mut key = Self::get_aes_key_from_contacts(db_t.clone(), did);
-                    if key.is_none() {
-                        key = Self::get_offer_by_offer_id(db_t.clone(), from_id);
-                    }
-                    let now = Utc::now().timestamp_millis() as u64;
-                    if let Ok(msg) =
-                        Message::decrypt(bytes::Bytes::from(msg.clone()), key, nonce.clone())
-                    {
-                        let status = Self::get_crc_tree_status(db_t.clone(), crc, &table) as u32;
-                        match &msg {
-                            Message::Chat { content } => match content {
-                                ChatContent::Send { data } => {
-                                    // let (_title, body) = Self::extra_content(data);
-                                    if Self::update_session(
-                                        db_t.clone(),
-                                        did,
-                                        None,
-                                        Some(crc),
-                                        None,
-                                        None,
-                                        Some(status as u8),
-                                        now,
-                                    ) {
-                                        let msg = Message::Chat {
-                                            content: ChatContent::Feedback {
-                                                crc,
-                                                status: luffa_rpc_types::FeedbackStatus::Read,
-                                            },
-                                        };
-                                        if let Some(msg) = message_to(msg) {
-                                            if self.send_msg(did, msg).unwrap() == 0 {
-                                                tracing::error!("send read feedback failed");
-                                            }
-                                        }
-                                        // tracing::error!("send read feedback to {did}");
-                                    }
+        let event = self.read_msg_meta_without_chat_session(did, crc)?;
+
+        if let Some((status, msg)) = event.as_ref().and_then(|e| {
+             message_from(e.msg.clone()).map(|msg| (e.status, msg))
+        }) {
+            match &msg {
+                Message::Chat { content } => match content {
+                    ChatContent::Send { .. } => {
+                        // let (_title, body) = Self::extra_content(data);
+                        let now = Utc::now().timestamp_millis() as u64;
+                        if Self::update_session(
+                            self.db(),
+                            did,
+                            None,
+                            Some(crc),
+                            None,
+                            None,
+                            Some(status as u8),
+                            now,
+                        ) {
+                            let msg = Message::Chat {
+                                content: ChatContent::Feedback {
+                                    crc,
+                                    status: luffa_rpc_types::FeedbackStatus::Read,
+                                },
+                            };
+                            if let Some(msg) = message_to(msg) {
+                                if self.send_msg(did, msg).unwrap() == 0 {
+                                    tracing::error!("send read feedback failed");
                                 }
-                                _ => {
-                                    tracing::warn!(
+                            }
+                            // tracing::error!("send read feedback to {did}");
+                        }
+                    }
+                    _ => {
+                        tracing::warn!(
                                         "read No send message crc> {} did:{did} ,content:{:?}",
                                         crc,
                                         content
                                     );
-                                    return None;
-                                }
-                            },
-                            _ => {
-                                tracing::warn!(
+                    }
+                },
+                _ => {
+                    tracing::warn!(
                                     "read No chat message crc> {} did:{did} ,msg :{:?}",
                                     crc,
                                     msg
                                 );
-                            }
-                        }
-
-                        let (to_tag, _) =
-                            Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
-                        let (from_tag, _) =
-                            Self::get_contacts_tag(db_t.clone(), from_id).unwrap_or_default();
-                        match message_to(msg) {
-                            Some(msg) => Some(EventMeta {
-                                from_id,
-                                to_id: to,
-                                from_tag,
-                                to_tag,
-                                event_time,
-                                status,
-                                msg,
-                            }),
-                            None => None,
-                        }
-                    } else {
-                        if let Some(key) = Self::get_offer_by_offer_id(db_t.clone(), from_id) {
-                            if let Ok(msg) =
-                                Message::decrypt(bytes::Bytes::from(msg), Some(key), nonce)
-                            {
-                                let status =
-                                    Self::get_crc_tree_status(db_t.clone(), crc, &table) as u32;
-                                let (to_tag, _) =
-                                    Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
-                                let (from_tag, _) = Self::get_contacts_tag(db_t.clone(), from_id)
-                                    .unwrap_or_default();
-                                match message_to(msg) {
-                                    Some(msg) => Some(EventMeta {
-                                        from_id,
-                                        to_id: to,
-                                        from_tag,
-                                        to_tag,
-                                        event_time,
-                                        status,
-                                        msg,
-                                    }),
-                                    None => {
-                                        error!("read msg 0: decrypt failed>>>");
-                                        None
-                                    }
-                                }
-                            } else {
-                                error!("read msg 1: decrypt failed>>>");
-                                None
-                            }
-                        } else {
-                            error!("read msg 2: decrypt failed>>>");
-                            None
-                        }
-                    }
-                });
-
-                let vv = vv.unwrap_or_default();
-
-                vv
+                }
             }
-            Err(e) => {
-                error!("{e:?}");
-                None
-            }
-        };
-        Ok(ok)
+        }
+
+        Ok(event)
+
+        //
+        //
+        // let table = format!("message_{did}");
+        // let tree = self.db().open_tree(&table)?;
+        // let db_t = self.db();
+        // let ok = match tree.get(crc.to_be_bytes()) {
+        //     Ok(v) => {
+        //         let vv = v.map(|v| {
+        //             let data = v.to_vec();
+        //             let evt: Event = serde_cbor::from_slice(&data[..]).unwrap();
+        //             let Event {
+        //                 to,
+        //                 event_time,
+        //                 crc,
+        //                 from_id,
+        //                 nonce,
+        //                 msg,
+        //             } = evt;
+        //             let mut key = Self::get_aes_key_from_contacts(db_t.clone(), did);
+        //             if key.is_none() {
+        //                 key = Self::get_offer_by_offer_id(db_t.clone(), from_id);
+        //             }
+        //             let now = Utc::now().timestamp_millis() as u64;
+        //             if let Ok(msg) =
+        //                 Message::decrypt(bytes::Bytes::from(msg.clone()), key, nonce.clone())
+        //             {
+        //                 let status = Self::get_crc_tree_status(db_t.clone(), crc, &table) as u32;
+        //                 match &msg {
+        //                     Message::Chat { content } => match content {
+        //                         ChatContent::Send { data } => {
+        //                             // let (_title, body) = Self::extra_content(data);
+        //                             if Self::update_session(
+        //                                 db_t.clone(),
+        //                                 did,
+        //                                 None,
+        //                                 Some(crc),
+        //                                 None,
+        //                                 None,
+        //                                 Some(status as u8),
+        //                                 now,
+        //                             ) {
+        //                                 let msg = Message::Chat {
+        //                                     content: ChatContent::Feedback {
+        //                                         crc,
+        //                                         status: luffa_rpc_types::FeedbackStatus::Read,
+        //                                     },
+        //                                 };
+        //                                 if let Some(msg) = message_to(msg) {
+        //                                     if self.send_msg(did, msg).unwrap() == 0 {
+        //                                         tracing::error!("send read feedback failed");
+        //                                     }
+        //                                 }
+        //                                 // tracing::error!("send read feedback to {did}");
+        //                             }
+        //                         }
+        //                         _ => {
+        //                             tracing::warn!(
+        //                                 "read No send message crc> {} did:{did} ,content:{:?}",
+        //                                 crc,
+        //                                 content
+        //                             );
+        //                             return None;
+        //                         }
+        //                     },
+        //                     _ => {
+        //                         tracing::warn!(
+        //                             "read No chat message crc> {} did:{did} ,msg :{:?}",
+        //                             crc,
+        //                             msg
+        //                         );
+        //                     }
+        //                 }
+        //
+        //                 let (to_tag, _) =
+        //                     Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
+        //                 let (from_tag, _) =
+        //                     Self::get_contacts_tag(db_t.clone(), from_id).unwrap_or_default();
+        //                 match message_to(msg) {
+        //                     Some(msg) => Some(EventMeta {
+        //                         from_id,
+        //                         to_id: to,
+        //                         from_tag,
+        //                         to_tag,
+        //                         event_time,
+        //                         status,
+        //                         msg,
+        //                     }),
+        //                     None => None,
+        //                 }
+        //             } else {
+        //                 if let Some(key) = Self::get_offer_by_offer_id(db_t.clone(), from_id) {
+        //                     if let Ok(msg) =
+        //                         Message::decrypt(bytes::Bytes::from(msg), Some(key), nonce)
+        //                     {
+        //                         let status =
+        //                             Self::get_crc_tree_status(db_t.clone(), crc, &table) as u32;
+        //                         let (to_tag, _) =
+        //                             Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
+        //                         let (from_tag, _) = Self::get_contacts_tag(db_t.clone(), from_id)
+        //                             .unwrap_or_default();
+        //                         match message_to(msg) {
+        //                             Some(msg) => Some(EventMeta {
+        //                                 from_id,
+        //                                 to_id: to,
+        //                                 from_tag,
+        //                                 to_tag,
+        //                                 event_time,
+        //                                 status,
+        //                                 msg,
+        //                             }),
+        //                             None => {
+        //                                 error!("read msg 0: decrypt failed>>>");
+        //                                 None
+        //                             }
+        //                         }
+        //                     } else {
+        //                         error!("read msg 1: decrypt failed>>>");
+        //                         None
+        //                     }
+        //                 } else {
+        //                     error!("read msg 2: decrypt failed>>>");
+        //                     None
+        //                 }
+        //             }
+        //         });
+        //
+        //         let vv = vv.unwrap_or_default();
+        //
+        //         vv
+        //     }
+        //     Err(e) => {
+        //         error!("{e:?}");
+        //         None
+        //     }
+        // };
+        // Ok(ok)
     }
 
-    // TODO 后续与read_msg_with_meta 合并
-    fn read_msg_meta_without_chat_session(&self, did: u64, crc: u64 ) -> ClientResult<Option<EventMeta>> {
+    pub fn read_msg_meta_without_chat_session(&self, did: u64, crc: u64 ) -> ClientResult<Option<EventMeta>> {
         let table = format!("message_{did}");
         let tree = self.db().open_tree(&table)?;
         let db_t = self.db();

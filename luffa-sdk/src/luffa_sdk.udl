@@ -134,6 +134,8 @@ interface Client {
     [Throws=ClientError]
     EventMeta? read_msg_with_meta(u64 did,u64 crc);
     [Throws=ClientError]
+    EventMeta? read_msg_meta_without_chat_session(u64 did,u64 crc);
+    [Throws=ClientError]
     EventMeta? last_chat_msg_with_meta(u64 did);
 
     [Throws=ClientError]
