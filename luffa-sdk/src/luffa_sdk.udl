@@ -133,6 +133,8 @@ interface Client {
     EventMeta meta_msg([ByRef] sequence<u8> data);
     [Throws=ClientError]
     EventMeta? read_msg_with_meta(u64 did,u64 crc);
+    [Throws=ClientError]
+    EventMeta? last_chat_msg_with_meta(u64 did);
 
     [Throws=ClientError]
     string? gen_key([ByRef] string password,boolean store);
