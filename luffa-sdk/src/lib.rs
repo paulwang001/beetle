@@ -1771,6 +1771,11 @@ impl Client {
             *x = Some(tx.clone());
         }
 
+        {
+            let mut idx_db = self.idx.write();
+            *idx_db = Some(idx);
+        }
+
         let idx_writer = Arc::new(RwLock::new(writer));
         // self.schema.map(|x| x.replace(schema));
 

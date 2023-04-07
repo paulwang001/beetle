@@ -2,7 +2,7 @@ use chrono::Utc;
 use luffa_sdk::{Callback, Client};
 
 #[test]
-fn test() -> anyhow::Result<()> {
+fn test_client() -> anyhow::Result<()> {
     // step one new client
     let client = Client::new();
 
@@ -21,6 +21,8 @@ fn test() -> anyhow::Result<()> {
         .start(name, None, Box::new(OnMessageImpl))
         .expect("start failed");
 
+    let data = client.search("123".to_string(), 0, 100)?;
+    println!("search: {data:?}");
     let now = Utc::now().timestamp();
     println!("123");
     let name = client.get_current_user()?;
