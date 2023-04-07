@@ -165,22 +165,22 @@ pub enum ClientError{
     CustomError(String),
 }
 
-#[derive(Default)]
-struct CloneableAtomicBool(AtomicBool);
-
-impl Clone for CloneableAtomicBool {
-    fn clone(&self) -> Self {
-        Self(AtomicBool::new(self.0.load(Ordering::SeqCst)))
-    }
-}
-
-impl Deref for CloneableAtomicBool {
-    type Target = AtomicBool;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+// #[derive(Default)]
+// struct CloneableAtomicBool(AtomicBool);
+//
+// impl Clone for CloneableAtomicBool {
+//     fn clone(&self) -> Self {
+//         Self(AtomicBool::new(self.0.load(Ordering::SeqCst)))
+//     }
+// }
+//
+// impl Deref for CloneableAtomicBool {
+//     type Target = AtomicBool;
+//
+//     fn deref(&self) -> &Self::Target {
+//         &self.0
+//     }
+// }
 
 
 fn create_runtime() -> tokio::runtime::Runtime {
@@ -257,8 +257,8 @@ pub struct Client {
     filter: Arc<RwLock<Option<KeyFilter>>>,
     config: Arc<RwLock<Option<Config>>>,
     store: Arc<RwLock<Option<Arc<luffa_store::Store>>>>,
-    is_init: CloneableAtomicBool,
-    is_started: CloneableAtomicBool,
+    is_init: Arc<AtomicBool>,
+    is_started: Arc<std::sync::Mutex<bool>>,
 }
 
 impl ContactsDb for Client {}
@@ -1589,6 +1589,11 @@ impl Client {
     }
 
     pub fn stop(&self) -> ClientResult<()> {
+        let mut started = self.is_started.lock().unwrap();
+        if ! *started {
+            return Ok(())
+        }
+
         if let Err(e) =
             self.send_to(
                 u64::MAX,
@@ -1603,6 +1608,8 @@ impl Client {
             tracing::warn!("{e:?}");
             return Err(ClientError::CustomError(e.to_string()));
         }
+
+        *started = false;
         Ok(())
     }
     pub fn init(&self, cfg_path: Option<String>) -> ClientResult<()> {
@@ -1691,8 +1698,9 @@ impl Client {
         tag: Option<String>,
         cb: Box<dyn Callback>,
     ) -> ClientResult<u64> {
-        info!("is_start {}", self.is_started.load(Ordering::SeqCst));
-        if self.is_started.load(Ordering::SeqCst) {
+        let mut is_started = self.is_started.lock().unwrap();
+        info!("is_start {}", *is_started);
+        if *is_started {
             return Ok(self
                 .get_local_id()
                 .ok()
@@ -1781,7 +1789,7 @@ impl Client {
             });
         });
 
-        self.is_started.store(true, Ordering::SeqCst);
+        *is_started = true;
         Ok(my_id)
     }
 
