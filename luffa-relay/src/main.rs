@@ -203,7 +203,7 @@ async fn main() -> Result<()> {
                                     let (time,count,_) = queue.entry(to).or_insert((get_now(),from_id,0));
                                     *time = get_now();
                                     *count += 1;
-                                    tracing::warn!("TODO: offline notify");
+                                    tracing::info!("TODO: offline notify");
 
                                 }
                                 _=>{
@@ -232,7 +232,7 @@ async fn main() -> Result<()> {
                                                         let (time,count,tp) = queue.entry(to).or_insert((get_now(),from_id,0));
                                                         *time = get_now();
                                                         *count += 1;
-                                                        tracing::warn!("offline notification");
+                                                        tracing::info!("offline notification");
                                                     }
                                                     _=>{
 
