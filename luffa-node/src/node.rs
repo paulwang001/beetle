@@ -1847,8 +1847,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         &mut self,
         res: crate::behaviour::chat::Response,
         peer: PeerId,
-    )-> Result<()> 
-    {
+    ) -> Result<()> {
         if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
             let req = crate::behaviour::chat::Request(res.0);
             let (tx, rx) = tokio::sync::oneshot::channel();
@@ -1857,7 +1856,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             tokio::spawn(async move {
                 match rx.await {
                     Ok(Ok(Some(res))) =>{
-                        tracing::warn!("request successful:{:?}", res);
+                        tracing::info!("request successful:{:?}", res);
                     }
                     _=>{
                         tracing::error!("Chat request failed");
