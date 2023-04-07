@@ -1337,7 +1337,7 @@ impl Client {
     pub fn remove_key(&self, name: &str) -> ClientResult<bool> {
         println!("is init {}", self.is_init.load(Ordering::SeqCst));
         tracing::error!("is init {}", self.is_init.load(Ordering::SeqCst));
-        Self::remove_login_user(self.key_db())?;
+        // Self::remove_login_user(self.key_db())?;
         let ok = RUNTIME.block_on(async {
             tokio::time::sleep(Duration::from_secs(1)).await;
             if let Ok(Some(_)) = Self::remove_mnemonic_keypair(self.key_db(), name) {
@@ -1599,6 +1599,7 @@ impl Client {
     }
 
     pub fn stop(&self) -> ClientResult<()> {
+        Self::remove_login_user(self.key_db())?;
         let mut started = self.is_started.lock().unwrap();
         if !*started {
             return Ok(());

@@ -11,7 +11,7 @@ fn test_client() -> anyhow::Result<()> {
 
     // step three gen key return short name
     let name = client.gen_key("", true)?;
-    println!("short_name: {name:?}");
+    tracing::info!("short_name: {name:?}");
 
     // step four save short name
     client.save_key(name.as_ref().unwrap())?;
@@ -21,6 +21,7 @@ fn test_client() -> anyhow::Result<()> {
         .start(name, None, Box::new(OnMessageImpl))
         .expect("start failed");
 
+    //
     let data = client.search("123".to_string(), 0, 100)?;
     println!("search: {data:?}");
     let now = Utc::now().timestamp();
