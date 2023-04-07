@@ -8,6 +8,6 @@ fn test_avatar_nickname() {
     println!("{avatar}");
     // let data:Vec<&str> = avatar.chars();
     // println!("{}", data.len());
-    let nickname = generate_nickname(peer_id);
-    println!("{nickname}");
+    // let nickname = generate_nickname(peer_id);
+    // println!("{nickname}");
 }

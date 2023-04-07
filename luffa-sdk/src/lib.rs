@@ -1715,7 +1715,13 @@ impl Client {
                 .doc(doc_address)
                 .map_err(|_e| ClientError::SearchError)?;
             // tracing::info!("{}", schema.to_json(&retrieved_doc));
-            docs.push(schema.to_json(&retrieved_doc));
+            let mut map = HashMap::new();
+            let data = schema.to_json(&retrieved_doc);
+            let data: HashMap<String, Vec<serde_json::Value>> = serde_json::from_str(&data)?;
+            for (k, v) in data {
+                map.insert(k, v.get(0).unwrap().clone());
+            }
+            docs.push(serde_json::to_string(&map)?);
         }
         Ok(docs)
     }
