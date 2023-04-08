@@ -1,1 +1,1 @@
-docker build -f luffa-sdk.Dockerfile -t luffa-sdk-test .
+docker build -f luffa-sdk.Dockerfile -t luffa-client-test .
