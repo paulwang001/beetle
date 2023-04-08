@@ -438,7 +438,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             }
             if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
                 if let Err(e) = go.publish(TopicHash::from_raw(TOPIC_CHAT), evt.clone()) {
-                    tracing::warn!("Message can not pub to any relay node>>> {e:?}");
+                    tracing::info!("Message can not pub to any relay node>>> {e:?}");
                     self.pub_pending.push_back((evt, t));
                 }
             }
@@ -1083,6 +1083,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     nonce,
                                     ..
                                 } = event;
+                                if let Some(pending) = self.pending_routing.get(&to) {
+                                    if pending.iter().find(|(x,_)| *x == crc ).is_some() {
+                                        tracing::warn!("CRC is pending routing {crc}");
+                                        return Ok(());
+                                    }
+                                }
                                 if nonce.is_none() {
                                     
                                     if let Ok(msg) =
@@ -1368,6 +1374,13 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     ..
                                 } = event;
                                 let mut feed_crc = vec![crc];
+
+                                if let Some(pending) = self.pending_routing.get(&to) {
+                                    if pending.iter().find(|(x,_)| *x == crc ).is_some() {
+                                        tracing::warn!("CRC is pending routing {crc}");
+                                        return Ok(());
+                                    }
+                                }
                                 
                                 let mut feed_status = luffa_rpc_types::FeedbackStatus::Routing;
                                 if nonce.is_none() {
@@ -1473,7 +1486,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                                     TopicHash::from_raw(TOPIC_STATUS),
                                                                     evt.clone(),
                                                                 ) {
-                                                                    tracing::error!("Feedback>>>{e:?}  msg: {msg_t:?}");
+                                                                    tracing::warn!("Feedback>>>{e:?}  msg: {msg_t:?}");
                                                                     self.pub_pending.push_back((evt,Instant::now()));
                                                                 }
                                                             }
