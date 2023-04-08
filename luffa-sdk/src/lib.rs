@@ -8,8 +8,8 @@ use aes_gcm::{
 use anyhow::Context;
 use api::P2pClient;
 use futures::StreamExt;
+use libp2p::identity::Keypair;
 use libp2p::identity::PublicKey;
-use libp2p::{identity::Keypair};
 use libp2p::{multihash, PeerId};
 use luffa_node::{
     DiskStorage, GossipsubEvent, KeyFilter, Keychain, NetworkEvent, Node, ENV_PREFIX,
@@ -49,24 +49,23 @@ use image::EncodableLayout;
 use tantivy::collector::TopDocs;
 use tantivy::directory::{ManagedDirectory, MmapDirectory};
 use tantivy::query::QueryParser;
-use tantivy::{Index, TantivyError};
 use tantivy::{doc, DocAddress, Score};
 use tantivy::{schema::*, IndexWriter};
-use tokio::sync::oneshot::{Sender as ShotSender};
+use tantivy::{Index, TantivyError};
+use tokio::sync::oneshot::Sender as ShotSender;
 
 mod api;
-mod config;
 pub mod avatar_nickname;
+mod config;
 mod sled_db;
 
 use crate::config::Config;
 use crate::sled_db::contacts::{ContactsDb, KVDB_CONTACTS_TREE};
+use crate::sled_db::global_db::GlobalDb;
 use crate::sled_db::group_members::GroupMembersDb;
 use crate::sled_db::mnemonic::Mnemonic;
 use crate::sled_db::session::SessionDb;
-use crate::sled_db::global_db::GlobalDb;
 use crate::sled_db::SledDbAll;
-
 
 // const TOPIC_CONTACTS: &str = "luffa_contacts";
 // const TOPIC_CHAT: &str = "luffa_chat";
@@ -250,7 +249,8 @@ fn content_index(idx_path: &Path) -> (Index, Schema) {
         .filter(Stemmer::new(tantivy::tokenizer::Language::English));
     let index = Index::open_or_create(dir, schema.clone()).unwrap();
     index.tokenizers().register("term", ta);
-    index.tokenizers()
+    index
+        .tokenizers()
         .register("ngram", NgramTokenizer::new(1, 3, false));
     (index, schema)
 }
@@ -292,8 +292,7 @@ impl GlobalDb for Client {}
 
 impl Mnemonic for Client {}
 
-impl SledDbAll for Client{}
-
+impl SledDbAll for Client {}
 
 impl Client {
     pub fn new() -> Self {
@@ -499,12 +498,7 @@ impl Client {
             let token = RUNTIME.block_on(async {
                 let key = self.get_keypair(filter).await;
                 let token = key.as_ref().map(|key| {
-                    ContactsToken::new(
-                        key,
-                        tag.clone(),
-                        offer_key.clone(),
-                        c_type,
-                    ).unwrap()
+                    ContactsToken::new(key, tag.clone(), offer_key.clone(), c_type).unwrap()
                 });
                 token.unwrap()
             });
@@ -524,12 +518,20 @@ impl Client {
             Ok(crc) => {
                 // Self::update_offer_status(self.db(), crc, OfferStatus::Offer);
                 let now = Utc::now().timestamp_millis() as u64;
-                Self::save_offer_to_tree(self.db(),to, crc, offer_id, secret_key, OfferStatus::Offer,c_type,tag.unwrap_or_default(), now);
+                Self::save_offer_to_tree(
+                    self.db(),
+                    to,
+                    crc,
+                    offer_id,
+                    secret_key,
+                    OfferStatus::Offer,
+                    c_type,
+                    tag.unwrap_or_default(),
+                    now,
+                );
                 crc
             }
-            Err(_) => {
-                0
-            }
+            Err(_) => 0,
         };
         Ok(res)
     }
@@ -733,8 +735,8 @@ impl Client {
                                                 secret_key.clone(),
                                                 luffa_rpc_types::ContactsTypes::Group,
                                             )
-                                                .unwrap();
-
+                                            .unwrap();
+                                
                                             Message::ContactsExchange {
                                                 exchange: ContactsEvent::Answer { token, offer_crc: crc },
                                             }
@@ -753,113 +755,15 @@ impl Client {
                                                 0
                                             }
                                         };
+                                }
+                                        }
                                     }
                                 }
-                            }
-                        }
                         _=>{
 
-                        }
-                    }
-                }
-                _=>{
-
-                }
-            }
-        }
-        Ok(0)
-    }
-
-    pub fn contacts_reject(&self, did: u64, crc: u64) -> ClientResult<u64> {
-        if let Ok(Some(meta)) = self.read_msg_with_meta(did, crc) {
-            let EventMeta {
-                msg,
-                ..
-            } = meta;
-            let msg = message_from(msg).unwrap();
-            match msg {
-                Message::ContactsExchange { exchange }=>{
-                    match exchange {
-                        ContactsEvent::Offer { token }=>{
-                            if let Some((offer_id, offer_key, ..)) =
-                                Self::get_answer_from_tree(self.db(), crc)
-                            {
-                                Self::update_offer_status(self.db(),crc, OfferStatus::Reject);
-                                let ContactsToken { contacts_type,public_key,sign,comment,secret_key, .. } = token;
-                                match contacts_type {
-                                    ContactsTypes::Private=>{
-                                        let to = public_key_to_id(&public_key);
-                                        tracing::warn!("secret_key::: {}", secret_key.len());
-                                        let new_key = match self.get_secret_key(to) {
-                                            Some(key) => {
-                                                tracing::warn!("contacts old s key");
-                                                key
-                                            }
-                                            None => secret_key.clone(),
-                                        };
-                                        // Self::save_contacts(
-                                        //     self.db(),
-                                        //     to,
-                                        //     new_key.clone(),
-                                        //     public_key.clone(),
-                                        //     contacts_type,
-                                        //     sign,
-                                        //     comment,
-                                        //     None,
-                                        // );
-                                        return self.contacts_reject_private(to, offer_id, crc,offer_key);
-                                    }
-                                    ContactsTypes::Group=>{
-                                        // let group_keypair = format!("GROUPKEYPAIR-{}", did);
-                                        // let group_keypair = Self::get_key(self.db(), &group_keypair).unwrap();
-                                        // let secret_key = self.get_secret_key(did).unwrap();
-                                        // let g_key = Keypair::from_protobuf_encoding(group_keypair.clone().as_bytes())?;
-                                        // let tag = self.find_contacts_tag(did)?;
-                                        let msg = {
-                                            // let token = ContactsToken::new(
-                                            //     &g_key,
-                                            //     tag,
-                                            //     secret_key.clone(),
-                                            //     luffa_rpc_types::ContactsTypes::Group,
-                                            // )
-                                            //     .unwrap();
-
-                                            let filter = self.filter.read().as_ref().map(|f| f.clone());
-                                            let public_key = RUNTIME.block_on(async {
-                                                let key = self.get_keypair(filter).await;
-                                                let public_key = key.as_ref().map(|key| {
-                                                    key.public().to_protobuf_encoding()
-                                                });
-                                                public_key.unwrap()
-                                            });
-
-                                            Message::ContactsExchange {
-                                                exchange: ContactsEvent::Reject { public_key, offer_crc: crc },
-                                            }
-                                        };
-                                        let to = public_key_to_id(&public_key);
-                                        match self.send_to(to, msg, offer_id, Some(offer_key)).map_err(|e| {
-                                            tracing::warn!("send_to failed:{e:?}");
-                                            ClientError::SendFailed
-                                        }) {
-                                            Ok(crc) => {
-                                                // let now = Utc::now().timestamp_millis() as u64;
-                                                // Self::update_session(self.db(), did, None, None, None, None, None,now);
-                                                crc
-                                            }
-                                            Err(_) => {
-                                                0
-                                            }
-                                        };
-                                    }
-                                }
                             }
                         }
-                        _=>{
-
-                        }
                     }
-                }
                 _=>{
 
                 }
@@ -916,49 +820,6 @@ impl Client {
         };
         Ok(res)
     }
-
-    fn contacts_reject_private(
-        &self,
-        to: u64,
-        offer_id: u64,
-        offer_crc: u64,
-        // secret_key: Vec<u8>,
-        offer_key: Vec<u8>,
-    ) -> ClientResult<u64> {
-        let my_id = self.get_local_id()?.unwrap();
-        // let comment = self.find_contacts_tag(my_id)?;
-
-        let filter = self.filter.read().as_ref().map(|f| f.clone());
-        let public_key = RUNTIME.block_on(async {
-            let key = self.get_keypair(filter).await;
-            let public_key = key.as_ref().map(|key| {
-                key.public().to_protobuf_encoding()
-            });
-            public_key.unwrap()
-        });
-
-        let msg = {
-            Message::ContactsExchange {
-                exchange: ContactsEvent::Reject { offer_crc, public_key },
-            }
-        };
-
-        let res = match self.send_to(to, msg, offer_id, Some(offer_key)).map_err(|e| {
-            tracing::warn!("send_to failed:{e:?}");
-            ClientError::SendFailed
-        }) {
-            Ok(crc) => {
-                // let now = Utc::now().timestamp_millis() as u64;
-                // Self::update_session(self.db(), to, None, None, None, None, None,now);
-                crc
-            }
-            Err(_) => {
-                0
-            }
-        };
-        Ok(res)
-    }
-
 
 
     fn save_contacts_offer(&self, offer_id: u64, secret_key: Vec<u8>) {
@@ -1903,7 +1764,6 @@ impl Client {
         }
         Ok(res)
     }
-
     pub fn contacts_search(&self, c_type: u8, pattern: &str) -> ClientResult<Vec<ContactsView>> {
         let tree = Self::open_contact_tree(self.db())?;
         let options = SearchOptions::new()
