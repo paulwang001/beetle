@@ -282,8 +282,6 @@ impl SessionDb for Client {}
 
 impl GroupMembersDb for Client {}
 
-impl GlobalDb for Client {}
-
 impl Mnemonic for Client {}
 
 impl SledDbAll for Client {}
