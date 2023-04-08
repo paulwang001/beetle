@@ -215,7 +215,7 @@ fn main() -> Result<()> {
                                 };
                                 let msg = message_to(msg).unwrap();
                                 let crc = client.send_msg(g.did, msg).unwrap();
-                                tracing::info!("group msg send seccess {crc}");
+                                tracing::warn!("group msg send seccess {crc}");
                             }
                         }
                         let list = client.session_list(10).unwrap();

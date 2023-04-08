@@ -539,16 +539,12 @@ impl Client {
     ) -> ClientResult<u64> {
         let key_id = self.gen_key("", false)?.unwrap();
         let g_key = self.read_keypair(&key_id).unwrap();
-        let g_id = bs58::decode(key_id).into_vec().unwrap();
-        let mut buf = [0u8; 8];
-        buf.clone_from_slice(&g_id[..8]);
-        let g_id = u64::from_be_bytes(buf);
-
+        let kg_id = bs58_decode(&key_id).unwrap(); 
         let my_id = self.get_local_id()?.unwrap();
 
         let secret_key = Aes256Gcm::generate_key(&mut OsRng);
         let secret_key = secret_key.to_vec();
-        let msg = {
+        let (g_id, msg) = {
             let token = ContactsToken::new(
                 &g_key,
                 tag,
@@ -565,6 +561,8 @@ impl Client {
                 comment,
                 ..
             } = token.clone();
+            let g_id = public_key_to_id(&public_key);
+            warn!("create group---> {g_id}  == {kg_id} ?");
             Self::save_contacts(
                 self.db(),
                 g_id,
@@ -575,10 +573,15 @@ impl Client {
                 comment,
                 g_key.to_protobuf_encoding().ok(),
             );
-
-            Message::ContactsExchange {
-                exchange: ContactsEvent::Answer { token, offer_crc: 0 },
-            }
+            (
+                g_id,
+                Message::ContactsExchange {
+                    exchange: ContactsEvent::Answer {
+                        token,
+                        offer_crc: 0,
+                    },
+                },
+            )
         };
         RUNTIME.block_on(async {
             let contacts = vec![Contacts {
