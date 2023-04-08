@@ -31,8 +31,9 @@ fn main() -> ClientResult<()> {
     let idx = args.idx;
     let user = KEYS.get(idx).clone().unwrap();
 
+
     let client = Client::new();
-    client.init(Some(format!("./sdk/{}", idx)))?;
+    client.init(None)?;
     let name = client.import_key(&user.mnemonic, "")?.unwrap();
     client.save_key(&name)?;
     let my_id = client.start(Some(name), None, Box::new(OnMessageImpl))?;
@@ -44,8 +45,13 @@ fn main() -> ClientResult<()> {
     //
     loop {
         let line = stdin.next().unwrap()?;
+        let line:Vec<&str> = line.split(" ").collect();
+        if line.len() != 2 {
+            continue;
+        }
+        let commend = line.get(0);
         println!("{}", line);
-
+        match
         let msg_id = client.send_msg(user.to, "123".as_bytes().to_vec())?;
         println!("msg_id: {msg_id}");
     }

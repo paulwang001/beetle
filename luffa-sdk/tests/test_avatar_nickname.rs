@@ -3,7 +3,7 @@ use luffa_sdk::avatar_nickname::nickname::generate_nickname;
 
 #[test]
 fn test_avatar_nickname() {
-    let peer_id = "123";
+    let peer_id = "16842655250600210769";
     let avatar = generate_avatar(peer_id);
     println!("{avatar}");
     // let data:Vec<&str> = avatar.chars();
