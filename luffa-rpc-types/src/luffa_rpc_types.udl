@@ -54,8 +54,9 @@ interface RtcAction {
 [Enum]
 interface ContactsEvent {
     Offer(ContactsToken token);
-    Answer(ContactsToken token);
-    Reject(u64 crc,sequence<u8> public_key);
+    Answer(u64 offer_crc,ContactsToken token);
+    Reject(u64 offer_crc,sequence<u8> public_key);
+    Join(u64 offer_crc);
 };
 
 [Enum]

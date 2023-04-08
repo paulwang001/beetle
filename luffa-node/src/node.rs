@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::error::Error;
 use std::fmt;
 use std::num::NonZeroUsize;
@@ -140,27 +140,19 @@ pub enum GossipsubEvent {
 pub struct Node<KeyStorage: Storage> {
     swarm: Swarm<NodeBehaviour>,
     net_receiver_in: Receiver<rpc::RpcMessage>,
-    chat_receiver: Receiver<(
-        crate::behaviour::chat::Response,
-        PeerId,
-    )>,
-    chat_sender: Arc<
-        Sender<(
-            crate::behaviour::chat::Response,
-            PeerId,
-        )>,
-    >,
-    routing_tx:Sender<(PeerId,Vec<u64>)>,
-    routing_rx:Receiver<(PeerId,Vec<u64>)>,
+    chat_receiver: Receiver<(crate::behaviour::chat::Response, PeerId)>,
+    chat_sender: Arc<Sender<(crate::behaviour::chat::Response, PeerId)>>,
+    routing_tx: Sender<(PeerId, Vec<u64>)>,
+    routing_rx: Receiver<(PeerId, Vec<u64>)>,
     dial_queries: AHashMap<PeerId, Vec<OneShotSender<Result<()>>>>,
-    pending_routing: AHashMap<u64,Vec<(u64,Instant)>>,
-    connected_peers: AHashMap<u64,PeerId>,
+    pending_routing: AHashMap<u64, Vec<(u64, Instant)>>,
+    connected_peers: AHashMap<u64, PeerId>,
     lookup_queries: AHashMap<PeerId, Vec<oneshot::Sender<Result<IdentifyInfo>>>>,
     // TODO(ramfox): use new providers queue instead
     find_on_dht_queries: AHashMap<Vec<u8>, DHTQuery>,
     record_on_dht_queries: AHashMap<Vec<u8>, (QueryId, Vec<OneShotSender<Result<Option<Record>>>>)>,
     provider_on_dht_queries: AHashMap<Vec<u8>, (QueryId, Vec<OneShotSender<Result<QueryId>>>)>,
-    pending_request: AHashMap<RequestId, (u64,u64,OneShotSender<Result<Option<ChatResponse>>>)>,
+    pending_request: AHashMap<RequestId, (u64, u64, OneShotSender<Result<Option<ChatResponse>>>)>,
     network_events: Vec<Sender<NetworkEvent>>,
     _keychain: Keychain<KeyStorage>,
     #[allow(dead_code)]
@@ -171,6 +163,7 @@ pub struct Node<KeyStorage: Storage> {
     listen_addrs: Vec<Multiaddr>,
     store: Arc<luffa_store::Store>,
     cache: DiGraph<u64, (u64, u64)>,
+    pub_pending: VecDeque<(Vec<u8>, Instant)>,
     connections: UnGraph<u64, ConnectionEdge>,
     contacts: UnGraph<u64, u8>,
     agent: Option<String>,
@@ -204,7 +197,8 @@ type BitswapSessions = AHashMap<u64, Vec<(oneshot::Sender<()>, JoinHandle<()>)>>
 pub const DEFAULT_PROVIDER_LIMIT: usize = 10;
 const NICE_INTERVAL: Duration = Duration::from_secs(6);
 const BOOTSTRAP_INTERVAL: Duration = Duration::from_secs(30);
-const EXPIRY_INTERVAL: Duration = Duration::from_secs(1);
+const EXPIRY_INTERVAL: Duration = Duration::from_secs(12);
+const PUB_INTERVAL: Duration = Duration::from_secs(1);
 
 impl<KeyStorage: Storage> Node<KeyStorage> {
     pub async fn new(
@@ -291,6 +285,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 connections,
                 contacts,
                 agent,
+                pub_pending: Default::default(),
             },
             network_sender_in,
         ))
@@ -311,9 +306,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
         let mut nice_interval = self
             .use_dht
-            .then(|| tokio::time::interval(NICE_INTERVAL * 10));
+            .then(|| tokio::time::interval(NICE_INTERVAL));
         let mut bootstrap_interval = tokio::time::interval(BOOTSTRAP_INTERVAL);
         let mut expiry_interval = tokio::time::interval(EXPIRY_INTERVAL);
+        let mut pub_interval = tokio::time::interval(PUB_INTERVAL);
 
         loop {
             inc!(P2PMetrics::LoopCounter);
@@ -384,11 +380,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 }, if nice_interval.is_some() => {
                     // Print peer count on an interval.
                     tracing::warn!("[{}] Peers connected: {:?}",self.local_peer_id(), self.swarm.connected_peers().count());
-                    // self.dht_nice_tick().await;
+                    self.dht_nice_tick().await;
                 }
                 _ = bootstrap_interval.tick() => {
                     if let Err(e) = self.swarm.behaviour_mut().kad_bootstrap() {
-                        tracing::info!("kad bootstrap failed: {:?}", e);
+                        tracing::warn!("kad bootstrap failed: {:?}", e);
                     }
                     else{
                         tracing::debug!("kad bootstrap successfully");
@@ -396,8 +392,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 }
                 _ = expiry_interval.tick() => {
                     if let Err(err) = self.expiry() {
-                        tracing::info!("expiry error {:?}", err);
+                        tracing::warn!("expiry error {:?}", err);
                     }
+                }
+                _ = pub_interval.tick() => {
+                    self.pub_pending_tick();
                 }
             }
         }
@@ -428,11 +427,22 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
         Ok(())
     }
-    
+
     /// Re put pending routing.
     #[tracing::instrument(skip(self))]
-    async fn pub_routing_tick(&mut self) {
-       
+    fn pub_pending_tick(&mut self) {
+        while let Some((evt, t)) = self.pub_pending.pop_back() {
+            if t.elapsed().as_secs() > 60 {
+                tracing::error!("pub event is timeout!!!");
+                continue;
+            }
+            if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
+                if let Err(e) = go.publish(TopicHash::from_raw(TOPIC_CHAT), evt.clone()) {
+                    tracing::info!("Message can not pub to any relay node>>> {e:?}");
+                    self.pub_pending.push_back((evt, t));
+                }
+            }
+        }
     }
     /// Check the next node in the DHT.
     #[tracing::instrument(skip(self))]
@@ -464,14 +474,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         }
 
         if let Some((dial_opts, range)) = to_dial {
-            warn!(
+            info!(
                 "checking node {:?} in bucket range ({:?})",
                 dial_opts.get_peer_id().unwrap(),
                 range
             );
 
             if let Err(e) = self.swarm.dial(dial_opts) {
-                error!("failed to dial: {:?}", e);
+                info!("failed to dial: {:?}", e);
             }
             self.kad_last_range = Some(range);
         }
@@ -638,7 +648,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
                     if let Some(e) = self.connections.find_edge(f, t) {
                         self.connections.remove_edge(e);
-                        tracing::error!("local disconnection >> {my_id} --> {to_id}");
+                        tracing::warn!("local disconnection >> {my_id} --> {to_id}");
                     }
                     else{
                         tracing::error!("local disconnection >> {my_id} --> {to_id}");
@@ -1073,6 +1083,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     nonce,
                                     ..
                                 } = event;
+                                if let Some(pending) = self.pending_routing.get(&to) {
+                                    if pending.iter().find(|(x,_)| *x == crc ).is_some() {
+                                        tracing::warn!("CRC is pending routing {crc}");
+                                        return Ok(());
+                                    }
+                                }
                                 if nonce.is_none() {
                                     
                                     if let Ok(msg) =
@@ -1125,25 +1141,49 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     match status {
                                                         AppStatus::Active
                                                         | AppStatus::Connected => {
-                                                            let time = Utc::now().timestamp_millis()
-                                                                as u64;
-                                                            self.connections.update_edge(
-                                                                f,
-                                                                t,
-                                                                ConnectionEdge::Remote(time),
-                                                            );
-                                                            tracing::info!("remote connection {from_id} -> {to}");
+                                                            // this node is connected to the target of this message?
+                                                            let mut edges = self.connections.edges(t);
+                                                            match edges.find(|e| match e.weight() {
+                                                                ConnectionEdge::Local(_) => true,
+                                                                _ => false,
+                                                            }){
+                                                                None=>{
+                                                                    let time = Utc::now().timestamp_millis()
+                                                                        as u64;
+                                                                    self.connections.update_edge(
+                                                                        f,
+                                                                        t,
+                                                                        ConnectionEdge::Remote(time),
+                                                                    );
+                                                                    tracing::warn!("remote connection {from_id} -> {to}");
+                                                                }
+                                                                _=>{
+
+                                                                }
+                                                            }
                                                         }
                                                         _ => {
-                                                            if let Some(i) =
-                                                                self.connections.find_edge(f, t)
-                                                            {
-                                                                self.connections.remove_edge(i);
-                                                                tracing::info!("remote disconnection {from_id} -> {to}");
+                                                            let mut edges = self.connections.edges(t);
+                                                            match edges.find(|e| match e.weight() {
+                                                                ConnectionEdge::Local(_) => true,
+                                                                _ => false,
+                                                            }){
+                                                                None=>{
+                                                                    if let Some(i) =
+                                                                    self.connections.find_edge(f, t)
+                                                                    {
+                                                                        self.connections.remove_edge(i);
+                                                                        tracing::warn!("remote disconnection {from_id} -> {to}");
+                                                                    }
+                                                                    else{
+                                                                        tracing::error!("remote disconnection {from_id} -> {to}");
+                                                                    }
+                                                                }
+                                                                _=>{
+
+                                                                }
                                                             }
-                                                            else{
-                                                                tracing::error!("remote disconnection {from_id} -> {to}");
-                                                            }
+                                                           
                                                         }
                                                     }
                                                 }
@@ -1162,7 +1202,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         let mut rx_any = None;
                                         if tp == 0 {
                                             // contact is private
-                                            let f = self.get_peer_index(my_id);
+                                            // let f = self.get_peer_index(my_id);
                                             let t = self.get_peer_index(to);
                                             let pending = self.pending_routing.entry(to).or_insert(Vec::new());
                                             pending.push((crc,std::time::Instant::now()));
@@ -1172,31 +1212,31 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                             {
                                                 rx_any = Some(rx);
                                             }
-                                            if rx_any.is_none() {
-                                                if let Some((cost, paths)) = astar(
-                                                    &self.connections,
-                                                    f,
-                                                    |f| f == t,
-                                                    |_e| 1,
-                                                    |_| 0,
-                                                ) {
-                                                    println!("[{cost}] paths 3>>>>>> {paths:?}");
-                                                    //route this message to shortest node and then break if the node is connected.
-                                                    for r in paths {
-                                                        if r != f {
-                                                            match self
-                                                                .local_send_if_connected(r, data)
-                                                            {
-                                                                Ok(Some(rx)) => {
-                                                                    rx_any = Some(rx);
-                                                                    break;
-                                                                }
-                                                                _ => {}
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                            // if rx_any.is_none() {
+                                            //     if let Some((cost, paths)) = astar(
+                                            //         &self.connections,
+                                            //         f,
+                                            //         |f| f == t,
+                                            //         |_e| 1,
+                                            //         |_| 0,
+                                            //     ) {
+                                            //         println!("[{cost}] paths 3>>>>>> {paths:?}");
+                                            //         //route this message to shortest node and then break if the node is connected.
+                                            //         for r in paths {
+                                            //             if r != f {
+                                            //                 match self
+                                            //                     .local_send_if_connected(r, data)
+                                            //                 {
+                                            //                     Ok(Some(rx)) => {
+                                            //                         rx_any = Some(rx);
+                                            //                         break;
+                                            //                     }
+                                            //                     _ => {}
+                                            //                 }
+                                            //             }
+                                            //         }
+                                            //     }
+                                            // }
                                         } else {
                                             let g_idx = self.get_contacts_index(to);
                                             let members = self.contacts.edges(g_idx);
@@ -1242,7 +1282,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             } = evt;
                                                             if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), None, nonce)
                                                             {
-                                                                tracing::warn!("[{crc}] res msg>> {msg:?}");
+                                                                tracing::info!("[{crc}] res msg>> {msg:?}");
                                                             }
                                                         }
                                                         
@@ -1334,6 +1374,13 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     ..
                                 } = event;
                                 let mut feed_crc = vec![crc];
+
+                                if let Some(pending) = self.pending_routing.get(&to) {
+                                    if pending.iter().find(|(x,_)| *x == crc ).is_some() {
+                                        tracing::warn!("CRC is pending routing {crc}");
+                                        return Ok(());
+                                    }
+                                }
                                 
                                 let mut feed_status = luffa_rpc_types::FeedbackStatus::Routing;
                                 if nonce.is_none() {
@@ -1394,7 +1441,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         TopicHash::from_raw(TOPIC_STATUS),
                                                         evt,
                                                     ) {
-                                                        tracing::error!("[{from_id}]StatusSync pub>>>:{e:?}");
+                                                        tracing::error!("[{from_id}] StatusSync pub>>>:{e:?}");
                                                     }
                                                 }
                                                 
@@ -1425,7 +1472,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             pending.retain(|(c,_t)| !crc.contains(c));
                                                             // if !pending.is_empty() {
                                                             // }
-                                                            tracing::warn!("from {from} Reach>>>> {:?}", pending);
+                                                            tracing::info!("from {from} Reach>>>> {:?}", pending);
                                                             if let Some(go) = self
                                                             .swarm
                                                             .behaviour_mut()
@@ -1437,9 +1484,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                                 let evt = evt.encode()?;
                                                                 if let Err(e) = go.publish(
                                                                     TopicHash::from_raw(TOPIC_STATUS),
-                                                                    evt,
+                                                                    evt.clone(),
                                                                 ) {
-                                                                    tracing::error!("Feedback>>>{e:?}  msg: {msg_t:?}");
+                                                                    tracing::warn!("Feedback>>>{e:?}  msg: {msg_t:?}");
+                                                                    self.pub_pending.push_back((evt,Instant::now()));
                                                                 }
                                                             }
                                                         }
@@ -1569,6 +1617,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             request.data().to_vec(),
                                                         ) {
                                                             tracing::error!("[{tp}]:Message can not route to any relay node>>> {e:?}");
+                                                            self.pub_pending.push_back((request.data().to_vec(),Instant::now()));
                                                         }
                                                         let status = FeedbackStatus::Routing;
                                                         let msg_t = Message::Feedback {crc:vec![crc],from_id:Some(to),to_id:Some(to),status};
@@ -1576,14 +1625,15 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         let evt = evt.encode().unwrap();
                                                         if let Err(e) = go.publish(
                                                             TopicHash::from_raw(TOPIC_CHAT),
-                                                            evt,
+                                                            evt.clone(),
                                                         ) {
                                                             tracing::error!("[{tp}] Routing can not route to any relay node>>> {e:?}");
+                                                            self.pub_pending.push_back((evt,Instant::now()));
                                                         }
 
                                                         
                                                     }
-                                                    tracing::warn!("not connect.");
+                                                    tracing::info!("not connect.");
                                                     self.emit_network_event(NetworkEvent::RequestResponse(
                                                         ChatEvent::Request(request.data().to_vec()),
                                                     ));
@@ -1599,6 +1649,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     request.data().to_vec(),
                                                 ) {
                                                     tracing::error!("group msg pub>>>{e:?}");
+                                                    self.pub_pending.push_back((request.data().to_vec(),Instant::now()));
                                                 }
                                             }
 
@@ -1717,6 +1768,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         request.data().to_vec(),
                                                     ) {
                                                         tracing::warn!("not route,publish failed, {e:?}");
+                                                        self.pub_pending.push_back((request.data().to_vec(),Instant::now()));
                                                     }
                                                 }
                                                
@@ -1808,8 +1860,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         &mut self,
         res: crate::behaviour::chat::Response,
         peer: PeerId,
-    )-> Result<()> 
-    {
+    ) -> Result<()> {
         if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
             let req = crate::behaviour::chat::Request(res.0);
             let (tx, rx) = tokio::sync::oneshot::channel();
@@ -1818,7 +1869,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             tokio::spawn(async move {
                 match rx.await {
                     Ok(Ok(Some(res))) =>{
-                        tracing::warn!("request successful:{:?}", res);
+                        tracing::info!("request successful:{:?}", res);
                     }
                     _=>{
                         tracing::error!("Chat request failed");
@@ -1992,7 +2043,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         let to_id = digest.sum64();
                         let req_id = chat.send_request(p, crate::behaviour::chat::Request(data));
                         self.pending_request.insert(req_id, (crc,to_id,tx));
-                        tracing::warn!("local chat to [{p:?}] send. {:?}", req_id);
+                        tracing::info!("local chat to [{p:?}] send. {:?}", req_id);
 
                         return Ok(Some(rx));
                     }
