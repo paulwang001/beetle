@@ -197,11 +197,17 @@ fn main() -> Result<()> {
                         }
                         let groups = client.contacts_list(1).unwrap();
                         if !members.is_empty() && groups.is_empty() {
-                            let created = client.contacts_group_create(members, Some(format!("First Group"))).is_ok();
+                            let created = client.contacts_group_create(members, None).is_ok();
                             tracing::warn!("group created:{created}");
                         }
                         else if !groups.is_empty() {
                             for g in groups {
+                                let msgs = client.recent_messages(g.did, 0, 10).unwrap();
+                                if msgs.is_empty() {
+                                    let created = client.contacts_group_create(members.clone(), Some(g.tag)).is_ok();
+                                    tracing::warn!("empty msg>>> group created:{created}");
+                                    continue;
+                                }
                                 let mnemonic = Mnemonic::new(MnemonicType::Words24, Language::English);
                                 let msg = Message::Chat {
                                     content: luffa_rpc_types::ChatContent::Send {
