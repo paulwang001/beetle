@@ -31,6 +31,7 @@ enum OfferStatus {
 
 dictionary OfferView {
   u64 did;
+  string bs_did;
   u64 offer_crc;
   string tag;
   OfferStatus status;
@@ -167,6 +168,10 @@ interface Client {
 
     [Throws=ClientError]
     EventMeta? read_msg_with_meta(u64 did,u64 crc);
+    [Throws=ClientError]
+    EventMeta? read_msg_meta_without_chat_session(u64 did,u64 crc);
+    [Throws=ClientError]
+    EventMeta? last_chat_msg_with_meta(u64 did);
 
     [Throws=ClientError]
     string? gen_key([ByRef] string password,boolean store);

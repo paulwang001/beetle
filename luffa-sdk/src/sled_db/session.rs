@@ -125,7 +125,7 @@ pub trait SessionDb: ContactsDb {
                         read_crc: read.unwrap_or_default(),
                         reach_crc,
                         last_msg: msg.clone().unwrap_or_default(),
-                        enabled_silent: true,
+                        enabled_silent: false,
                         last_msg_status: status.unwrap_or_default(),
                     };
                     Some(serde_cbor::to_vec(&upd).unwrap())
