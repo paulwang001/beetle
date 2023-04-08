@@ -3492,6 +3492,14 @@ impl Client {
                                                 db_t.clone(),
                                             )
                                             .await;
+                                            let table = format!("message_{did}");
+                                            Self::save_to_tree(
+                                                db_t.clone(),
+                                                crc,
+                                                &table,
+                                                evt_data.clone(),
+                                                event_time,
+                                            );
                                             if token.contacts_type == ContactsTypes::Group {
                                                 let join = luffa_rpc_types::Message::ContactsExchange { exchange: ContactsEvent::Join {
                                                     offer_crc
@@ -3554,6 +3562,14 @@ impl Client {
                                           
                                             let tag = comment.unwrap_or_default();
                                             Self::save_offer_to_tree(db_t.clone(),did,crc,offer_id,offer_key,OfferStatus::Offer,contacts_type,tag,event_time);
+                                            let table = format!("message_{did}");
+                                            Self::save_to_tree(
+                                                db_t.clone(),
+                                                crc,
+                                                &table,
+                                                evt_data.clone(),
+                                                event_time,
+                                            );
 
                                         }
                                         ContactsEvent::Reject {offer_crc,public_key} =>{
@@ -3582,14 +3598,7 @@ impl Client {
                                         }
                                     };
 
-                                    let table = format!("message_{did}");
-                                    Self::save_to_tree(
-                                        db_t.clone(),
-                                        crc,
-                                        &table,
-                                        evt_data.clone(),
-                                        event_time,
-                                    );
+                                  
                                 }
                                 Message::Chat { content } => match content {
                                     ChatContent::Feedback { crc, status } => {
