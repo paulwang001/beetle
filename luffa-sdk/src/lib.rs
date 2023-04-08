@@ -1284,10 +1284,58 @@ impl Client {
     }
 
     pub fn last_chat_msg_with_meta(&self, did: u64) -> ClientResult<Option<EventMeta>> {
+        self.last_msg_meta(did, &|msg| {
+            matches!(
+                msg,
+                Message::Chat {
+                    content: ChatContent::Send { .. },
+                }
+            )
+        })
+
+        // let mut i = 0;
+        // const BASE: u32 = 10;
+        // loop {
+        //     let msgs = self.recent_messages(did, BASE * i, BASE)?;
+        //     if msgs.is_empty() { return Ok(None)}
+        //
+        //     let event = msgs
+        //         .into_iter()
+        //         .filter_map(|x| self.read_msg_meta_without_chat_session(did, x).ok().flatten())
+        //         .filter_map(|e| {
+        //             let msg = serde_cbor::from_slice::<Message>(&e.msg).ok()?;
+        //             match &msg {
+        //                 Message::Chat {
+        //                     content: ChatContent::Send { .. },
+        //                 } => Some(e),
+        //                 _ => None,
+        //             }
+        //         })
+        //         .nth(0);
+        //
+        //     if event.is_some() {return Ok(event)}
+        //
+        //     i += 1;
+        // }
+    }
+
+    pub fn last_user_msg_with_meta(&self, did: u64) -> ClientResult<Option<EventMeta>> {
+        self.last_msg_meta(did, &|msg| {
+            matches!(
+                msg,
+                Message::Chat {
+                    content: ChatContent::Send { .. },
+                }
+                | Message::WebRtc { .. }
+            )
+        })
+    }
+
+    fn last_msg_meta(&self, did: u64, filter: &dyn Fn(&Message) -> bool) -> ClientResult<Option<EventMeta>> {
         let mut i = 0;
-        const BASE: i32 = 10;
+        const BASE: u32 = 10;
         loop {
-            let msgs = self.recent_messages(did, (BASE * i) as u32, BASE as u32)?;
+            let msgs = self.recent_messages(did, BASE * i, BASE)?;
             if msgs.is_empty() { return Ok(None)}
 
             let event = msgs
@@ -1295,12 +1343,7 @@ impl Client {
                 .filter_map(|x| self.read_msg_meta_without_chat_session(did, x).ok().flatten())
                 .filter_map(|e| {
                     let msg = serde_cbor::from_slice::<Message>(&e.msg).ok()?;
-                    match &msg {
-                        Message::Chat {
-                            content: ChatContent::Send { .. },
-                        } => Some(e),
-                        _ => None,
-                    }
+                    filter(&msg).then_some(e)
                 })
                 .nth(0);
 
