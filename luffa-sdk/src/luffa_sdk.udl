@@ -2,6 +2,8 @@ namespace LuffaSDK {
   u64 public_key_to_id([ByRef] sequence<u8> public_key);
   [Throws=ClientError]
   u64 bs58_decode([ByRef] string data);
+  [Throws=ClientError]
+  string bs58_encode(u64 data);
 };
 
 dictionary ChatSession {
@@ -101,6 +103,8 @@ interface Client {
     
     [Throws=ClientError]
     u64 contacts_anwser(u64 did,u64 crc);
+    [Throws=ClientError]
+    u64 contacts_reject(u64 did,u64 crc);
     
     [Throws=ClientError]
     u64 send_msg(u64 to,sequence<u8> msg);
