@@ -8,7 +8,6 @@ pub mod group_members;
 pub mod contacts;
 pub mod session;
 pub mod mnemonic;
-pub mod global_db;
 
 pub trait SledDbAll: ContactsDb + SessionDb + GroupMembersDb + Mnemonic{}
 
