@@ -1252,6 +1252,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 .collect::<Vec<_>>();
                                             for t in targets {
                                                 if let Some(to_id) = self.contacts.node_weight(t) {
+                                                    if *to_id == from_id {
+                                                        continue;
+                                                    }
                                                     let did = *to_id;
                                                     let pending = self.pending_routing.entry(did).or_insert(Vec::new());
                                                     pending.push((crc,std::time::Instant::now()));
@@ -1668,6 +1671,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 .collect::<Vec<_>>();
                                             for t in targets {
                                                 if let Some(to_id) = self.contacts.node_weight(t) {
+                                                    if *to_id == from_id {
+                                                        continue;
+                                                    }
                                                     let pending = self.pending_routing.entry(*to_id).or_insert(Vec::new());
                                                     pending.push((crc,std::time::Instant::now()));
                                                     let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(*to_id), status: FeedbackStatus::Notice };

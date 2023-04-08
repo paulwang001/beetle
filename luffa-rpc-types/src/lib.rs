@@ -373,7 +373,6 @@ pub enum ContactsEvent {
         offer_crc: u64,
         public_key: Vec<u8>,
     },
-
     Join {
         offer_crc: u64,
     },
