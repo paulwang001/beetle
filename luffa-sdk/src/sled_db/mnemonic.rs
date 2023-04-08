@@ -1,4 +1,3 @@
-use crate::sled_db::global_db::GlobalDb;
 use crate::ClientError::CustomError;
 use crate::ClientResult;
 use image::EncodableLayout;
