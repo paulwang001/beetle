@@ -46,16 +46,19 @@ fn main() -> ClientResult<()> {
     loop {
         let line = stdin.next().unwrap()?;
         let line:Vec<&str> = line.split(" ").collect();
-        if line.len() != 2 {
+        if line.len() > 1 {
+            tracing::error!("command: {:?} error", line);
             continue;
         }
-        let commend = line.get(0);
-        println!("{}", line);
-        match
+        let command = *line.get(0).unwrap();
+        let args;
+
+        let args = *line.get(1).unwrap();
+        println!("{:?}", line);
+
         let msg_id = client.send_msg(user.to, "123".as_bytes().to_vec())?;
         println!("msg_id: {msg_id}");
     }
-    // client.init()
     Ok(())
 }
 
