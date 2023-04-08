@@ -100,6 +100,9 @@ interface Client {
     
     [Throws=ClientError]
     boolean contacts_group_invite_member(u64 g_id, sequence<u64> invitee);
+
+    [Throws=ClientError]
+    sequence<u64> contacts_group_members(u64 g_id);
     
     [Throws=ClientError]
     u64 contacts_anwser(u64 did,u64 crc);
