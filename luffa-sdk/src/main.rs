@@ -10,7 +10,7 @@ use luffa_rpc_types::{
     message_from, message_to, AppStatus, ChatContent, ContactsEvent, ContactsToken, Message,
     RtcAction,
 };
-use luffa_sdk::{Callback, Client};
+use luffa_sdk::{Callback, Client, OfferStatus};
 use std::future::{Future, IntoFuture};
 use std::path::PathBuf;
 use std::sync::mpsc::sync_channel;
@@ -161,8 +161,18 @@ fn main() -> Result<()> {
                         }
                         let relays = client.relay_list().unwrap();
                         tracing::warn!("scan me :{}  --->>{:?}", code, relays);
+                        let offers = client.recent_offser(10).unwrap();
+                        for offer in offers  {
+                            tracing::warn!("offer>>> {offer:?}");
+                            if offer.status == OfferStatus::Offer {
+                                let ret = client.contacts_anwser(offer.did, offer.offer_crc).unwrap();
+                                tracing::warn!("anwser>>> {ret}");
+                            }
+                        }
                         let list = client.contacts_list(0).unwrap();
+                        let mut members = vec![];
                         for c in list {
+                            members.push(c.did);
                             let ls = client.recent_messages(c.did, 0,10).unwrap();
                             {
                                 let msg_len = ls.len();
@@ -183,6 +193,29 @@ fn main() -> Result<()> {
                                         }
                                     }
                                 }
+                            }
+                        }
+                        let groups = client.contacts_list(1).unwrap();
+                        if !members.is_empty() && groups.is_empty() {
+                            let created = client.contacts_group_create(members, Some(format!("First Group"))).is_ok();
+                            tracing::warn!("group created:{created}");
+                        }
+                        else if !groups.is_empty() {
+                            for g in groups {
+                                let mnemonic = Mnemonic::new(MnemonicType::Words24, Language::English);
+                                let msg = Message::Chat {
+                                    content: luffa_rpc_types::ChatContent::Send {
+                                        data: luffa_rpc_types::ContentData::Text {
+                                            source: luffa_rpc_types::DataSource::Text {
+                                                content: mnemonic.into_phrase(),
+                                            },
+                                            reference: None,
+                                        },
+                                    },
+                                };
+                                let msg = message_to(msg).unwrap();
+                                let crc = client.send_msg(g.did, msg).unwrap();
+                                tracing::info!("group msg send seccess {crc}");
                             }
                         }
                         let list = client.session_list(10).unwrap();
