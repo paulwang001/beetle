@@ -997,7 +997,7 @@ impl Client {
                     }
                 },
                 _ => {
-                    tracing::warn!(
+                    tracing::info!(
                                     "read No chat message crc> {} did:{did} ,msg :{:?}",
                                     crc,
                                     msg

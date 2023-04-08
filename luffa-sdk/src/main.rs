@@ -98,7 +98,7 @@ fn main() -> Result<()> {
         let mut x = 0;
         let mut code = String::new();
         loop {
-            std::thread::sleep(Duration::from_secs(5));
+            std::thread::sleep(Duration::from_secs(10));
             let peer_id = client.get_local_id();
             std::thread::sleep(Duration::from_secs(1));
             let peer_id = client.get_local_id().unwrap().unwrap();
