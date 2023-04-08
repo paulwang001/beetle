@@ -215,7 +215,7 @@ fn main() -> Result<()> {
                                 };
                                 let msg = message_to(msg).unwrap();
                                 let crc = client.send_msg(g.did, msg).unwrap();
-                                tracing::info!("group msg send seccess {crc}");
+                                tracing::error!("group [{g:?}] msg send seccess {crc}");
                             }
                         }
                         let list = client.session_list(10).unwrap();
@@ -225,7 +225,7 @@ fn main() -> Result<()> {
                             let did = s.did;
                             for crc in s.reach_crc {
                                 if let Some(meta) = client.read_msg_with_meta(did, crc).unwrap() {
-                                    tracing::info!("{:?}", meta);
+                                    tracing::warn!("read msg> {} ,from: {} to:{}", crc,meta.from_id,meta.to_id);
                                 }
                             }
                         }
@@ -240,7 +240,7 @@ fn main() -> Result<()> {
 
         match &msg {
             Message::Ping { relay_id, ttl_ms }=>{
-                tracing::warn!("-----relay------{} ---ttl:{} ms",relay_id,ttl_ms);
+                tracing::info!("-----relay------{} ---ttl:{} ms",relay_id,ttl_ms);
             }
             Message::WebRtc { stream_id, action } => match action {
                 RtcAction::Status {
@@ -309,7 +309,7 @@ fn main() -> Result<()> {
             },
             Message::Chat { .. } => match client_t.read_msg_with_meta(from_id, crc)? {
                 Some(meta) => {
-                    tracing::info!("on message meta:{:?}", meta);
+                    tracing::error!("on message meta>>crc: {crc}  from: {} to: {}", meta.from_id,meta.to_id );
                 }
                 None => {
                     tracing::error!("msg not found {}->{}", from_id, crc);
