@@ -1,5 +1,5 @@
 namespace LuffaSDK {
-  u64 public_key_to_id(sequence<u8> public_key);
+  u64 public_key_to_id([ByRef] sequence<u8> public_key);
   [Throws=ClientError]
   u64 bs58_decode([ByRef] string data);
 };
@@ -20,6 +20,20 @@ dictionary ContactsView {
   u64 did;
   string tag;
   u8 c_type;
+};
+
+
+enum OfferStatus {
+  "Offer",
+  "Answer",
+  "Reject"
+};
+
+dictionary OfferView {
+  u64 did;
+  u64 offer_crc;
+  string tag;
+  OfferStatus status;
 };
 
 dictionary EventMeta {
@@ -54,6 +68,7 @@ enum ClientError {
   "CustomError"
 };
 
+
 callback interface Callback {
     void on_message(u64 crc,u64 from,u64 to,u64 event_time,sequence<u8> msg);
 };
@@ -61,39 +76,52 @@ callback interface Callback {
 interface Client {
 
     constructor();
-	[Throws=ClientError]
+
+	  [Throws=ClientError]
     string? get_current_user();
 
     [Throws=ClientError]
     string? share([ByRef] string domain_name, [ByRef] string link_type);
+
     [Throws=ClientError]
     string? show_code([ByRef] string domain_name, [ByRef] string link_type);
+    
     [Throws=ClientError]
     u64 contacts_offer([ByRef] string code);
+    
     [Throws=ClientError]
     string gen_offer_code(u64 did);
+    
     [Throws=ClientError]
     u64 contacts_group_create(sequence<u64> invitee,string? tag);
+    
     [Throws=ClientError]
-    boolean contacts_group_invite_member(u64 g_id, sequence<u64> invitee, string? tag);
+    boolean contacts_group_invite_member(u64 g_id, sequence<u64> invitee);
+    
     [Throws=ClientError]
-    u64 contacts_anwser(u64 to,u64 offer_id,sequence<u8> secret_key);
+    u64 contacts_anwser(u64 did,u64 crc);
+    
     [Throws=ClientError]
     u64 send_msg(u64 to,sequence<u8> msg);
 
     [Throws=ClientError]
     u64? get_local_id();
+
     [Throws=ClientError]
     string? get_peer_id();
+
     [Throws=ClientError]
     string? get_did();
+
     [Throws=ClientError]
     sequence<string> relay_list();
+
     [Throws=ClientError]
     sequence<string> keys();
 
     [Throws=ClientError]
     boolean connect(string peer_id);
+
     [Throws=ClientError]
     boolean disconnect();
 
@@ -111,8 +139,12 @@ interface Client {
 
     [Throws=ClientError]
     sequence<ChatSession> session_list(u32 top);
+
     [Throws=ClientError]
     sequence<ChatSession> session_page(u32 page,u32 size);
+ 
+    [Throws=ClientError]
+    sequence<ContactsView> contacts_search(u8 c_type,[ByRef] string pattern);
 
 
     [Throws=ClientError]
@@ -123,14 +155,16 @@ interface Client {
 
     [Throws=ClientError]
     sequence<u64> recent_messages(u64 did,u32 offset,u32 limit);
+
     [Throws=ClientError]
-    sequence<u64> recent_offser(u32 top);
+    sequence<OfferView> recent_offser(u32 top);
 
     [Throws=ClientError]
     string? find_contacts_tag(u64 did);
 
     [Throws=ClientError]
     EventMeta meta_msg([ByRef] sequence<u8> data);
+
     [Throws=ClientError]
     EventMeta? read_msg_with_meta(u64 did,u64 crc);
 
@@ -152,12 +186,16 @@ interface Client {
 
     [Throws=ClientError]
     string generate_avatar([ByRef] string peer_id);
+
     [Throws=ClientError]
     string generate_nickname([ByRef] string peer_id);
+
     [Throws=ClientError]
     void remove_local_msg(u64 did,u64 crc);
+
     [Throws=ClientError]
     void enable_silent(u64 did);
+
     [Throws=ClientError]
     void disable_silent(u64 did);
 };

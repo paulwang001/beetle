@@ -430,7 +430,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
     /// Re put pending routing.
     #[tracing::instrument(skip(self))]
-    async fn pub_pending_tick(&mut self) {
+    fn pub_pending_tick(&mut self) {
         while let Some((evt, t)) = self.pub_pending.pop_back() {
             if t.elapsed().as_secs() > 60 {
                 tracing::error!("pub event is timeout!!!");
@@ -1196,7 +1196,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         let mut rx_any = None;
                                         if tp == 0 {
                                             // contact is private
-                                            let f = self.get_peer_index(my_id);
+                                            // let f = self.get_peer_index(my_id);
                                             let t = self.get_peer_index(to);
                                             let pending = self.pending_routing.entry(to).or_insert(Vec::new());
                                             pending.push((crc,std::time::Instant::now()));
@@ -1206,31 +1206,31 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                             {
                                                 rx_any = Some(rx);
                                             }
-                                            if rx_any.is_none() {
-                                                if let Some((cost, paths)) = astar(
-                                                    &self.connections,
-                                                    f,
-                                                    |f| f == t,
-                                                    |_e| 1,
-                                                    |_| 0,
-                                                ) {
-                                                    println!("[{cost}] paths 3>>>>>> {paths:?}");
-                                                    //route this message to shortest node and then break if the node is connected.
-                                                    for r in paths {
-                                                        if r != f {
-                                                            match self
-                                                                .local_send_if_connected(r, data)
-                                                            {
-                                                                Ok(Some(rx)) => {
-                                                                    rx_any = Some(rx);
-                                                                    break;
-                                                                }
-                                                                _ => {}
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                            // if rx_any.is_none() {
+                                            //     if let Some((cost, paths)) = astar(
+                                            //         &self.connections,
+                                            //         f,
+                                            //         |f| f == t,
+                                            //         |_e| 1,
+                                            //         |_| 0,
+                                            //     ) {
+                                            //         println!("[{cost}] paths 3>>>>>> {paths:?}");
+                                            //         //route this message to shortest node and then break if the node is connected.
+                                            //         for r in paths {
+                                            //             if r != f {
+                                            //                 match self
+                                            //                     .local_send_if_connected(r, data)
+                                            //                 {
+                                            //                     Ok(Some(rx)) => {
+                                            //                         rx_any = Some(rx);
+                                            //                         break;
+                                            //                     }
+                                            //                     _ => {}
+                                            //                 }
+                                            //             }
+                                            //         }
+                                            //     }
+                                            // }
                                         } else {
                                             let g_idx = self.get_contacts_index(to);
                                             let members = self.contacts.edges(g_idx);

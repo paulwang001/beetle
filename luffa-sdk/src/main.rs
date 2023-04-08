@@ -236,9 +236,9 @@ fn main() -> Result<()> {
                     let mut digest = crc64fast::Digest::new();
                     digest.write(&peer.to_bytes());
                     let to = digest.sum64();
-                    let crc = client_t.contacts_anwser(to, from_id, secret_key.clone());
+                    // let crc = client_t.contacts_anwser(to, from_id, crc,secret_key.clone(),secret_key);
                 }
-                ContactsEvent::Answer { token } => {
+                ContactsEvent::Answer {offer_crc ,token } => {
                     let ContactsToken {
                         public_key,
                         create_at,

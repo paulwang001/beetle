@@ -53,10 +53,13 @@ pub trait ContactsDb {
         tree.flush().unwrap();
     }
 
-    fn get_key(db: Arc<Db>, key: &str) -> Vec<u8> {
+    fn get_key(db: Arc<Db>, key: &str) -> Option<Vec<u8>> {
         let tree = Self::open_contact_tree(db).unwrap();
-        let data = tree.get(key.as_bytes()).unwrap().unwrap();
-        data.to_vec()
+        if let Ok(data) = tree.get(key.as_bytes()) {
+            data.map(|x| x.to_vec())
+        } else {
+            None
+        }
     }
 
     fn save_to_tree(db: Arc<Db>, crc: u64, table: &str, data: Vec<u8>, event_time: u64) {
@@ -77,21 +80,29 @@ pub trait ContactsDb {
     }
     fn save_offer_to_tree(
         db: Arc<Db>,
+        did: u64,
         crc: u64,
         offer_id: u64,
-        secret_key: Vec<u8>,
+        offer_key: Vec<u8>,
         status: OfferStatus,
+        c_type: ContactsTypes,
+        tag: String,
         event_time: u64,
     ) {
         let table = format!("offer");
         let tree = db.open_tree(&table).unwrap();
 
-        match tree.insert(format!("SK_{crc}"), secret_key) {
+        match tree.insert(format!("SK_{crc}"), offer_key) {
             Ok(None) => {
                 tree.insert(format!("ST_{crc}"), vec![status as u8])
                     .unwrap();
+                tree.insert(format!("TP_{crc}"), vec![c_type as u8])
+                    .unwrap();
                 tree.insert(format!("OF_{crc}"), offer_id.to_be_bytes().to_vec())
                     .unwrap();
+                tree.insert(format!("DID_{crc}"), did.to_be_bytes().to_vec())
+                    .unwrap();
+                tree.insert(format!("TAG_{crc}"), tag.as_bytes()).unwrap();
                 let tree_time = db.open_tree(&format!("{table}_time")).unwrap();
                 tree_time
                     .insert(event_time.to_be_bytes(), crc.to_be_bytes().to_vec())
@@ -103,10 +114,7 @@ pub trait ContactsDb {
 
         tree.flush().unwrap();
     }
-    fn get_answer_from_tree(
-        db: Arc<Db>,
-        crc: u64,
-    )-> Option<(u64,Vec<u8>,u8)> {
+    fn get_answer_from_tree(db: Arc<Db>, crc: u64) -> Option<(u64, Vec<u8>, u8)> {
         let table = format!("offer");
         let tree = db.open_tree(&table).unwrap();
         if let Ok(Some(key)) = tree.get(&format!("SK_{crc}")) {
@@ -118,7 +126,7 @@ pub trait ContactsDb {
         }
         None
     }
-    fn get_u64_from_tree(tree:&Tree,key:&str)-> Option<u64> {
+    fn get_u64_from_tree(tree: &Tree, key: &str) -> Option<u64> {
         if let Ok(Some(v)) = tree.get(key) {
             let mut val = [0u8;8];
             val.copy_from_slice(&v);
@@ -129,7 +137,7 @@ pub trait ContactsDb {
             None
         }
     }
-    fn get_u8_from_tree(tree:&Tree,key:&str)-> Option<u8> {
+    fn get_u8_from_tree(tree: &Tree, key: &str) -> Option<u8> {
         if let Ok(Some(v)) = tree.get(key) {
             let mut val = [0u8;1];
             val.copy_from_slice(&v);
@@ -140,14 +148,24 @@ pub trait ContactsDb {
             None
         }
     }
-    fn update_offer_status(db: Arc<Db>,did:u64, crc: u64, status: OfferStatus) {
-        let table = format!("offer_{did}");
+    fn update_offer_status(db: Arc<Db>, crc: u64, status: OfferStatus) {
+        let table = format!("offer");
         let tree = db.open_tree(&table).unwrap();
 
         tree.insert(format!("ST_{crc}"), vec![status as u8])
             .unwrap();
-        
+
         tree.flush().unwrap();
+    }
+    fn get_offer_status(db: Arc<Db>, crc: u64) -> OfferStatus {
+        let table = format!("offer");
+        let tree = db.open_tree(&table).unwrap();
+        if let Ok(Some(val)) = tree.get(&format!("ST_{crc}")) {
+            let st = val[0];
+            OfferStatus::from(st)
+        } else {
+            OfferStatus::Offer
+        }
     }
     fn save_to_tree_status(db: Arc<Db>, crc: u64, table: &str, status: u8) {
         let tree_status = db.open_tree(&format!("{table}_status")).unwrap();

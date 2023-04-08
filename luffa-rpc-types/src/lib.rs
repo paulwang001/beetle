@@ -338,14 +338,11 @@ impl Message {
         }
     }
 
-
-
-    pub fn exchange_key(&self) -> Option<Vec<u8>>
-    {
+    pub fn exchange_key(&self) -> Option<Vec<u8>> {
         match &self {
             Message::ContactsExchange { exchange }=>{
                 match exchange {
-                    ContactsEvent::Answer { token } =>{
+                    ContactsEvent::Answer { token ,..} =>{
                         Some(token.secret_key.clone())
                     }
                     ContactsEvent::Offer { token }=>{
@@ -363,11 +360,23 @@ impl Message {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize,Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ContactsEvent {
-    Offer { token: ContactsToken },
-    Answer { token: ContactsToken },
-    Reject { crc:u64,public_key:Vec<u8> },
+    Offer {
+        token: ContactsToken,
+    },
+    Answer {
+        token: ContactsToken,
+        offer_crc: u64,
+    },
+    Reject {
+        offer_crc: u64,
+        public_key: Vec<u8>,
+    },
+
+    Join {
+        offer_crc: u64,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize,Clone)]
@@ -420,6 +429,25 @@ impl ContactsToken {
         })
     }
 
+    pub fn group_answer(
+        contacts_type: ContactsTypes,
+        public_key: Vec<u8>,
+        secret_key: Vec<u8>,
+        comment: Option<String>,
+    ) -> Result<Self> {
+        let create_at = Utc::now().timestamp_millis() as u64;
+        let sign = vec![];
+        Ok(Self {
+            public_key,
+            group_key: None,
+            create_at,
+            sign,
+            secret_key,
+            contacts_type,
+            comment,
+        })
+    }
+
     pub fn validate(&self) -> Result<bool> {
         let Self {
             public_key,
@@ -429,6 +457,9 @@ impl ContactsToken {
             comment,
             ..
         } = self;
+        if contacts_type == &ContactsTypes::Group && sign.is_empty() {
+            return Ok(true);
+        }
         let mut buf = vec![];
         buf.write(&create_at.to_be_bytes())?;
         // buf.write(secret_key)?;
