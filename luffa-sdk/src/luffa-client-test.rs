@@ -80,6 +80,7 @@ fn main() -> ClientResult<()> {
             }
             println!("{:?}", line);
             match command {
+                // send_msg
                 "send_msg" => {
                     let msg = Message::Chat {
                         content: luffa_rpc_types::ChatContent::Send {
@@ -95,24 +96,28 @@ fn main() -> ClientResult<()> {
                     let msg_id = client1.send_msg(user.to, msg).unwrap();
                     tracing::error!("msg_id: {msg_id}");
                 }
+                // recent
                 "recent" => {
                     let data = client1.recent_messages(user.to, 0, 10).unwrap();
                     tracing::error!("recent_messages: {data:?}");
                 }
+                // last_chat
                 "last_chat" => {
                     let data = client1.last_chat_msg_with_meta(user.to).unwrap();
                     tracing::error!("last_chat_msg_with_meta: {data:?}");
                 }
+                // relay_list
                 "relay_list" => {
                     let relays = client1.relay_list().unwrap();
                     tracing::error!("relay_list: {relays:?}");
                 }
+                // show_code p/g
                 "show_code" => {
-                    let show_code = client1.show_code("https://luffa.putdev.com", "p").unwrap().unwrap();
+                    let show_code = client1.show_code("https://luffa.putdev.com", args).unwrap().unwrap();
                     tracing::error!("show_code: {show_code:?}");
                 }
 
-                //contacts_offer https://luffa.putdev.com/p/YGz62Wdxqx8/F2SxockGoEZzoytfNQz8imkekrhwaoxPyLyqPPb8XX4N/13473655988076347637
+                // contacts_offer https://luffa.putdev.com/p/YGz62Wdxqx8/F2SxockGoEZzoytfNQz8imkekrhwaoxPyLyqPPb8XX4N/13473655988076347637
                 "contacts_offer" => {
                     let crc = client1.contacts_offer(&args.to_string()).unwrap();
                     tracing::error!("contacts_offer: {crc}");
@@ -127,11 +132,6 @@ fn main() -> ClientResult<()> {
                    let data = client1.read_msg_with_meta(user.to, args.parse().unwrap()).unwrap().unwrap();
                     tracing::error!("read_msg_with_meta: {data:?}");
                 }
-                // last_chat
-                "last_chat" => {
-                    let data = client1.last_chat_msg_with_meta(user.to).unwrap().unwrap();
-                    tracing::error!("last_chat_msg_with_meta: {data:?}");
-                }
                 // contacts_search1 1
                 "contacts_search1" => {
                     let contacts = client1.contacts_search(1, args).unwrap();
@@ -140,6 +140,11 @@ fn main() -> ClientResult<()> {
                 // contacts_search2 1
                 "contacts_search2" => {
                     let contacts = client1.contacts_search(2, args).unwrap();
+                    tracing::error!("contacts_search: {contacts:?}");
+                }
+                // group_create name
+                "group_create" => {
+                    let contacts = client1.contacts_group_create(vec![user.to], Some(args.to_string())).unwrap();
                     tracing::error!("contacts_search: {contacts:?}");
                 }
                 _ => {}
