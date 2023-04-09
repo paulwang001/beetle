@@ -122,17 +122,17 @@ fn main() -> ClientResult<()> {
                     let id = client1.contacts_anwser(user.to, args.parse().unwrap()).unwrap();
                     tracing::error!("contacts_anwser: {id}");
                 }
-                // read_msg_with_meta 14044266394953996910
-                "read_msg_with_meta" => {
+                // read_msg 14044266394953996910
+                "read_msg" => {
                    let data = client1.read_msg_with_meta(user.to, args.parse().unwrap()).unwrap().unwrap();
                     tracing::error!("read_msg_with_meta: {data:?}");
                 }
-
-                "last_chat_msg_with_meta" => {
+                // last_chat
+                "last_chat" => {
                     let data = client1.last_chat_msg_with_meta(user.to).unwrap().unwrap();
                     tracing::error!("last_chat_msg_with_meta: {data:?}");
                 }
-
+                // contacts_search1 1
                 "contacts_search1" => {
                     let contacts = client1.contacts_search(1, args).unwrap();
                     tracing::error!("contacts_search: {contacts:?}");
