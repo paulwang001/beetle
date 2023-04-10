@@ -375,6 +375,7 @@ pub enum ContactsEvent {
     },
     Join {
         offer_crc: u64,
+        // invitee_name: String,
     },
 }
 

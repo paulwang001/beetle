@@ -474,7 +474,7 @@ impl Client {
         let to = u64::from_be_bytes(to);
 
         let my_id = self.get_local_id()?.unwrap();
-        let tag = self.find_contacts_tag(my_id)?;
+        let tag = self.find_contacts_tag(my_id)?.unwrap();
 
         let secret_key = key.unwrap();
         let key = bs58::decode(secret_key).into_vec().unwrap();
@@ -495,7 +495,7 @@ impl Client {
             let token = RUNTIME.block_on(async {
                 let key = self.get_keypair(filter).await;
                 let token = key.as_ref().map(|key| {
-                    ContactsToken::new(key, tag.clone(), offer_key.clone(), c_type).unwrap()
+                    ContactsToken::new(key, Some(tag.to_owned()), offer_key.clone(), c_type).unwrap()
                 });
                 token.unwrap()
             });
@@ -523,7 +523,7 @@ impl Client {
                     secret_key,
                     OfferStatus::Offer,
                     c_type,
-                    tag.unwrap_or_default(),
+                    tag,
                     now,
                 );
                 crc
@@ -681,6 +681,7 @@ impl Client {
     }
 
     pub fn contacts_anwser(&self, did: u64, crc: u64) -> ClientResult<u64> {
+
         if let Ok(Some(meta)) = self.read_msg_with_meta(did, crc) {
             let EventMeta {
                 msg,
@@ -2258,8 +2259,19 @@ impl Client {
                 }
             })
             .expect("acquire indexWriter failed");
+        let nickname;
+        if tag.is_none() {
+            let tag = self.find_contacts_tag(my_id)?;
+            if tag.is_none() {
+                nickname = self.generate_nickname(&my_id.to_string())?;
+            } else {
+                nickname = tag.unwrap();
+            }
+        } else {
+            nickname = tag.unwrap();
+        }
 
-        self.update_contacts_tag(my_id, tag.unwrap_or(format!("{}", my_id)).to_string());
+        self.update_contacts_tag(my_id, nickname);
 
         let (tx, rx) = tokio::sync::mpsc::channel(4096);
         {
@@ -3640,7 +3652,7 @@ impl Client {
                                         }
                                         return;
                                     }
-                                    ContactsEvent::Join { .. }=>{
+                                    ContactsEvent::Join { offer_crc }=>{
                                         Self::group_member_insert(db_t.clone(), did, vec![from_id]).unwrap();
                                     }
                                 }

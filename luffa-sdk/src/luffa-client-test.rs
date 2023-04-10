@@ -116,13 +116,12 @@ fn main() -> ClientResult<()> {
                     let show_code = client1.show_code("https://luffa.putdev.com", args).unwrap().unwrap();
                     tracing::error!("show_code: {show_code:?}");
                 }
-
-                // contacts_offer https://luffa.putdev.com/p/YGz62Wdxqx8/F2SxockGoEZzoytfNQz8imkekrhwaoxPyLyqPPb8XX4N/13473655988076347637
+                // contacts_offer https://luffa.putdev.com/p/YGz62Wdxqx8/J58469B28Hh8XYG3kVrKLXAYFMyKWY46dj6cPmDzGWnc/Uncharted Banana pepper
                 "contacts_offer" => {
                     let crc = client1.contacts_offer(&args.to_string()).unwrap();
                     tracing::error!("contacts_offer: {crc}");
                 }
-                // contacts_anwser 15653824715501906695
+                // contacts_anwser 7360383278223542763
                 "contacts_anwser" => {
                     let id = client1.contacts_anwser(user.to, args.parse().unwrap()).unwrap();
                     tracing::error!("contacts_anwser: {id}");
@@ -144,8 +143,12 @@ fn main() -> ClientResult<()> {
                 }
                 // group_create name
                 "group_create" => {
-                    let contacts = client1.contacts_group_create(vec![user.to], Some(args.to_string())).unwrap();
-                    tracing::error!("contacts_search: {contacts:?}");
+                    let group_id = client1.contacts_group_create(vec![user.to], Some(args.to_string())).unwrap();
+                    tracing::error!("group_id: {group_id:?}");
+                }
+                "nickname" => {
+                    let nickname = client1.find_contacts_tag(args.parse()?)?;
+                    tracing::error!("find_contacts_tag: {nickname:?}");
                 }
                 _ => {}
             }
