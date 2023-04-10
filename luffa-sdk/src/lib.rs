@@ -65,6 +65,7 @@ use crate::config::Config;
 use crate::sled_db::contacts::{ContactsDb, KVDB_CONTACTS_TREE};
 use crate::sled_db::group_members::{GroupMembersDb, Members};
 use crate::sled_db::mnemonic::Mnemonic;
+use crate::sled_db::nickname::Nickname;
 use crate::sled_db::session::SessionDb;
 use crate::sled_db::SledDbAll;
 
@@ -291,6 +292,8 @@ impl SessionDb for Client {}
 impl GroupMembersDb for Client {}
 
 impl Mnemonic for Client {}
+
+impl Nickname for Client {}
 
 impl SledDbAll for Client {}
 
@@ -634,7 +637,6 @@ impl Client {
                 };
             })
         });
-        Self::group_member_insert(self.db(), g_id, invitee).unwrap();
         Ok(g_id)
     }
 
@@ -665,9 +667,10 @@ impl Client {
             }
         };
         let tx = self.sender.read().clone().unwrap();
+        let invitee1 = invitee.to_owned();
         RUNTIME.block_on(async {
             tokio::spawn(async move {
-                for iv in invitee {
+                for iv in invitee1 {
                     let (req, res) = tokio::sync::oneshot::channel();
                     let msg = serde_cbor::to_vec(&msg).unwrap();
                     tx.send((iv, msg, my_id, req, None)).await.unwrap();
@@ -2378,7 +2381,7 @@ impl Client {
         Ok(my_id)
     }
 
-    fn contacts_group_members(&self, g_id: u64) -> ClientResult<Vec<u64>> {
+    pub fn contacts_group_members(&self, g_id: u64) -> ClientResult<Vec<u64>> {
         let members = Self::group_member_get(self.db(), g_id)?;
         Ok(members.members.iter().map(|a| *a).collect())
     }
@@ -3623,9 +3626,11 @@ impl Client {
                                             db_t.clone(),
                                         )
                                         .await;
+                                        let group_nickname = Self::get_group_member_nickname(db_t.clone(), did, my_id).unwrap();
                                         if contacts_type == ContactsTypes::Group {
                                             let join = luffa_rpc_types::Message::ContactsExchange { exchange: ContactsEvent::Join {
-                                                offer_crc
+                                                offer_crc,
+                                                group_nickname,
                                             } };
                                             let event = luffa_rpc_types::Event::new(
                                                 did,
@@ -3725,8 +3730,9 @@ impl Client {
                                         }
                                         return;
                                     }
-                                    ContactsEvent::Join { offer_crc }=>{
+                                    ContactsEvent::Join { offer_crc, group_nickname }=>{
                                         Self::group_member_insert(db_t.clone(), did, vec![from_id]).unwrap();
+                                        Self::set_group_member_nickname(db_t.clone(), did, from_id, &group_nickname).unwrap();
                                     }
                                 }
                             }
@@ -3812,8 +3818,10 @@ impl Client {
                                                 event_time,
                                             );
                                             if token.contacts_type == ContactsTypes::Group {
+                                                let group_nickname = Self::get_group_member_nickname(db_t.clone(), did, my_id).unwrap();
                                                 let join = luffa_rpc_types::Message::ContactsExchange { exchange: ContactsEvent::Join {
-                                                    offer_crc
+                                                    offer_crc,
+                                                    group_nickname,
                                                 } };
                                                 let secret_key = token.secret_key.clone();
                                                 let event = luffa_rpc_types::Event::new(
@@ -3904,8 +3912,9 @@ impl Client {
                                             }
                                             return;
                                         }
-                                        ContactsEvent::Join { .. }=>{
-
+                                        ContactsEvent::Join { offer_crc, group_nickname }=>{
+                                            Self::group_member_insert(db_t.clone(), did, vec![from_id]).unwrap();
+                                            Self::set_group_member_nickname(db_t.clone(), did, from_id, &group_nickname).unwrap();
                                         }
                                     };
 
