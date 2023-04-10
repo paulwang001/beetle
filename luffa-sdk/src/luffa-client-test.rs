@@ -146,7 +146,7 @@ fn main() -> ClientResult<()> {
                     let group_id = client1.contacts_group_create(vec![user.to], Some(args.to_string())).unwrap();
                     tracing::error!("group_id: {group_id:?}");
                 }
-                // nickname 10871006697545602478
+                // nickname 13473655988076347637
                 "nickname" => {
                     let nickname = client1.find_contacts_tag(args.parse().unwrap()).unwrap();
                     tracing::error!("find_contacts_tag: {nickname:?}");

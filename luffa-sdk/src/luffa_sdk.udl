@@ -37,6 +37,7 @@ dictionary OfferView {
   u64 offer_crc;
   string tag;
   OfferStatus status;
+  u64 event_time;
 };
 
 dictionary EventMeta {

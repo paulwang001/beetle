@@ -107,6 +107,7 @@ pub struct OfferView {
     pub tag: String,
     // pub secret_key: Vec<u8>,
     pub status: OfferStatus,
+    pub event_time: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -586,6 +587,7 @@ impl Client {
                 },
             )
         };
+        let invitee1 = invitee.clone();
         RUNTIME.block_on(async {
             let contacts = vec![Contacts {
                 did: g_id,
@@ -612,7 +614,7 @@ impl Client {
                 {
                     tracing::warn!("send contacts sync status >>> {e:?}");
                 }
-                for i_id in invitee {
+                for i_id in invitee1 {
                     let (req, res) = tokio::sync::oneshot::channel();
                     let msg = serde_cbor::to_vec(&msg).unwrap();
                     tx.send((i_id, msg, my_id, req, None)).await.unwrap();
@@ -627,9 +629,10 @@ impl Client {
                             tracing::warn!("{e:?}");
                         }
                     }
-                }
-            });
+                };
+            })
         });
+        Self::group_member_insert(self.db(), g_id, invitee).unwrap();
         Ok(g_id)
     }
 
@@ -1056,6 +1059,7 @@ impl Client {
             // let offer_id = Self::get_u64_from_tree(&offer_tree, &format!("OF_{crc}")).unwrap_or_default();
             let status = Self::get_u8_from_tree(&offer_tree, &format!("ST_{crc}")).unwrap_or_default();
             let status = OfferStatus::from(status);
+            let event_meta = self.read_msg_meta_without_chat_session(did, crc)?.unwrap();
             if let Ok(Some(tag)) = offer_tree.get(&format!("TAG_{crc}")) {
                 let tag = String::from_utf8(tag.to_vec()).unwrap();
                 let bs_did = bs58::encode(did.to_be_bytes()).into_string();
@@ -1065,6 +1069,7 @@ impl Client {
                     offer_crc:crc,
                     tag,
                     status,
+                    event_time: event_meta.event_time,
                 });
                 if msgs.len() >= top as usize {
                     break;
