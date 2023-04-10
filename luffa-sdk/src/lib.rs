@@ -5,7 +5,7 @@ use aes_gcm::{
     aead::{KeyInit, OsRng},
     Aes256Gcm, // Or `Aes128Gcm`
 };
-use anyhow::Context;
+use anyhow::{bail, Context};
 use api::P2pClient;
 use futures::StreamExt;
 use libp2p::identity::Keypair;
@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use simsearch::{SearchOptions, SimSearch};
 use sled::Db;
 use std::fmt::Debug;
-use std::fs;
+use std::{fs, io};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -34,6 +34,8 @@ use std::{
     collections::{HashMap, VecDeque},
     time::Instant,
 };
+use std::fs::OpenOptions;
+use std::ops::Not;
 use tantivy::tokenizer::{LowerCaser, NgramTokenizer, SimpleTokenizer, Stemmer, TextAnalyzer};
 
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -1059,7 +1061,13 @@ impl Client {
             // let offer_id = Self::get_u64_from_tree(&offer_tree, &format!("OF_{crc}")).unwrap_or_default();
             let status = Self::get_u8_from_tree(&offer_tree, &format!("ST_{crc}")).unwrap_or_default();
             let status = OfferStatus::from(status);
-            let event_meta = self.read_msg_meta_without_chat_session(did, crc)?.unwrap();
+            let event_meta = match self.read_msg_meta_without_chat_session(did, crc)? {
+                Some(e) => e,
+                _ => {
+                    warn!("event meta is null in recent offser");
+                    continue
+                },
+            };
             if let Ok(Some(tag)) = offer_tree.get(&format!("TAG_{crc}")) {
                 let tag = String::from_utf8(tag.to_vec()).unwrap();
                 let bs_did = bs58::encode(did.to_be_bytes()).into_string();
@@ -1080,6 +1088,8 @@ impl Client {
         }
         Ok(msgs)
     }
+
+
     pub fn meta_msg(&self, data: &[u8]) -> ClientResult<EventMeta> {
         let evt: Event = serde_cbor::from_slice(data)?;
         let Event {
@@ -2124,6 +2134,51 @@ impl Client {
         *started = false;
         Ok(())
     }
+
+    // name 使用的环境名称
+    // timeout_ms 从网络上获取环境配置文件的超时时间，单位毫秒
+    // always_fetch_file 是否用于从网络拉去文件，若为false，则本地文件存在则使用本地文件
+    // fetch_failed_ret 从网络拉去文件失败后是否直接return，若为false，当拉去文件失败后
+    // 则使用默认配置
+    pub fn init_with_env_name(&self, name: &str, timeout_ms: u64, always_fetch_file: bool, fetch_failed_ret: bool) -> ClientResult<()> {
+        let cache_config_path = luffa_util::luffa_data_path(&format!("{}.toml", name))?;
+
+        let net_req = (!cache_config_path.exists() || always_fetch_file).then(|| {
+            let http_client = reqwest::blocking::Client::new();
+            let mut x = http_client.get(&format!("https://[GIT ADDRESS]/{}.toml", name))
+                .timeout(Duration::from_millis(timeout_ms))
+                .send()?;
+
+            if x.status().is_success().not() {
+                bail!("fetch config file failed env name = {name}")
+            }
+
+            // 创建父目录
+            let _ = cache_config_path.parent().and_then(|x| fs::create_dir_all(x).ok());
+
+            let mut f = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&cache_config_path)
+                .context(format!("open {:?} failed", cache_config_path))?;
+
+            let _ = io::copy(&mut x, &mut f)?;
+
+            Ok(())
+        });
+
+        if let Some(Err(e)) = net_req {
+            if fetch_failed_ret {
+                return self.init(None)
+            }
+
+            Err(ClientError::AnyhowError(e))
+        } else {
+            self.init(Some(cache_config_path).map(|x| x.to_str().unwrap().to_string()))
+        }
+    }
+
     pub fn init(&self, cfg_path: Option<String>) -> ClientResult<()> {
         info!("is_init {}", self.is_init.load(Ordering::SeqCst));
 
@@ -3961,7 +4016,7 @@ impl Client {
         Ok(())
     }
     fn db(&self) -> Arc<Db> {
-        self.db.read().clone().unwrap()
+        self.db.read().clone().expect("db is null")
     }
     fn key_db(&self) -> Arc<Db> {
         self.key_db.read().clone().unwrap()
