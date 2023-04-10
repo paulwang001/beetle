@@ -63,7 +63,7 @@ mod sled_db;
 
 use crate::config::Config;
 use crate::sled_db::contacts::{ContactsDb, KVDB_CONTACTS_TREE};
-use crate::sled_db::group_members::{GroupMembersDb, Members};
+use crate::sled_db::group_members::{GroupMemberNickname, GroupMembersDb, Members};
 use crate::sled_db::mnemonic::Mnemonic;
 use crate::sled_db::nickname::Nickname;
 use crate::sled_db::session::SessionDb;
@@ -2381,9 +2381,8 @@ impl Client {
         Ok(my_id)
     }
 
-    pub fn contacts_group_members(&self, g_id: u64) -> ClientResult<Vec<u64>> {
-        let members = Self::group_member_get(self.db(), g_id)?;
-        Ok(members.members.iter().map(|a| *a).collect())
+    pub fn contacts_group_members(&self, g_id: u64, page_no: u64, page_size: u64) -> ClientResult<Vec<GroupMemberNickname>> {
+        Self::group_members_get(self.db(), g_id, page_no, page_size)
     }
 
     /// run

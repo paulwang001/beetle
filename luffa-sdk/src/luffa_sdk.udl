@@ -24,6 +24,10 @@ dictionary ContactsView {
   u8 c_type;
 };
 
+dictionary GroupMemberNickname {
+   u64 u_id;
+   string nickname;
+};
 
 enum OfferStatus {
   "Offer",
@@ -103,7 +107,7 @@ interface Client {
     boolean contacts_group_invite_member(u64 g_id, sequence<u64> invitee);
 
     [Throws=ClientError]
-    sequence<u64> contacts_group_members(u64 g_id);
+    sequence<GroupMemberNickname> contacts_group_members(u64 g_id, u64 page_no, u64 page_size);
     
     [Throws=ClientError]
     u64 contacts_anwser(u64 did,u64 crc);
