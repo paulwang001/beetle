@@ -39,7 +39,7 @@ impl RequestResponseCodec for ChatCodec {
     where
         T: AsyncRead + Unpin + Send,
     {
-        let vec = read_length_prefixed(io, 1024).await?;
+        let vec = read_length_prefixed(io, 4 * 1024 * 1024).await?;
 
         if vec.is_empty() {
             return Err(io::ErrorKind::UnexpectedEof.into());
@@ -52,7 +52,7 @@ impl RequestResponseCodec for ChatCodec {
     where
         T: AsyncRead + Unpin + Send,
     {
-        let vec = read_length_prefixed(io, 1024).await?;
+        let vec = read_length_prefixed(io, 4 * 1024 * 1024).await?;
 
         if vec.is_empty() {
             return Err(io::ErrorKind::UnexpectedEof.into());
