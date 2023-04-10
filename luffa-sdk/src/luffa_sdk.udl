@@ -37,6 +37,7 @@ dictionary OfferView {
   u64 offer_crc;
   string tag;
   OfferStatus status;
+  u64 event_time;
 };
 
 dictionary EventMeta {
@@ -135,6 +136,8 @@ interface Client {
 
     [Throws=ClientError]
     void init(string? cfg_path);
+    [Throws=ClientError]
+    void init_with_env_name([ByRef] string name, u64 timeout_ms, boolean always_fetch_file, boolean fetch_failed_ret);
 
     [Throws=ClientError]
     u64 start(string? key,string? tag,Callback cb);

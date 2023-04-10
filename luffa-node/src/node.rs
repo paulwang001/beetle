@@ -1390,6 +1390,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 } = event;
                                 let mut feed_crc = vec![crc];
 
+                                tracing::warn!("chat request from relay {crc}");
                                 if let Some(pending) = self.pending_routing.get(&to) {
                                     if pending.iter().find(|(x,_)| *x == crc ).is_some() {
                                         tracing::warn!("CRC is pending routing {crc}");
@@ -1526,15 +1527,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                             }
                                         }
                                     } 
-                                } else if to == my_id  {
+                                } else if self.agent != Some(format!("Relay")) {
                                     // this node is a client and the message is send to it.
-                                    self.emit_network_event(NetworkEvent::RequestResponse(
-                                        ChatEvent::Request(request.data().to_vec()),
-                                    ));
-                                    
-                                } else if from_id == my_id  {
-                                    // this node is a client and the message is send to it.
-                                    tracing::warn!("from_id == my_id");
+                                    tracing::warn!("private or group msg from relay [{peer:?}], crc >>> {crc}");
                                     self.emit_network_event(NetworkEvent::RequestResponse(
                                         ChatEvent::Request(request.data().to_vec()),
                                     ));
@@ -1812,7 +1807,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 };
                                 let feed = Message::Feedback { crc:feed_crc,from_id:Some(from_id),to_id:Some(to),status:feed_status };
                                 {
-                                    let evnt = luffa_rpc_types::Event::new(from_id,&feed,None,0);
+                                    let evnt = luffa_rpc_types::Event::new(0,&feed,None,0);
                                     let res = evnt.encode().unwrap();
                                     let res = crate::behaviour::chat::Response(res);
                                     let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
