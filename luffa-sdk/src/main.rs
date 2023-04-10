@@ -201,7 +201,12 @@ fn main() -> Result<()> {
                             tracing::warn!("group created:{created}");
                         }
                         else if !groups.is_empty() {
-                            for g in groups {
+                            let x:usize = rand::random();
+                            let x = x % groups.len();
+                            for (i,g) in groups.into_iter().enumerate() {
+                                if x != i {
+                                    continue;
+                                }
                                 let msgs = client.recent_messages(g.did, 0, 10000).unwrap();
                                 let msg_len = msgs.len();
                                 let mut from_count = 0_u32 ;
@@ -233,8 +238,8 @@ fn main() -> Result<()> {
                                     },
                                 };
                                 let msg = message_to(msg).unwrap();
-                                // let crc = client.send_msg(g.did, msg).unwrap();
-                                // tracing::error!("[len: {from_count}] group [{g:?}] msg send seccess {crc}");
+                                let crc = client.send_msg(g.did, msg).unwrap();
+                                tracing::error!("[len: {from_count}] group [{g:?}] msg send seccess {crc}");
                             }
                         }
                         let list = client.session_list(10).unwrap();
@@ -329,7 +334,8 @@ fn main() -> Result<()> {
             },
             Message::Chat { .. } => match client_t.read_msg_with_meta(did, crc)? {
                 Some(meta) => {
-                    tracing::error!("on message meta>>crc: {crc}  from: {} to: {}", meta.from_id,meta.to_id );
+                    let msg = message_from(meta.msg.clone()).unwrap();
+                    tracing::error!("on message meta>>crc: {crc}  from: {} to: {} >> {:?}", meta.from_id,meta.to_id,msg );
                 }
                 None => {
                     tracing::error!("msg not found {}->{}", did, crc);
