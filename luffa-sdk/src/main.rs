@@ -99,7 +99,7 @@ fn main() -> Result<()> {
         let mut code = String::new();
         loop {
             std::thread::sleep(Duration::from_secs(10));
-            let peer_id = client.get_local_id();
+            // let peer_id = client.get_local_id().unwrap();
             std::thread::sleep(Duration::from_secs(1));
             let peer_id = client.get_local_id().unwrap().unwrap();
             tracing::warn!("peer id: {peer_id:?}");
@@ -202,12 +202,25 @@ fn main() -> Result<()> {
                         }
                         else if !groups.is_empty() {
                             for g in groups {
-                                let msgs = client.recent_messages(g.did, 0, 10).unwrap();
-                                if msgs.is_empty() {
-                                    let created = client.contacts_group_create(members.clone(), Some(g.tag)).is_ok();
-                                    tracing::warn!("empty msg>>> group created:{created}");
-                                    continue;
+                                let msgs = client.recent_messages(g.did, 0, 10000).unwrap();
+                                let msg_len = msgs.len();
+                                let mut from_count = 0_u32 ;
+                                for msg in msgs {
+                                    if let Ok(Some(evt)) = client.read_msg_with_meta(g.did, msg) {
+                                        if evt.from_id != peer_id {
+
+                                            let msg = message_from(evt.msg).unwrap();
+                                            tracing::info!("evt:from> {} >msg: {:?}",evt.from_id, msg);
+                                            from_count += 1;
+                                        }
+                                    }
+
                                 }
+                                // if from_count == 0 {
+                                //     let created = client.contacts_group_create(members.clone(), Some(g.tag.clone())).unwrap();
+                                //     tracing::warn!("empty msg>>> group created:{created} [{}] invitee:{:?}",g.tag,&members);
+                                //     continue;
+                                // }
                                 let mnemonic = Mnemonic::new(MnemonicType::Words24, Language::English);
                                 let msg = Message::Chat {
                                     content: luffa_rpc_types::ChatContent::Send {
@@ -220,8 +233,8 @@ fn main() -> Result<()> {
                                     },
                                 };
                                 let msg = message_to(msg).unwrap();
-                                let crc = client.send_msg(g.did, msg).unwrap();
-                                tracing::error!("group [{g:?}] msg send seccess {crc}");
+                                // let crc = client.send_msg(g.did, msg).unwrap();
+                                // tracing::error!("[len: {from_count}] group [{g:?}] msg send seccess {crc}");
                             }
                         }
                         let list = client.session_list(10).unwrap();
@@ -243,7 +256,8 @@ fn main() -> Result<()> {
 
     while let Ok((crc, from_id, to, data)) = rx.recv() {
         let msg: Message = serde_cbor::from_slice(&data).unwrap();
-
+        let peer_id = client_t.get_local_id().unwrap().unwrap();
+        let did = if to == peer_id { from_id } else {to};
         match &msg {
             Message::Ping { relay_id, ttl_ms }=>{
                 tracing::info!("-----relay------{} ---ttl:{} ms",relay_id,ttl_ms);
@@ -313,12 +327,12 @@ fn main() -> Result<()> {
                     
                 }
             },
-            Message::Chat { .. } => match client_t.read_msg_with_meta(from_id, crc)? {
+            Message::Chat { .. } => match client_t.read_msg_with_meta(did, crc)? {
                 Some(meta) => {
                     tracing::error!("on message meta>>crc: {crc}  from: {} to: {}", meta.from_id,meta.to_id );
                 }
                 None => {
-                    tracing::error!("msg not found {}->{}", from_id, crc);
+                    tracing::error!("msg not found {}->{}", did, crc);
                 }
             },
             _ => {
