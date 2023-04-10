@@ -28,7 +28,7 @@ luffa-store = {workspace = true,features = [ "node"]}
 luffa-util.workspace = true
 
 multibase.workspace = true
-# reqwest = { workspace = true, features = ["rustls-tls"] }
+reqwest = { workspace = true, features = ["rustls-tls", "gzip", "brotli", "deflate", "blocking"] }
 rand.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_cbor.workspace = true

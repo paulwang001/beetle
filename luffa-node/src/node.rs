@@ -604,6 +604,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             if t.elapsed().as_millis() > 2000 {
                                 tracing::warn!("pending crc {crc} to {peer_id}");
                                 pending_crc.push(*crc);
+                                if pending_crc.len() >31 {
+                                    break;
+                                }
                             }
                         }
                         if !pending_crc.is_empty() {
@@ -1389,7 +1392,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 let mut feed_status = luffa_rpc_types::FeedbackStatus::Routing;
                                 if nonce.is_none() {
                                     if let Ok(msg) =
-                                        Message::decrypt(bytes::Bytes::from(msg), None, nonce)
+                                        Message::decrypt(bytes::Bytes::from(msg), None, nonce.clone())
                                     {
                                         let msg_t = msg.clone();
                                         match msg {
@@ -1701,7 +1704,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         }
                                     } else {
                                         //contacts exchange
-                                        tracing::warn!("contacts edge not found [{from_id} -> {to}]");
+                                        if nonce.is_some() {
+
+                                            tracing::error!("contacts edge not found [{from_id} -> {to}]");
+                                        }
                                         let mut rx_any = None;
                                         let t = self.get_peer_index(to);
                                         let pending = self.pending_routing.entry(to).or_insert(Vec::new());
@@ -1792,6 +1798,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     if let Err(e) = chat.send_response(channel, res) {
                                         tracing::error!("chat response failed: >>{e:?}");
                                     }
+                                    else if nonce.is_some() {
+                                        tracing::info!("some nonce chat response ok: >>{crc}");
+                                    }
+
                                     tracing::info!("-----{request_id:?}------");
                                 }
                             }
