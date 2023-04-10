@@ -3147,6 +3147,19 @@ impl Client {
                                                 None,
                                                 event_time,
                                             );
+
+                                            let title = {
+                                                // title 内容有 title 短id 用户nickname
+                                                let bs_id = bs58_encode(to).ok();
+                                                let nickname = Self::get_contacts_tag(db_t.clone(), to).map(|(v, _)| v);
+                                                let titles: Vec<_> = vec![Some(title), bs_id, nickname]
+                                                    .into_iter()
+                                                    .flatten()
+                                                    .collect();
+                                                let title: String = titles.join(" ");
+                                                title
+                                            };
+
                                             let schema = schema_t.clone();
                                             let fld_crc = schema.get_field("crc").unwrap();
                                             let fld_from = schema.get_field("from_id").unwrap();
