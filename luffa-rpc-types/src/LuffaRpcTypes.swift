@@ -19,13 +19,13 @@ fileprivate extension RustBuffer {
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
-        try! rustCall { ffi_LuffaRpcTypes_8ad1_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
+        try! rustCall { ffi_LuffaRpcTypes_f0f8_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
     // Frees the buffer in place.
     // The buffer must not be used after this is called.
     func deallocate() {
-        try! rustCall { ffi_LuffaRpcTypes_8ad1_rustbuffer_free(self, $0) }
+        try! rustCall { ffi_LuffaRpcTypes_f0f8_rustbuffer_free(self, $0) }
     }
 }
 
@@ -758,8 +758,9 @@ extension ChatContent: Equatable, Hashable {}
 public enum ContactsEvent {
     
     case `offer`(`token`: ContactsToken)
-    case `answer`(`token`: ContactsToken)
-    case `reject`(`crc`: UInt64, `publicKey`: [UInt8])
+    case `answer`(`offerCrc`: UInt64, `token`: ContactsToken)
+    case `reject`(`offerCrc`: UInt64, `publicKey`: [UInt8])
+    case `join`(`offerCrc`: UInt64)
 }
 
 public struct FfiConverterTypeContactsEvent: FfiConverterRustBuffer {
@@ -774,12 +775,17 @@ public struct FfiConverterTypeContactsEvent: FfiConverterRustBuffer {
         )
         
         case 2: return .`answer`(
+            `offerCrc`: try FfiConverterUInt64.read(from: &buf), 
             `token`: try FfiConverterTypeContactsToken.read(from: &buf)
         )
         
         case 3: return .`reject`(
-            `crc`: try FfiConverterUInt64.read(from: &buf), 
+            `offerCrc`: try FfiConverterUInt64.read(from: &buf), 
             `publicKey`: try FfiConverterSequenceUInt8.read(from: &buf)
+        )
+        
+        case 4: return .`join`(
+            `offerCrc`: try FfiConverterUInt64.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -795,15 +801,21 @@ public struct FfiConverterTypeContactsEvent: FfiConverterRustBuffer {
             FfiConverterTypeContactsToken.write(`token`, into: &buf)
             
         
-        case let .`answer`(`token`):
+        case let .`answer`(`offerCrc`,`token`):
             writeInt(&buf, Int32(2))
+            FfiConverterUInt64.write(`offerCrc`, into: &buf)
             FfiConverterTypeContactsToken.write(`token`, into: &buf)
             
         
-        case let .`reject`(`crc`,`publicKey`):
+        case let .`reject`(`offerCrc`,`publicKey`):
             writeInt(&buf, Int32(3))
-            FfiConverterUInt64.write(`crc`, into: &buf)
+            FfiConverterUInt64.write(`offerCrc`, into: &buf)
             FfiConverterSequenceUInt8.write(`publicKey`, into: &buf)
+            
+        
+        case let .`join`(`offerCrc`):
+            writeInt(&buf, Int32(4))
+            FfiConverterUInt64.write(`offerCrc`, into: &buf)
             
         }
     }
@@ -1599,7 +1611,7 @@ public func `messageFrom`(`msg`: [UInt8])  -> Message? {
     
     rustCall() {
     
-    LuffaRpcTypes_8ad1_message_from(
+    LuffaRpcTypes_f0f8_message_from(
         FfiConverterSequenceUInt8.lower(`msg`), $0)
 }
     )
@@ -1613,7 +1625,7 @@ public func `messageTo`(`msg`: Message)  -> [UInt8]? {
     
     rustCall() {
     
-    LuffaRpcTypes_8ad1_message_to(
+    LuffaRpcTypes_f0f8_message_to(
         FfiConverterTypeMessage.lower(`msg`), $0)
 }
     )
