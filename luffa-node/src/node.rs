@@ -1257,8 +1257,15 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         tokio::spawn(async move {
                                                             if let Ok(res) = rx.await {
                                                                 if let Ok(Some(cr)) = res {
-                                                                    let res = crate::behaviour::chat::Response(cr.data);
-                                                                    tracing::warn!("pub group msg {crc} push to {did} with res >>{res:?}");
+                                                                    if let Ok(evt) = luffa_rpc_types::Event::decode(&cr.data) {
+
+                                                                        tracing::warn!("pub group msg {crc} push to {did} with res >>{evt:?}");
+                                                                    }
+                                                                    else{
+
+                                                                        let res = crate::behaviour::chat::Response(cr.data);
+                                                                        tracing::warn!("pub group msg {crc} push to {did} with res >>{res:?}");
+                                                                    }
                                                                 };
                                                             }
                                                         });
@@ -1713,6 +1720,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         }
                                                     });
                                                 }
+                                                else{
+                                                    tracing::warn!("chat group msg {crc} can not push to {did}");
+
+                                                }
                                                 
                                              
                                                 
@@ -1723,7 +1734,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         //contacts exchange
                                         if nonce.is_some() {
 
-                                            tracing::error!("contacts edge not found [{from_id} -> {to}]");
+                                            tracing::warn!("contacts edge not found [{from_id} -> {to}] {crc}");
                                         }
                                         let mut rx_any = None;
                                         let t = self.get_peer_index(to);
@@ -1736,13 +1747,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         }
                                         if rx_any.is_none() {
                                             let f = self.get_peer_index(my_id);
-                                            if let Some((cost, paths)) = astar(
+                                            if let Some((cost, mut paths)) = astar(
                                                 &self.connections,
                                                 f,
                                                 |f| f == t,
                                                 |_e| 1,
                                                 |_| 0,
                                             ) {
+                                                paths.reverse();
                                                 println!("[{cost}] paths 2>>>>>> {paths:?}");
                                                 //route this message to shortest node and then break if the node is connected.
                                                 for r in paths {
@@ -1816,7 +1828,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         tracing::error!("chat response failed: >>{e:?}");
                                     }
                                     else if nonce.is_some() {
-                                        tracing::info!("some nonce chat response ok: >>{crc}");
+                                        tracing::warn!("some nonce chat response ok: >>{crc}");
                                     }
 
                                     tracing::info!("-----{request_id:?}------");
