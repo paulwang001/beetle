@@ -622,7 +622,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     let f = self.get_peer_index(my_id);
                     let t = self.get_peer_index(to_id);
                     // let time = Utc::now().timestamp_millis() as u64;
-                    tracing::error!("local connection >> {my_id} --> {to_id}");
+                    tracing::warn!("local connection >> {my_id} --> {to_id}");
                     self.connections
                         .update_edge(f, t, ConnectionEdge::Local(peer_id.clone()));
 
@@ -1823,6 +1823,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     }
                                     let msg = Message::Feedback { crc:vec![crc], from_id:None, to_id: Some(to), status: FeedbackStatus::Send };
                                     self.local_feedback(Some(request_id), msg );
+                                    tracing::info!("channel response ok: [{crc}]");
                                 }
                                 self.emit_network_event(NetworkEvent::RequestResponse(
                                     ChatEvent::Response { request_id:Some(request_id), data },
@@ -2163,6 +2164,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         crc,
                         to,
                         from_id,
+                        nonce,
                         ..
                     } = luffa_rpc_types::Event::decode_uncheck(&data.msg).unwrap();
                     if let Some((peer,_,_)) = peers.iter().find(|(p,_,_)| {
@@ -2182,12 +2184,16 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         let req_id =
                         chat.send_request(peer, crate::behaviour::chat::Request(data.msg));
                         self.pending_request.insert(req_id, (crc,to,response_channel));
-                        self.local_feedback(Some(req_id.clone()), Message::Feedback { crc:vec![crc], from_id:Some(from_id), to_id: Some(to), status: FeedbackStatus::Sending });
-                        if let Some((_,_,ttl2)) = peers.last() {
-                            tracing::info!("chat send fast relay ttl({ttl:?}) < ttl({ttl2:?}). use {peer:?} req: {:?} ", req_id);
-                        }
-                        else{
-                            tracing::warn!("chat send fast relay ttl({ttl:?}). {:?}", req_id);
+                        
+                        if nonce.is_some() {
+                            self.local_feedback(Some(req_id.clone()), Message::Feedback { crc:vec![crc], from_id:Some(from_id), to_id: Some(to), status: FeedbackStatus::Sending });
+                            
+                            if let Some((_,_,ttl2)) = peers.last() {
+                                tracing::info!("chat send fast relay ttl({ttl:?}) < ttl({ttl2:?}). use {peer:?} crc: {} ", crc);
+                            }
+                            else{
+                                tracing::warn!("chat send fast relay ttl({ttl:?}). {:?}", req_id);
+                            }
                         }
                         return Ok(false);
                     }

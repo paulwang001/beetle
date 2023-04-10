@@ -1,4 +1,3 @@
-use crate::sled_db::global_db::GlobalDb;
 use crate::ClientError::CustomError;
 use crate::ClientResult;
 use image::EncodableLayout;
@@ -8,7 +7,7 @@ use std::sync::Arc;
 
 const CURRENT_USER: &str = "current_user";
 
-pub trait Mnemonic: GlobalDb {
+pub trait Mnemonic {
     fn open_mnemonic_tree(db: Arc<Db>) -> ClientResult<Tree> {
         Ok(db.open_tree("bip39_keys")?)
     }
