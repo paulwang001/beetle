@@ -14,9 +14,7 @@ use libp2p::{multihash, PeerId};
 use luffa_node::{
     DiskStorage, GossipsubEvent, KeyFilter, Keychain, NetworkEvent, Node, ENV_PREFIX,
 };
-use luffa_rpc_types::{
-    message_from, message_to, ChatContent, Contacts, ContactsTypes, ContentData, FeedbackStatus,
-};
+use luffa_rpc_types::{message_from, message_to, ChatContent, Contacts, ContactsTypes, ContentData, FeedbackStatus, RtcAction};
 use luffa_rpc_types::{AppStatus, ContactsEvent, ContactsToken, Event, Message};
 use luffa_store::{Config as StoreConfig, Store};
 use luffa_util::{luffa_config_path, make_config};
@@ -1514,7 +1512,10 @@ impl Client {
                 Message::Chat {
                     content: ChatContent::Send { .. },
                 }
-                | Message::WebRtc { .. }
+                | Message::WebRtc {
+                    action: RtcAction::Status {..},
+                    ..
+                }
             )
         })
     }
