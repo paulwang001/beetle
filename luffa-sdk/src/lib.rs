@@ -33,6 +33,7 @@ use std::{
     time::Instant,
 };
 use std::fs::OpenOptions;
+use std::hash::Hash;
 use std::ops::Not;
 use tantivy::tokenizer::{LowerCaser, NgramTokenizer, SimpleTokenizer, Stemmer, TextAnalyzer};
 
@@ -1949,15 +1950,19 @@ impl Client {
     }
     pub fn contacts_search(&self, c_type: u8, pattern: &str) -> ClientResult<Vec<ContactsView>> {
         let tree = Self::open_contact_tree(self.db())?;
-        let options = SearchOptions::new()
-            .levenshtein(true)
-            .case_sensitive(false)
-            .threshold(0.2)
-            .stop_whitespace(true);
-        let mut engine: SimSearch<ContactsView> = SimSearch::new_with(options);
+
+        // let options = SearchOptions::new()
+        //     .levenshtein(true)
+        //     .case_sensitive(false)
+        //     .threshold(0.2)
+        //     .stop_whitespace(true);
+        // let mut engine: SimSearch<ContactsView> = SimSearch::new_with(options);
+
         let tag_prefix = format!("TAG-");
         let itr = tree.scan_prefix(tag_prefix);
         let my_id = self.get_local_id()?;
+
+        let mut data = vec![];
         for item in itr {
             let (k, v) = item.unwrap();
             let tag = String::from_utf8(v.to_vec())?;
@@ -1984,11 +1989,17 @@ impl Client {
                         tag: tag.clone(),
                         c_type,
                     };
-                    engine.insert(c_to, &format!("{to_id} {tag}"));
+
+                    data.push((c_to, format!("{to_id} {tag}")));
+
+                    // engine.insert(c_to, &format!("{to_id} {tag}"));
                 }
             }
         }
-        let res = engine.search(pattern);
+
+        let res = take_less(&data, pattern, 20);
+
+        // let res = engine.search(pattern);
         Ok(res)
     }
 
@@ -4118,6 +4129,36 @@ pub async fn start_node(
         }
     });
     Ok((local_id, p2p_task, events, sender))
+}
+
+fn take_less<Id, V>(data: &[(Id, V)], pattern: &str, less_expect: u32) -> Vec<Id>
+    where Id: Eq + PartialEq + Clone + Hash + Ord,
+          V: AsRef<str>,
+{
+    let mut threshold = 1_f64;
+
+    loop {
+        let opts = SearchOptions::default()
+            .levenshtein(true)
+            .case_sensitive(false)
+            .stop_whitespace(true)
+            .threshold(threshold);
+
+        let mut engine = SimSearch::new_with(opts);
+        data.into_iter().for_each(|(k, v)| engine.insert(k.clone(), v.as_ref()));
+
+        let matches = engine.search(pattern);
+
+        if matches.len() >= less_expect as usize
+        || matches.len() == data.len() {
+            return matches
+        }
+
+        threshold -= 0.1;
+        if threshold < 0.1 {
+            return matches
+        }
+    }
 }
 
 /// Starts a new store, using the given mem rpc channel.
