@@ -12,6 +12,7 @@ use crate::sled_db::nickname::Nickname;
 
 pub const KVDB_GROUP_MEMBERS_TREE: &str = "luffa_group_members";
 
+#[derive(Debug)]
 pub struct GroupMemberNickname{
     pub u_id: u64,
     pub nickname: String,
@@ -95,5 +96,17 @@ pub trait GroupMembersDb: Nickname {
             }
         };
         Ok(list)
+    }
+
+    fn get_member_count(db: Arc<Db>, group_id: u64) -> ClientResult<u64> {
+        let key = Self::group_member_key(group_id);
+        let tree = Self::open_group_member_tree(db.clone())?;
+        let count = if let Some(data) = tree.get(key)? {
+            let members = Members::deserialize(data.as_bytes())?;
+            members.members.len() as u64
+        } else {
+            0
+        };
+        Ok(count)
     }
 }

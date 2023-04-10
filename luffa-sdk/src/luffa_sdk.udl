@@ -24,6 +24,13 @@ dictionary ContactsView {
   u8 c_type;
 };
 
+dictionary ContactsGroupView {
+    u64 did;
+    string tag;
+    u8 c_type;
+    u64 count;
+};
+
 dictionary GroupMemberNickname {
    u64 u_id;
    string nickname;
@@ -108,7 +115,7 @@ interface Client {
 
     [Throws=ClientError]
     sequence<GroupMemberNickname> contacts_group_members(u64 g_id, u64 page_no, u64 page_size);
-    
+
     [Throws=ClientError]
     u64 contacts_anwser(u64 did,u64 crc);
     [Throws=ClientError]
@@ -161,6 +168,8 @@ interface Client {
     [Throws=ClientError]
     sequence<ContactsView> contacts_search(u8 c_type,[ByRef] string pattern);
 
+    [Throws=ClientError]
+    sequence<ContactsGroupView> groups();
 
     [Throws=ClientError]
     sequence<ContactsView> contacts_list(u8 c_type);
@@ -203,7 +212,6 @@ interface Client {
 
     [Throws=ClientError]
     string? read_key_phrase([ByRef] string name);
-
 
     [Throws=ClientError]
     string generate_avatar([ByRef] string peer_id);
