@@ -78,7 +78,7 @@ pub trait GroupMembersDb: Nickname {
         if let Some(data) = tree.get(key)? {
             let members = Members::deserialize(data.as_bytes())?;
             let members:Vec<u64>  = members.members.iter().map(|a| *a).collect();
-            for member in members.get((page_no - 1 * page_size) as usize..page_size * page_size as usize).unwrap() {
+            for member in members.get((page_no - 1 * page_size) as usize..(page_size * page_size) as usize).unwrap() {
                 let mut nickname = String::new();
                 let key = Self::get_group_member_nickname_key(group_id, *member);
                 if let Some(data) = contact_tree.get(key.as_bytes())? {
