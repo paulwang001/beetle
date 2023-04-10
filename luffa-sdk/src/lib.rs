@@ -24,7 +24,7 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use simsearch::{SearchOptions, SimSearch};
 use sled::Db;
-use std::fmt::Debug;
+use std::{fmt::Debug, collections::HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -2471,6 +2471,7 @@ impl Client {
         let schema_tt = schema.clone();
         let cb_local = cb.clone();
         let process = tokio::spawn(async move {
+            let fetching_crc = Arc::new(RwLock::new(HashSet::<u64>::new())) ;
             while let Some(evt) = events.recv().await {
                 match evt {
                     NetworkEvent::RequestResponse(rsp) => {
@@ -2497,6 +2498,7 @@ impl Client {
                                             tracing::info!("clinet>>>>>nonce {msg_d:?}");
                                             let msg_t = msg_d.clone();
                                             let mut will_to_ui = true;
+                                            let relay_id  = from_id;
                                             match msg_d {
                                                 Message::ContactsSync { did, contacts } => {
                                                     will_to_ui = false;
@@ -2621,13 +2623,29 @@ impl Client {
                                                         }
                                                         FeedbackStatus::Fetch
                                                         | FeedbackStatus::Notice => {
-                                                            let ls_crc = crc;
+                                                            let mut ls_crc = crc;
                                                             will_to_ui = false;
                                                             let client_t = client_t.clone();
                                                             let db_tt = db_t.clone();
                                                             let cb_t = cb.clone();
                                                             let idx_t = idx.clone();
                                                             let schema_t = schema.clone();
+                                                            {
+                                                                let mut f_crc = fetching_crc.write();
+                                                                let mut fetchs = vec![];
+                                                                for c in ls_crc.iter() {
+                                                                    if !f_crc.insert(*c) {
+                                                                        fetchs.push(*c);
+                                                                        tracing::warn!("r response fetching: {c} ,r> {relay_id} f> {from_id:?}, t> {to_id:?}");
+                                                                    }
+                                                                    else{
+                                                                        tracing::warn!("n response fetching: {c} ,r> {relay_id} f> {from_id:?}, t> {to_id:?}");
+                                                                    }
+                                                                }
+                                                                ls_crc.retain(|c| !fetchs.contains(c));
+                                                                
+                                                            }
+                                                            let fetching_crc_t = fetching_crc.clone();
                                                             tokio::spawn(async move {
                                                                 let client_t = client_t.clone();
                                                                 let db_tt = db_tt.clone();
@@ -2685,6 +2703,11 @@ impl Client {
                                                                             error!("record not found {crc} error: {e:?}");
                                                                         }
                                                                     }
+                                                                    {
+                                                                        let mut f_crc = fetching_crc_t.write();
+                                                                        f_crc.remove(&crc);
+                                                                        
+                                                                    }
 
                                                                 }
                                                             });
@@ -2731,22 +2754,8 @@ impl Client {
                                         msg,
                                         ..
                                     } = im;
-                                    // if  to == my_id && nonce.is_some() {
-                                    //     let feed = luffa_rpc_types::Message::Feedback { crc:vec![crc], from_id:Some(from_id), to_id:Some(to), status: FeedbackStatus::Reach };
-                                    //     let event = luffa_rpc_types::Event::new(
-                                    //         0,
-                                    //         &feed,
-                                    //         None,
-                                    //         my_id,
-                                    //     );
-                                    //     tracing::warn!("send feedback to {from_id}");
-                                    //     let event = event.encode().unwrap();
-                                    //     if let Err(e) =
-                                    //         client_t.chat_request(bytes::Bytes::from(event)).await
-                                    //     {
-                                    //         error!("{e:?}");
-                                    //     }
-                                    // }
+                                    
+                                   
                                     if to == my_id && nonce.is_none() {
                                         if let Ok(m) = Message::decrypt(
                                             bytes::Bytes::from(msg.clone()),
@@ -2754,6 +2763,7 @@ impl Client {
                                             nonce,
                                         ) {
                                             // let m_t = m.clone();
+                                            let relay_id  = from_id;
                                             match m {
                                                 Message::Feedback {
                                                     crc,
@@ -2764,23 +2774,42 @@ impl Client {
                                                     match status {
                                                         FeedbackStatus::Fetch
                                                         | FeedbackStatus::Notice => {
-                                                            let ls_crc = crc;
-
-                                                            for crc in ls_crc {
+                                                            let mut ls_crc = crc;
+                                                            let client_t = client_t.clone();
+                                                            let db_tt = db_t.clone();
+                                                            let cb_t = cb.clone();
+                                                            let idx_t = idx.clone();
+                                                            let schema_t = schema.clone();
+                                                            {
+                                                                let mut f_crc = fetching_crc.write();
+                                                                let mut fetchs = vec![];
+                                                                for c in ls_crc.iter() {
+                                                                    if !f_crc.insert(*c) {
+                                                                        fetchs.push(*c);
+                                                                        tracing::warn!("r request fetching: {c} ,r> {relay_id} f> {from_id:?}, t> {to_id:?}");
+                                                                    }
+                                                                    else{
+                                                                        tracing::warn!("n request fetching: {c} ,r> {relay_id} f> {from_id:?}, t> {to_id:?}");
+                                                                    }
+                                                                }
+                                                                ls_crc.retain(|c| !fetchs.contains(c));
+                                                                
+                                                            }
+                                                            let fetching_crc_t = fetching_crc.clone();
+                                                            tokio::spawn(async move {
                                                                 let client_t = client_t.clone();
-                                                                let db_tt = db_t.clone();
-                                                                let cb_t = cb.clone();
-                                                                let idx_t = idx.clone();
-                                                                let schema_t = schema.clone();
-
-                                                                tokio::spawn(async move {
+                                                                let db_tt = db_tt.clone();
+                                                                let cb_t = cb_t.clone();
+                                                                let idx_t = idx_t.clone();
+                                                                let schema_t = schema_t.clone();
+                                                                for crc in ls_crc {
                                                                     match client_t
                                                                         .get_crc_record(crc)
                                                                         .await
                                                                     {
                                                                         Ok(res) => {
                                                                             let data = res.data;
-                                                                            tracing::warn!("get record: {crc} , f> {from_id:?}, t> {to_id:?}");
+                                                                            tracing::warn!("request get record: {crc} , f> {from_id:?}, t> {to_id:?}");
                                                                             let data =
                                                                                 data.to_vec();
                                                                             if let Ok(im) = Event::decode_uncheck(&data) {
@@ -2796,7 +2825,7 @@ impl Client {
 
                                                                             if !Self::have_in_tree(db_tt.clone(), crc, &table) {
                                                                                 Self::process_event(
-                                                                                    db_tt, cb_t, client_t, idx_t, schema_t, &data, my_id,
+                                                                                    db_tt.clone(), cb_t.clone(), client_t.clone(), idx_t.clone(), schema_t.clone(), &data, my_id,
                                                                                 )
                                                                                     .await;
                                                                             }
@@ -2824,8 +2853,14 @@ impl Client {
                                                                             error!("record not found {crc} error: {e:?}");
                                                                         }
                                                                     }
-                                                                });
-                                                            }
+                                                                    {
+                                                                        let mut f_crc = fetching_crc_t.write();
+                                                                        f_crc.remove(&crc);
+                                                                        
+                                                                    }
+
+                                                                }
+                                                            });
                                                         }
                                                         _ => {
                                                             tracing::warn!("from relay request no nonce msg Feedback>>>>{status:?}");
@@ -2847,12 +2882,25 @@ impl Client {
                                     let client_t = client_t.clone();
                                     let idx = idx.clone();
                                     let schema_tt = schema_tt.clone();
+                                    {
+                                        let f_crc = fetching_crc.read();
+                                        if f_crc.contains(&crc) {
+                                            tracing::warn!("request has pushing record: {crc}, f> {from_id}, t> {to}");
+                                            return;
+                                        }
+                                    }
+                                    let fetching_crc_t = fetching_crc.clone();
                                     tokio::spawn(async move {
                                         if !Self::have_in_tree(db_t.clone(), crc, &table) {
                                             Self::process_event(
                                                 db_t, cb, client_t, idx, schema_tt, &data, my_id,
                                             )
                                             .await;
+                                        }
+                                        {
+                                            let mut f_crc = fetching_crc_t.write();
+                                            f_crc.remove(&crc);
+                                            
                                         }
                                     });
                                 }
@@ -3204,7 +3252,7 @@ impl Client {
                             tracing::info!("sending: [ {} ] size:{}",req.crc,data.len());
                             match client.chat_request(bytes::Bytes::from(data.clone())).await {
                                 Ok(res) => {
-                                    tracing::info!("send: [ {} ] ",req.crc);
+                                    tracing::warn!("send: [ {} ] ",req.crc);
                                     if let Some(job) = save_job {
                                         if let Err(e) = job.await {
                                             tracing::error!("job>> {e:?}");
@@ -3345,10 +3393,9 @@ impl Client {
             if let Err(e) = client_t.chat_request(bytes::Bytes::from(event)).await {
                 error!("{e:?}");
             }
-            if to != my_id && from_id != my_id {
-                tracing::warn!("not to my id:{to} or {from_id}");
-                // return;
-            }
+            
+
+
 
             let did = if to == my_id { from_id } else { to };
 
@@ -3947,7 +3994,7 @@ impl Client {
 }
 /// Starts a new p2p node, using the given mem rpc channel.
 pub async fn start_node(
-    config: luffa_node::config::Config,
+    mut config: luffa_node::config::Config,
     keychain: Keychain<DiskStorage>,
     db: Arc<luffa_store::Store>,
     filter: Option<KeyFilter>,
@@ -3957,6 +4004,10 @@ pub async fn start_node(
     Receiver<NetworkEvent>,
     Sender<luffa_node::rpc::RpcMessage>,
 )> {
+    config.libp2p.dial_concurrency_factor = 1;
+    config.libp2p.max_conns_per_peer = 1;
+    config.libp2p.max_conns_in = 1;
+    config.libp2p.max_conns_out = 1;
     tracing::info!("node>>>{config:?}");
     let (mut p2p, sender) =
         Node::new(config, keychain, db, Some("Luffa".to_string()), filter).await?;
