@@ -50,6 +50,7 @@ use crate::avatar_nickname::nickname::generate_nickname;
 use anyhow::Result;
 use chrono::Utc;
 use image::EncodableLayout;
+use ssh_key::SigningKey;
 use tantivy::collector::TopDocs;
 use tantivy::directory::{ManagedDirectory, MmapDirectory};
 use tantivy::query::QueryParser;
@@ -1081,11 +1082,19 @@ impl Client {
         let tree = self.db().open_tree(&time_table)?;
         let offer_tree = self.db().open_tree(&offer_table)?;
         let mut itr = tree.into_iter();
+        let mut remove_keys = vec![];
         while let Some(val) = itr.next_back() {
             let (_k, v) = val?;
             let mut key = [0u8; 8];
             key.clone_from_slice(&v[..8]);
             let crc = u64::from_be_bytes(key);
+
+            if !Self::if_exists_offer_in_tree(self.db(), crc) {
+                // 当前crc不存在，删除该条记录
+                remove_keys.push(crc);
+                continue
+            }
+
             let did =
                 Self::get_u64_from_tree(&offer_tree, &format!("DID_{crc}")).unwrap_or_default();
             // let offer_id = Self::get_u64_from_tree(&offer_tree, &format!("OF_{crc}")).unwrap_or_default();
@@ -1115,7 +1124,22 @@ impl Client {
                 }
             }
         }
+
+        // 删除一个不存在的key
+        remove_keys.into_iter()
+            .for_each(|x| {
+                let _ = tree.remove(x.to_be_bytes());
+            });
+
         Ok(msgs)
+    }
+
+    pub fn remove_offser(&self, did: u64, crc: u64) -> ClientResult<()> {
+        let _ = self._remove_local_msg(did, crc)?;
+
+        Self::remove_offer_in_tree(self.db(), crc);
+
+        Ok(())
     }
 
     pub fn meta_msg(&self, data: &[u8]) -> ClientResult<EventMeta> {
@@ -1586,13 +1610,21 @@ impl Client {
     }
 
     pub fn remove_local_msg(&self, did: u64, crc: u64) -> ClientResult<()> {
+        let _ = self._remove_local_msg(did, crc)?;
+
+        // 触发更新最近消息预览
+        let _ = self.update_last_msg_preview(did)?;
+        Ok(())
+    }
+
+    fn _remove_local_msg(&self, did: u64, crc: u64) -> ClientResult<()> {
         let table = format!("message_{did}");
         if !Self::have_in_tree(self.db(), crc, &table) {
             return Ok(());
         }
 
         let event_at = self
-            .read_msg_with_meta(did, crc)
+            .read_msg_meta_without_chat_session(did, crc)
             .ok()
             .flatten()
             .map(|x| x.event_time);
@@ -1642,8 +1674,6 @@ impl Client {
             // }
         }
 
-        // 触发更新最近消息预览
-        let _ = self.update_last_msg_preview(did)?;
         Ok(())
     }
 
