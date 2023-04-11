@@ -1,14 +1,15 @@
 use clap::Parser;
 use futures::select;
+use libp2p::identity::PublicKey;
+use libp2p::PeerId;
+use luffa_rpc_types::{message_to, ContactsEvent, ContactsToken, Message, RtcAction};
 use luffa_sdk::{Callback, Client, ClientResult};
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 use serde_json;
 use std::io;
 use std::io::BufRead;
 use std::sync::mpsc::sync_channel;
-use libp2p::identity::PublicKey;
-use libp2p::PeerId;
-use luffa_rpc_types::{ContactsEvent, ContactsToken, Message, message_to, RtcAction};
 
 // 12D3KooWA4xFkMebyXj4TEwgFxwZBn1baWByzWekafdJXEDqcnAP
 // 12D3KooWBG8PcmWFas9vi1McucfPE6N6Qj1mMB86GwvrtnJx9tPw
@@ -25,17 +26,21 @@ pub static KEYS: Lazy<Vec<User>> = Lazy::new(|| {
             to: 13473655988076347637,
         },
         User {
-            mnemonic: "hawk nasty wreck brisk target immune height december vault cliff tower merry".to_string(),
+            mnemonic:
+                "hawk nasty wreck brisk target immune height december vault cliff tower merry"
+                    .to_string(),
             to: 13473655988076347637,
         },
         User {
-            mnemonic: "duck culture horror sausage jungle wait dirt elegant hold van learn match".to_string(),
+            mnemonic: "duck culture horror sausage jungle wait dirt elegant hold van learn match"
+                .to_string(),
             to: 13473655988076347637,
         },
         User {
-            mnemonic: "suggest option city crucial maid catch win prevent bind thing disagree boil".to_string(),
+            mnemonic: "suggest option city crucial maid catch win prevent bind thing disagree boil"
+                .to_string(),
             to: 13473655988076347637,
-        }
+        },
     ]
 });
 
@@ -55,6 +60,16 @@ pub struct TestArgs {
 // 13473655988076347637
 // 10871006697545602478
 // 11837182690600253035
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct Params {
+    pub to: Option<u64>,
+    pub msg: Option<String>,
+    pub command: Option<String>,
+    pub group_id: Option<u64>,
+    pub groups: Option<Vec<u64>>,
+}
+
 fn main() -> ClientResult<()> {
     let args = TestArgs::parse();
     let idx = args.idx;
@@ -81,42 +96,43 @@ fn main() -> ClientResult<()> {
     std::thread::spawn(move || {
         loop {
             let line = stdin.next().unwrap().unwrap();
-            let line: Vec<&str> = line.split(" ").collect();
+            let line: Vec<&str> = line.split("$").collect();
             if line.len() < 1 {
                 tracing::error!("command: {:?} error", line);
                 continue;
             }
             let command = *line.get(0).unwrap();
-            let mut args = "";
+            let mut params = Params::default();
             if line.len() > 1 {
-                args = *line.get(1).unwrap();
+                params = serde_json::from_str(*line.get(1).unwrap()).unwrap();
+                // line.get(1).unwrap();
             }
             println!("{:?}", line);
             match command {
-                // send_msg
+                // send_msg$test
                 "send_msg" => {
                     let msg = Message::Chat {
                         content: luffa_rpc_types::ChatContent::Send {
                             data: luffa_rpc_types::ContentData::Text {
                                 source: luffa_rpc_types::DataSource::Text {
-                                    content: args.to_string(),
+                                    content: params.msg.unwrap().to_string(),
                                 },
                                 reference: None,
                             },
                         },
                     };
                     let msg = message_to(msg).unwrap();
-                    let msg_id = client1.send_msg(user.to, msg).unwrap();
+                    let msg_id = client1.send_msg(params.to.unwrap(), msg).unwrap();
                     tracing::error!("msg_id: {msg_id}");
                 }
                 // recent
                 "recent" => {
-                    let data = client1.recent_messages(user.to, 0, 10).unwrap();
+                    let data = client1.recent_messages(params.to.unwrap(), 0, 10).unwrap();
                     tracing::error!("recent_messages: {data:?}");
                 }
                 // last_chat
                 "last_chat" => {
-                    let data = client1.last_chat_msg_with_meta(user.to).unwrap();
+                    let data = client1.last_chat_msg_with_meta(params.to.unwrap()).unwrap();
                     tracing::error!("last_chat_msg_with_meta: {data:?}");
                 }
                 // relay_list
@@ -124,54 +140,86 @@ fn main() -> ClientResult<()> {
                     let relays = client1.relay_list().unwrap();
                     tracing::error!("relay_list: {relays:?}");
                 }
-                // show_code p/g
+                // show_code${ "command": "p" }
                 "show_code" => {
-                    let show_code = client1.show_code("https://luffa.putdev.com", args).unwrap().unwrap();
+                    let show_code = client1
+                        .show_code("https://luffa.putdev.com", &params.command.unwrap())
+                        .unwrap()
+                        .unwrap();
                     tracing::error!("show_code: {show_code:?}");
                 }
-                // contacts_offer https://luffa.putdev.com/p/YGz62Wdxqx8/3i4SZAFNnaqAfc3i5wPKdUfo76Wz8vVx3U4zWvYFyeLh/Uncharted Banana pepper
+                // contacts_offer${ "command": "https://luffa.putdev.com/p/YGz62Wdxqx8/UsbMgKtfL2usG5ULQd1KaFySjBHG1YU8XoXZLvk463m/Uncharted Banana pepper"}
                 "contacts_offer" => {
-                    let crc = client1.contacts_offer(&args.to_string()).unwrap();
+                    let crc = client1.contacts_offer(&params.command.unwrap()).unwrap();
                     tracing::error!("contacts_offer: {crc}");
                 }
-                // contacts_anwser 588347625583463033
+                // contacts_anwser$1314654236848723363
+                // contacts_anwser${ "to": 10871006697545602478, "command": "9456896362212126259" }
+                // contacts_anwser${ "to": 11837182690600253035, "command": "10860903572414034769" }
                 "contacts_anwser" => {
-                    let id = client1.contacts_anwser(user.to, args.parse().unwrap()).unwrap();
+                    let id = client1
+                        .contacts_anwser(
+                            params.to.unwrap(),
+                            params.command.unwrap().parse().unwrap(),
+                        )
+                        .unwrap();
                     tracing::error!("contacts_anwser: {id}");
                 }
                 // read_msg 14044266394953996910
                 "read_msg" => {
-                   let data = client1.read_msg_with_meta(user.to, args.parse().unwrap()).unwrap().unwrap();
+                    let data = client1
+                        .read_msg_with_meta(
+                            params.to.unwrap(),
+                            params.command.unwrap().parse().unwrap(),
+                        )
+                        .unwrap()
+                        .unwrap();
                     tracing::error!("read_msg_with_meta: {data:?}");
                 }
                 // contacts_search1 Empathetic
                 "contacts_search1" => {
-                    let contacts = client1.contacts_search(0, args).unwrap();
+                    let contacts = client1
+                        .contacts_search(0, &params.command.unwrap())
+                        .unwrap();
                     tracing::error!("contacts_search: {contacts:?}");
                 }
-                // contacts_search2 Empathetic
+                // contacts_search2$my_group_test
                 "contacts_search2" => {
-                    let contacts = client1.contacts_search(2, args).unwrap();
+                    let contacts = client1
+                        .contacts_search(2, &params.command.unwrap())
+                        .unwrap();
                     tracing::error!("contacts_search: {contacts:?}");
                 }
-                // group_create my_group
+                // 13685501506277185778
+                // group_create${ "groups": [10871006697545602478, 11837182690600253035], "command": "group_test" }
                 "group_create" => {
-                    let group_id = client1.contacts_group_create(vec![13473655988076347637, user.to], Some(args.to_string())).unwrap();
+                    let group_id = client1
+                        .contacts_group_create(params.groups.unwrap(), params.command)
+                        .unwrap();
                     tracing::error!("group_id: {group_id:?}");
                 }
-                // nickname 11837182690600253035
+                // nickname${ "command": "13473655988076347637" }
                 "nickname" => {
-                    let nickname = client1.find_contacts_tag(args.parse().unwrap()).unwrap();
+                    let nickname = client1
+                        .find_contacts_tag(params.command.unwrap().parse().unwrap())
+                        .unwrap();
                     tracing::error!("find_contacts_tag: {nickname:?}");
                 }
                 // group_invite 11837182690600253035
                 "group_invite" => {
-                    let tag = client1.contacts_group_invite_member(4832256763054520653, vec![args.parse().unwrap()]).unwrap();
+                    let tag = client1
+                        .contacts_group_invite_member(
+                            params.group_id.unwrap(),
+                            params.groups.unwrap(),
+                        )
+                        .unwrap();
                     tracing::error!("contacts_group_invite_member: {tag:?}");
                 }
-                // group_members 4832256763054520653
+                // group_members$16351167746333040733
                 "group_members" => {
-                    let members = client1.contacts_group_members(args.parse().unwrap(), 1, 10).unwrap();
+                    let members = client1
+                        .contacts_group_members(params.command.unwrap().parse().unwrap(), 1, 10)
+                        .unwrap();
                     tracing::error!("contacts_group_members: {members:?}");
                 }
                 _ => {}
