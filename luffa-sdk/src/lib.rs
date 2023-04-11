@@ -605,25 +605,29 @@ impl Client {
         };
         let invitee1 = invitee.clone();
         RUNTIME.block_on(async {
-            let contacts = vec![Contacts {
-                did: g_id,
-                r#type: ContactsTypes::Group,
-                have_time: 0,
-                wants: vec![],
-            }];
-
-            let sync = Message::ContactsSync {
-                did: my_id,
-                contacts,
-            };
-
-            let event = Event::new(0, &sync, None, my_id);
-            let data = event.encode().unwrap();
             let client_t = self.client.read().clone().unwrap();
             let tx = self.sender.read().clone().unwrap();
             tokio::spawn(async move {
-                if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
-                    tracing::warn!("send contacts sync status >>> {e:?}");
+                let mut sync_members = vec![my_id];
+                sync_members.extend_from_slice(&invitee1);
+                for i_id in sync_members {
+                    let contacts = vec![Contacts {
+                        did: g_id,
+                        r#type: ContactsTypes::Group,
+                        have_time: 0,
+                        wants: vec![],
+                    }];
+
+                    let sync = Message::ContactsSync {
+                        did: i_id,
+                        contacts,
+                    };
+        
+                    let event = Event::new(0, &sync, None, 0);
+                    let data = event.encode().unwrap();
+                    if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
+                        tracing::warn!("send contacts sync status >>> {e:?}");
+                    }
                 }
                 for i_id in invitee1 {
                     let (req, res) = tokio::sync::oneshot::channel();
@@ -2934,6 +2938,19 @@ impl Client {
                                                                         }
                                                                         Err(e) => {
                                                                             error!("record not found {crc} error: {e:?}");
+                                                                            let feed = luffa_rpc_types::Message::Feedback { crc: vec![crc], from_id: Some(my_id), to_id: Some(0), status: luffa_rpc_types::FeedbackStatus::Reach };
+                                                                            let event = luffa_rpc_types::Event::new(
+                                                                                0,
+                                                                                &feed,
+                                                                                None,
+                                                                                my_id,
+                                                                            );
+                                                                            let event = event.encode().unwrap();
+                                                                            if let Err(e) =
+                                                                                client_t.chat_request(bytes::Bytes::from(event)).await
+                                                                            {
+                                                                                error!("{e:?}");
+                                                                            }
                                                                         }
                                                                     }
                                                                     {
@@ -3821,6 +3838,26 @@ impl Client {
                                             db_t.clone(),
                                         )
                                         .await;
+
+                                        let contacts = vec![Contacts {
+                                            did: did,
+                                            r#type: ContactsTypes::Group,
+                                            have_time: 0,
+                                            wants: vec![],
+                                        }];
+                            
+                                        let sync = Message::ContactsSync {
+                                            did: my_id,
+                                            contacts,
+                                        };
+                            
+                                        let event = Event::new(did, &sync, Some(secret_key.clone()), my_id);
+                                        let data = event.encode().unwrap();
+                                        if let Err(e) = client_t.chat_request(bytes::Bytes::from(data))
+                                        .await
+                                        {
+                                            error!("sync contacts {did} {e:?}");
+                                        }
                                         let group_nickname = Self::get_group_member_nickname(
                                             db_t.clone(),
                                             did,

@@ -654,7 +654,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     let t = self.get_peer_index(to_id);
 
                     if let Some(e) = self.connections.find_edge(f, t) {
-                        // self.connections.remove_edge(e);
+                        self.connections.remove_edge(e);
                         tracing::warn!("local disconnection >> {my_id} --> {to_id}");
                     }
                     else{
@@ -1413,6 +1413,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         tracing::warn!("CRC is pending routing {crc}");
                                         return Ok(());
                                     }
+                                    if let Err(e) = self
+                                    .put_to_dht(crc, request.data().to_vec())
+                                    {
+                                        tracing::error!("put to dht {e:?}");
+                                    }
                                 }
                                 
                                 let mut feed_status = luffa_rpc_types::FeedbackStatus::Routing;
@@ -1555,12 +1560,6 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 else {
                                     let f = self.get_contacts_index(from_id);
                                     let t = self.get_contacts_index(to);
-                                    // put record(crc,data)
-                                    if let Err(e) = self
-                                    .put_to_dht(crc, request.data().to_vec())
-                                    {
-                                        tracing::error!("put to dht {e:?}");
-                                    }
                                     
                                     // tracing::info!("{crc}");
                                     // check that from and to was in any contacts ?
