@@ -36,12 +36,12 @@ pub const AGENT_VERSION: &str = concat!("/", env!("CARGO_PKG_VERSION"));
 #[behaviour(out_event = "Event")]
 pub(crate) struct NodeBehaviour {
     ping: Ping,
-    pub(crate) keep : libp2p::swarm::keep_alive::Behaviour, 
+    // pub(crate) keep : libp2p::swarm::keep_alive::Behaviour,
     pub(crate) identify: identify::Behaviour,
     pub(crate) bitswap: Toggle<Bitswap<BitswapStore>>,
     pub(crate) kad: Toggle<Kademlia<MemoryStore>>,
     mdns: Toggle<Mdns>,
-    pub(crate) chat:Toggle<RequestResponse<chat::ChatCodec>>,
+    pub(crate) chat: Toggle<RequestResponse<chat::ChatCodec>>,
     pub(crate) autonat: Toggle<autonat::Behaviour>,
     relay: Toggle<relay::v2::relay::Relay>,
     relay_client: Toggle<relay::v2::client::Client>,
@@ -84,7 +84,7 @@ impl NodeBehaviour {
         config: &Libp2pConfig,
         relay_client: Option<relay::v2::client::Client>,
         db: Arc<luffa_store::Store>,
-        agent_version:Option<String>
+        agent_version: Option<String>,
     ) -> Result<Self> {
         let mut peer_manager = PeerManager::default();
         let pub_key = local_key.public();
@@ -143,7 +143,7 @@ impl NodeBehaviour {
             let mut kad_config = KademliaConfig::default();
             kad_config.set_parallelism(16usize.try_into().unwrap());
             // TODO: potentially lower (this is per query)
-            kad_config.set_query_timeout(Duration::from_secs(60));
+            kad_config.set_query_timeout(Duration::from_secs(3));
 
             let mut kademlia = Kademlia::with_config(pub_key.to_peer_id(), store, kad_config);
             for multiaddr in &config.bootstrap_peers {
@@ -229,10 +229,15 @@ impl NodeBehaviour {
             None
         }
         .into();
-        
+        let cfg = libp2p::ping::Config::new()
+            .with_interval(Duration::from_secs(3))
+            .with_timeout(Duration::from_secs(5));
+        let ping = Ping::new(cfg);
+        // let keep = libp2p::swarm::keep_alive::Behaviour::default();
+
         Ok(NodeBehaviour {
-            ping: Ping::default(),
-            keep: libp2p::swarm::keep_alive::Behaviour::default(),
+            ping,
+            // keep: libp2p::swarm::keep_alive::Behaviour::default(),
             identify,
             bitswap,
             mdns,

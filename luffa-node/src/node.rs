@@ -164,7 +164,7 @@ pub struct Node<KeyStorage: Storage> {
     store: Arc<luffa_store::Store>,
     cache: DiGraph<u64, (u64, u64)>,
     pub_pending: VecDeque<(Vec<u8>, Instant, u8)>,
-    connections: UnGraph<u64, ConnectionEdge>,
+    connections: DiGraph<u64, ConnectionEdge>,
     contacts: UnGraph<u64, u8>,
     agent: Option<String>,
 }
@@ -254,7 +254,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             }
         }
         let cache = DiGraph::<u64, (u64, u64)>::new();
-        let connections = UnGraph::<u64, ConnectionEdge>::with_capacity(1024, 1024);
+        let connections = DiGraph::<u64, ConnectionEdge>::with_capacity(1024, 1024);
         let contacts = UnGraph::<u64, u8>::with_capacity(1024, 1024);
         Ok((
             Node {
@@ -654,7 +654,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     let t = self.get_peer_index(to_id);
 
                     if let Some(e) = self.connections.find_edge(f, t) {
-                        self.connections.remove_edge(e);
+                        // self.connections.remove_edge(e);
                         tracing::warn!("local disconnection >> {my_id} --> {to_id}");
                     }
                     else{
@@ -1219,7 +1219,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                             }
 
                                             if let Ok(Some(rx)) =
-                                                self.local_send_if_connected(t, data)
+                                                self.local_send_if_connected(t,to, data)
                                             {
                                                 rx_any = Some(rx);
                                             }
@@ -1252,7 +1252,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         continue;
                                                     }
                                                     if let Ok(Some(rx)) =
-                                                        self.local_send_if_connected(t, data)
+                                                        self.local_send_if_connected(t,did, data)
                                                     {
                                                         tokio::spawn(async move {
                                                             if let Ok(res) = rx.await {
@@ -1269,6 +1269,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                                 };
                                                             }
                                                         });
+                                                    }
+                                                    else{
+
                                                     }
                                                 }
                                                 
@@ -1302,7 +1305,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         }
 
                                         if let Ok(Some(rx)) =
-                                            self.local_send_if_connected(t, data)
+                                            self.local_send_if_connected(t,to, data)
                                         {
                                             tokio::spawn(async move {
                                                 if let Ok(res) = rx.await {
@@ -1574,7 +1577,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                             let t = self.get_peer_index(to);
 
                                             if let Ok(Some(rx)) =
-                                                self.local_send_if_connected(t, request.data())
+                                                self.local_send_if_connected(t,to, request.data())
                                             {
                                                 rx_any = Some(rx);
                                             }
@@ -1592,8 +1595,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     //route this message to shortest node and then break if the node is connected.
                                                     for r in paths {
                                                         if r != f {
+                                                            let r_id = self.connections[r];
                                                             match self.local_send_if_connected(
                                                                 r,
+                                                                r_id,
                                                                 request.data(),
                                                             ) {
                                                                 Ok(Some(rx)) => {
@@ -1708,7 +1713,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     ));
                                                 }
                                                 if let Ok(Some(rx)) =
-                                                    self.local_send_if_connected(t, request.data())
+                                                    self.local_send_if_connected(t,did, request.data())
                                                 {
                                                     
                                                     tokio::spawn(async move {
@@ -1741,7 +1746,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         let pending = self.pending_routing.entry(to).or_insert(Vec::new());
                                         pending.push((crc,std::time::Instant::now()));
                                         if let Ok(Some(rx)) =
-                                            self.local_send_if_connected(t, request.data())
+                                            self.local_send_if_connected(t,to, request.data())
                                         {
                                             rx_any = Some(rx);
                                         }
@@ -1759,8 +1764,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 //route this message to shortest node and then break if the node is connected.
                                                 for r in paths {
                                                     if r != f {
+                                                        let r_id = self.connections[r];
                                                         match self.local_send_if_connected(
                                                             r,
+                                                            r_id,
                                                             request.data(),
                                                         ) {
                                                             Ok(Some(rx)) => {
@@ -2056,71 +2063,54 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
     fn local_send_if_connected(
         &mut self,
         target: NodeIndex,
+        did: u64,
         data: &Vec<u8>,
     ) -> Result<Option<tokio::sync::oneshot::Receiver<Result<Option<ChatResponse>, anyhow::Error>>>>
     {
-        
         // this node is connected to the target of this message?
-        let mut edges = self.connections.edges(target);
-        if let Some(local) = edges.find(|e| match e.weight() {
-            ConnectionEdge::Local(_) => true,
-            _ => false,
-        }) 
-        {
-            match local.weight() {
-                ConnectionEdge::Local(p) => {
-                    if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-                        let (tx, rx) = tokio::sync::oneshot::channel();
-                        let data = data.to_vec();
-                        let luffa_rpc_types::Event { crc ,..} = luffa_rpc_types::Event::decode_uncheck(&data)?;
+        let data = data.to_vec();
+        let luffa_rpc_types::Event { crc, .. } = luffa_rpc_types::Event::decode_uncheck(&data)?;
+        let local_id = self.local_peer_id();
+        let mut digest = crc64fast::Digest::new();
+        digest.write(&local_id.to_bytes());
+        let my_id = digest.sum64();
+        let my_idx = self.get_peer_index(my_id);
+        if let Some(e_idx) = self.connections.find_edge(my_idx, target) {
+            if let Some(w) = self.connections.edge_weight(e_idx) {
+                match w {
+                    ConnectionEdge::Local(p) => {
                         let mut digest = crc64fast::Digest::new();
                         digest.write(&p.clone().to_bytes());
-                        let to_id = digest.sum64();
-                        let req_id = chat.send_request(p, crate::behaviour::chat::Request(data));
-                        self.pending_request.insert(req_id, (crc,to_id,tx));
-                        tracing::warn!("local chat to [{p:?}] send. crc >> {}", crc);
-
-                        return Ok(Some(rx));
-                    }
-                }
-                _ => {
-                    unreachable!()
+                        let p_id = digest.sum64();
+                        if p_id != did {
+                            tracing::error!("[{crc}] to failed {p:?} [{p_id} != {did}]");
+                        }
+                        if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+                            let (tx, rx) = tokio::sync::oneshot::channel();
+                            let mut digest = crc64fast::Digest::new();
+                            digest.write(&p.clone().to_bytes());
+                            let to_id = digest.sum64();
+                            let req_id = chat.send_request(p, crate::behaviour::chat::Request(data));
+                            self.pending_request.insert(req_id, (crc,to_id,tx));
+                            tracing::warn!("local chat to [{p:?}] send. crc >> {} match [{} {p_id} === {did}]", crc,p_id == did);
+                            
+                            return Ok(Some(rx));
+                        }
+                    },
+                    _ => {
+                        // NA
+                    },
                 }
             }
-        }
-        // else{
-        //     if let Some(to) = self.contacts.node_weight(target) {
-        //         let peer_id =
-        //         match self.swarm.behaviour().peer_manager.all_peers().iter().find(|peer|{
-        //             let mut digest = crc64fast::Digest::new();
-        //             digest.write(&peer.clone().to_bytes());
-        //             let to_id = digest.sum64();
-        //             to_id == *to 
-        //         })
-        //         {
-        //             Some(p)=>{
-        //                 Some(p.clone().clone())
-        //             }
-        //             None=>{
-        //                 None
-        //             }
-        //         };
-        //         if let Some(p) = peer_id {
-        //             let data = data.to_vec();
-        //             let luffa_rpc_types::Event { crc ,..} = luffa_rpc_types::Event::decode_uncheck(&data)?;
-        //             if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-                        
-        //                 let (tx, rx) = tokio::sync::oneshot::channel();
-        //                 let req_id = chat.send_request(&p, crate::behaviour::chat::Request(data));
-        //                 self.pending_request.insert(req_id, (crc,*to,tx));
-        //                 tracing::warn!("remote>> chat send. {:?}", req_id);
-        //                 return Ok(Some(rx)); 
-        //             }
+            let mut idx = e_idx;
 
-        //         }
-                
-        //     }
-        // }
+            while let Some(e) = self.connections.next_edge(idx, Direction::Incoming) {
+                let w = self.connections.edge_weight(e).unwrap();
+                tracing::warn!("local chat next edge :{w:?}");
+                idx = e;
+            }
+        }
+        tracing::warn!("local chat msg {crc} can not push to {did}");
         Ok(None)
     }
 
