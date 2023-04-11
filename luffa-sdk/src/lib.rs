@@ -1083,7 +1083,7 @@ impl Client {
     }
 
     pub fn recent_offser(&self, top: u32) -> ClientResult<Vec<OfferView>> {
-        let mut msgs = vec![];
+        let mut msgs: Vec<OfferView> = vec![];
         let time_table = format!("offer_time");
         let offer_table = format!("offer");
         let tree = self.db().open_tree(&time_table)?;
@@ -1118,14 +1118,24 @@ impl Client {
             if let Ok(Some(tag)) = offer_tree.get(&format!("TAG_{crc}")) {
                 let tag = String::from_utf8(tag.to_vec()).unwrap();
                 let bs_did = bs58::encode(did.to_be_bytes()).into_string();
-                msgs.push(OfferView {
+                let view = OfferView {
                     did,
                     bs_did,
                     offer_crc: crc,
                     tag,
                     status,
                     event_time: event_meta.event_time,
-                });
+                };
+
+                if let Some((idx, v)) =
+                    msgs.iter().enumerate().find(|(_, x)| x.did == did) {
+                    if v.event_time < view.event_time {
+                        msgs[idx] = view;
+                    }
+                } else {
+                    msgs.push(view);
+                }
+
                 if msgs.len() >= top as usize {
                     break;
                 }
@@ -2568,6 +2578,31 @@ impl Client {
         Self::group_members_get(self.db(), g_id, page_no, page_size)
     }
 
+    pub fn leave_group(&self, gid: u64) -> ClientResult<()> {
+        let ty = Self::get_contacts_type(self.db(), gid);
+        if ! matches!(ty, Some(ContactsTypes::Group)) {
+            // 考虑是否返回错误
+            return Ok(())
+        }
+
+        let id = self.get_local_id().expect("get local id failed")
+            .expect("local id is null in leave_group");
+
+        let _ = self.send_msg(gid,message_to(
+            Message::ContactsExchange {
+                exchange: ContactsEvent::Leave {
+                    id,
+                }
+            }
+        ).unwrap())
+            .expect("send leave msg failed");
+
+        let _ = Self::remove_contacts(self.db(), gid)?;
+        let _ = Self::remove_session(self.db(), gid);
+
+        Ok(())
+    }
+
     /// run
     async fn run(
         db: Arc<Db>,
@@ -3928,6 +3963,9 @@ impl Client {
                                         )
                                         .await;
                                     }
+                                    ContactsEvent::Leave {id} => {
+                                        Self::group_member_remove(db_t.clone(), did, id).expect("remove group member failed");
+                                    }
 
                                     ContactsEvent::Sync {
                                         offer_crc,
@@ -4178,6 +4216,9 @@ impl Client {
                                             )
                                                 .await;
 
+                                        }
+                                        ContactsEvent::Leave {id} => {
+                                            Self::group_member_remove(db_t.clone(), did, id).expect("remove group member failed");
                                         }
                                         ContactsEvent::Sync {
                                             offer_crc,

@@ -40,7 +40,7 @@ open class RustBuffer : Structure() {
 
     companion object {
         internal fun alloc(size: Int = 0) = rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_8ad1_rustbuffer_alloc(size, status).also {
+            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_14dd_rustbuffer_alloc(size, status).also {
                 if(it.data == null) {
                    throw RuntimeException("RustBuffer.alloc() returned null data pointer (size=${size})")
                }
@@ -48,7 +48,7 @@ open class RustBuffer : Structure() {
         }
 
         internal fun free(buf: RustBuffer.ByValue) = rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_8ad1_rustbuffer_free(buf, status)
+            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_14dd_rustbuffer_free(buf, status)
         }
     }
 
@@ -257,27 +257,27 @@ internal interface _UniFFILib : Library {
         }
     }
 
-    fun LuffaRpcTypes_8ad1_message_from(`msg`: RustBuffer.ByValue,
+    fun LuffaRpcTypes_14dd_message_from(`msg`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaRpcTypes_8ad1_message_to(`msg`: RustBuffer.ByValue,
+    fun LuffaRpcTypes_14dd_message_to(`msg`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_8ad1_rustbuffer_alloc(`size`: Int,
+    fun ffi_LuffaRpcTypes_14dd_rustbuffer_alloc(`size`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_8ad1_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,
+    fun ffi_LuffaRpcTypes_14dd_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_8ad1_rustbuffer_free(`buf`: RustBuffer.ByValue,
+    fun ffi_LuffaRpcTypes_14dd_rustbuffer_free(`buf`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): Unit
 
-    fun ffi_LuffaRpcTypes_8ad1_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,
+    fun ffi_LuffaRpcTypes_14dd_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
@@ -398,9 +398,7 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
 
 data class Contacts (
     var `did`: ULong, 
-    var `type`: ContactsTypes, 
-    var `haveTime`: ULong, 
-    var `wants`: List<ULong>
+    var `type`: ContactsTypes
 ) {
     
 }
@@ -410,23 +408,17 @@ public object FfiConverterTypeContacts: FfiConverterRustBuffer<Contacts> {
         return Contacts(
             FfiConverterULong.read(buf),
             FfiConverterTypeContactsTypes.read(buf),
-            FfiConverterULong.read(buf),
-            FfiConverterSequenceULong.read(buf),
         )
     }
 
     override fun allocationSize(value: Contacts) = (
             FfiConverterULong.allocationSize(value.`did`) +
-            FfiConverterTypeContactsTypes.allocationSize(value.`type`) +
-            FfiConverterULong.allocationSize(value.`haveTime`) +
-            FfiConverterSequenceULong.allocationSize(value.`wants`)
+            FfiConverterTypeContactsTypes.allocationSize(value.`type`)
     )
 
     override fun write(value: Contacts, buf: ByteBuffer) {
             FfiConverterULong.write(value.`did`, buf)
             FfiConverterTypeContactsTypes.write(value.`type`, buf)
-            FfiConverterULong.write(value.`haveTime`, buf)
-            FfiConverterSequenceULong.write(value.`wants`, buf)
     }
 }
 
@@ -644,11 +636,23 @@ sealed class ContactsEvent {
         val `token`: ContactsToken
         ) : ContactsEvent()
     data class Answer(
+        val `offerCrc`: ULong, 
         val `token`: ContactsToken
         ) : ContactsEvent()
     data class Reject(
-        val `crc`: ULong, 
+        val `offerCrc`: ULong, 
         val `publicKey`: List<UByte>
+        ) : ContactsEvent()
+    data class Join(
+        val `offerCrc`: ULong, 
+        val `groupNickname`: String
+        ) : ContactsEvent()
+    data class Leave(
+        val `id`: ULong
+        ) : ContactsEvent()
+    data class Sync(
+        val `offerCrc`: ULong, 
+        val `groupNickname`: String
         ) : ContactsEvent()
     
 
@@ -662,11 +666,23 @@ public object FfiConverterTypeContactsEvent : FfiConverterRustBuffer<ContactsEve
                 FfiConverterTypeContactsToken.read(buf),
                 )
             2 -> ContactsEvent.Answer(
+                FfiConverterULong.read(buf),
                 FfiConverterTypeContactsToken.read(buf),
                 )
             3 -> ContactsEvent.Reject(
                 FfiConverterULong.read(buf),
                 FfiConverterSequenceUByte.read(buf),
+                )
+            4 -> ContactsEvent.Join(
+                FfiConverterULong.read(buf),
+                FfiConverterString.read(buf),
+                )
+            5 -> ContactsEvent.Leave(
+                FfiConverterULong.read(buf),
+                )
+            6 -> ContactsEvent.Sync(
+                FfiConverterULong.read(buf),
+                FfiConverterString.read(buf),
                 )
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
@@ -684,6 +700,7 @@ public object FfiConverterTypeContactsEvent : FfiConverterRustBuffer<ContactsEve
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
                 4
+                + FfiConverterULong.allocationSize(value.`offerCrc`)
                 + FfiConverterTypeContactsToken.allocationSize(value.`token`)
             )
         }
@@ -691,8 +708,31 @@ public object FfiConverterTypeContactsEvent : FfiConverterRustBuffer<ContactsEve
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
                 4
-                + FfiConverterULong.allocationSize(value.`crc`)
+                + FfiConverterULong.allocationSize(value.`offerCrc`)
                 + FfiConverterSequenceUByte.allocationSize(value.`publicKey`)
+            )
+        }
+        is ContactsEvent.Join -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4
+                + FfiConverterULong.allocationSize(value.`offerCrc`)
+                + FfiConverterString.allocationSize(value.`groupNickname`)
+            )
+        }
+        is ContactsEvent.Leave -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4
+                + FfiConverterULong.allocationSize(value.`id`)
+            )
+        }
+        is ContactsEvent.Sync -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4
+                + FfiConverterULong.allocationSize(value.`offerCrc`)
+                + FfiConverterString.allocationSize(value.`groupNickname`)
             )
         }
     }
@@ -706,13 +746,31 @@ public object FfiConverterTypeContactsEvent : FfiConverterRustBuffer<ContactsEve
             }
             is ContactsEvent.Answer -> {
                 buf.putInt(2)
+                FfiConverterULong.write(value.`offerCrc`, buf)
                 FfiConverterTypeContactsToken.write(value.`token`, buf)
                 Unit
             }
             is ContactsEvent.Reject -> {
                 buf.putInt(3)
-                FfiConverterULong.write(value.`crc`, buf)
+                FfiConverterULong.write(value.`offerCrc`, buf)
                 FfiConverterSequenceUByte.write(value.`publicKey`, buf)
+                Unit
+            }
+            is ContactsEvent.Join -> {
+                buf.putInt(4)
+                FfiConverterULong.write(value.`offerCrc`, buf)
+                FfiConverterString.write(value.`groupNickname`, buf)
+                Unit
+            }
+            is ContactsEvent.Leave -> {
+                buf.putInt(5)
+                FfiConverterULong.write(value.`id`, buf)
+                Unit
+            }
+            is ContactsEvent.Sync -> {
+                buf.putInt(6)
+                FfiConverterULong.write(value.`offerCrc`, buf)
+                FfiConverterString.write(value.`groupNickname`, buf)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -1524,7 +1582,7 @@ public object FfiConverterSequenceTypeContacts: FfiConverterRustBuffer<List<Cont
 fun `messageFrom`(`msg`: List<UByte>): Message? {
     return FfiConverterOptionalTypeMessage.lift(
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaRpcTypes_8ad1_message_from(FfiConverterSequenceUByte.lower(`msg`), _status)
+    _UniFFILib.INSTANCE.LuffaRpcTypes_14dd_message_from(FfiConverterSequenceUByte.lower(`msg`), _status)
 })
 }
 
@@ -1533,7 +1591,7 @@ fun `messageFrom`(`msg`: List<UByte>): Message? {
 fun `messageTo`(`msg`: Message): List<UByte>? {
     return FfiConverterOptionalSequenceUByte.lift(
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaRpcTypes_8ad1_message_to(FfiConverterTypeMessage.lower(`msg`), _status)
+    _UniFFILib.INSTANCE.LuffaRpcTypes_14dd_message_to(FfiConverterTypeMessage.lower(`msg`), _status)
 })
 }
 

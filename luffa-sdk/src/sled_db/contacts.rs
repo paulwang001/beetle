@@ -53,6 +53,26 @@ pub trait ContactsDb {
         tree.flush().unwrap();
     }
 
+    fn remove_contacts(db: Arc<Db>, id: u64) -> ClientResult<()> {
+        let tree = Self::open_contact_tree(db).unwrap();
+        tracing::info!("remove_contacts----->{id}");
+        let s_key = format!("SKEY-{}", id);
+        let p_key = format!("PKEY-{}", id);
+        let sig_key = format!("SIG-{}", id);
+        let tag_key = format!("TAG-{}", id);
+        let type_key = format!("TYPE-{}", id);
+        let group_keypair = format!("GROUPKEYPAIR-{}", id);
+
+        tree.remove(s_key.as_bytes()).unwrap();
+        tree.remove(p_key.as_bytes()).unwrap();
+        tree.remove(sig_key.as_bytes()).unwrap();
+        tree.remove(tag_key.as_bytes()).unwrap();
+        tree.remove(type_key.as_bytes()).unwrap();
+        tree.remove(group_keypair.as_bytes()).unwrap();
+
+        Ok(())
+    }
+
     fn get_key(db: Arc<Db>, key: &str) -> Option<Vec<u8>> {
         let tree = Self::open_contact_tree(db).unwrap();
         if let Ok(data) = tree.get(key.as_bytes()) {

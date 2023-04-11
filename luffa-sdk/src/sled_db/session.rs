@@ -138,6 +138,14 @@ pub trait SessionDb: ContactsDb {
         first_read
     }
 
+    fn remove_session(db: Arc<Db>, did: u64) -> ClientResult<()> {
+        let tree = Self::open_session_tree(db).unwrap();
+
+        let _ = tree.remove(did.to_be_bytes())?;
+
+        Ok(())
+    }
+
     fn update_session_for_last_msg(
         db: Arc<Db>,
         did: u64,
