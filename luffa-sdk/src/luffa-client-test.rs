@@ -109,7 +109,7 @@ fn main() -> ClientResult<()> {
             }
             println!("{:?}", line);
             match command {
-                // send_msg$test
+                // send_msg${ "to": 10871006697545602478, "msg": "test" }
                 "send_msg" => {
                     let msg = Message::Chat {
                         content: luffa_rpc_types::ChatContent::Send {
@@ -148,18 +148,18 @@ fn main() -> ClientResult<()> {
                         .unwrap();
                     tracing::error!("show_code: {show_code:?}");
                 }
-                // contacts_offer${ "command": "https://luffa.putdev.com/p/YGz62Wdxqx8/UsbMgKtfL2usG5ULQd1KaFySjBHG1YU8XoXZLvk463m/Uncharted Banana pepper"}
+                // contacts_offer${ "command": "https://luffa.putdev.com/p/YGz62Wdxqx8/5TgnQzVQqqcPaBvErQRREYYZVE8UXg4UjGicTWxdg1qm/Uncharted Banana pepper"}
                 "contacts_offer" => {
                     let crc = client1.contacts_offer(&params.command.unwrap()).unwrap();
                     tracing::error!("contacts_offer: {crc}");
                 }
                 // contacts_anwser$1314654236848723363
-                // contacts_anwser${ "to": 10871006697545602478, "command": "9456896362212126259" }
-                // contacts_anwser${ "to": 11837182690600253035, "command": "10860903572414034769" }
+                // contacts_anwser${ "to": 10871006697545602478, "command": "6922832792581256356" }
+                // contacts_anwser${ "to": 11837182690600253035, "command": "17452352708706392354" }
                 "contacts_anwser" => {
                     let id = client1
                         .contacts_anwser(
-                            params.to.unwrap(),
+                                params.to.unwrap(),
                             params.command.unwrap().parse().unwrap(),
                         )
                         .unwrap();
@@ -169,7 +169,7 @@ fn main() -> ClientResult<()> {
                 "read_msg" => {
                     let data = client1
                         .read_msg_with_meta(
-                            params.to.unwrap(),
+                                params.to.unwrap(),
                             params.command.unwrap().parse().unwrap(),
                         )
                         .unwrap()
@@ -183,15 +183,15 @@ fn main() -> ClientResult<()> {
                         .unwrap();
                     tracing::error!("contacts_search: {contacts:?}");
                 }
-                // contacts_search2$my_group_test
+                // contacts_search2${ "command": "group_test" }
                 "contacts_search2" => {
                     let contacts = client1
                         .contacts_search(2, &params.command.unwrap())
                         .unwrap();
                     tracing::error!("contacts_search: {contacts:?}");
                 }
-                // 13685501506277185778
-                // group_create${ "groups": [10871006697545602478, 11837182690600253035], "command": "group_test" }
+                // 13685501506277185778 8191288328679216604
+                // group_create${ "groups": [10871006697545602478, 11837182690600253035], "command": "group_test9" }
                 "group_create" => {
                     let group_id = client1
                         .contacts_group_create(params.groups.unwrap(), params.command)
@@ -209,18 +209,23 @@ fn main() -> ClientResult<()> {
                 "group_invite" => {
                     let tag = client1
                         .contacts_group_invite_member(
-                            params.group_id.unwrap(),
+                                params.group_id.unwrap(),
                             params.groups.unwrap(),
                         )
                         .unwrap();
                     tracing::error!("contacts_group_invite_member: {tag:?}");
                 }
-                // group_members$16351167746333040733
+                // group_members${ "command": "11266639748810223080" }
                 "group_members" => {
                     let members = client1
-                        .contacts_group_members(params.command.unwrap().parse().unwrap(), 1, 10)
+                        .contacts_group_members(params.command.unwrap().parse().unwrap(), 0, 10)
                         .unwrap();
                     tracing::error!("contacts_group_members: {members:?}");
+                }
+                // groups${}
+                "groups" => {
+                    let members = client1.groups().unwrap();
+                    tracing::error!("groups: {members:?}");
                 }
                 _ => {}
             }

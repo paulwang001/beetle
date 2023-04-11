@@ -1,19 +1,19 @@
-use std::collections::{BTreeSet, HashSet};
-use std::sync::Arc;
-use image::EncodableLayout;
-use sled::{Db, Tree};
-use serde::{Deserialize, Serialize};
-use bytecheck::CheckBytes;
 use crate::ClientError::CustomError;
+use bytecheck::CheckBytes;
+use image::EncodableLayout;
+use serde::{Deserialize, Serialize};
+use sled::{Db, Tree};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
-use crate::ClientResult;
 use crate::sled_db::contacts::ContactsDb;
 use crate::sled_db::nickname::Nickname;
+use crate::ClientResult;
 
 pub const KVDB_GROUP_MEMBERS_TREE: &str = "luffa_group_members";
 
 #[derive(Debug)]
-pub struct GroupMemberNickname{
+pub struct GroupMemberNickname {
     pub u_id: u64,
     pub nickname: String,
 }
@@ -30,7 +30,10 @@ impl Members {
         for member in members {
             list.insert(member);
         }
-        Self { group_id, members: list }
+        Self {
+            group_id,
+            members: list,
+        }
     }
 
     pub fn to_bytes(&self) -> ClientResult<Vec<u8>> {
@@ -38,7 +41,7 @@ impl Members {
     }
 
     pub fn deserialize(data: &[u8]) -> ClientResult<Self> {
-         Ok(serde_json::from_slice(data)?)
+        Ok(serde_json::from_slice(data)?)
     }
 }
 
@@ -51,6 +54,10 @@ pub trait GroupMembersDb: Nickname {
 
     fn group_member_key(group_id: u64) -> String {
         format!("{}", group_id)
+    }
+
+    fn group_manager_key(group_id: u64) -> String {
+        format!("manager-{}", group_id)
     }
 
     fn group_member_insert(db: Arc<Db>, group_id: u64, member_ids: Vec<u64>) -> ClientResult<()> {
@@ -71,15 +78,23 @@ pub trait GroupMembersDb: Nickname {
         Ok(())
     }
 
-    fn group_members_get(db: Arc<Db>, group_id: u64, page_no: u64, page_size: u64) -> ClientResult<Vec<GroupMemberNickname>> {
+    fn group_members_get(
+        db: Arc<Db>,
+        group_id: u64,
+        page_no: u64,
+        page_size: u64,
+    ) -> ClientResult<Vec<GroupMemberNickname>> {
         let key = Self::group_member_key(group_id);
         let tree = Self::open_group_member_tree(db.clone())?;
         let mut list = vec![];
         let contact_tree = Self::open_contact_tree(db)?;
         if let Some(data) = tree.get(key)? {
             let members = Members::deserialize(data.as_bytes())?;
-            let members:Vec<u64>  = members.members.iter().map(|a| *a).collect();
-            for member in members.get((page_no - 1 * page_size) as usize..(page_size * page_size) as usize).unwrap() {
+            let members: Vec<u64> = members.members.iter().map(|a| *a).collect();
+            for member in members
+                .get((page_no - 1 * page_size) as usize..(page_size * page_size) as usize)
+                .unwrap()
+            {
                 let mut nickname = String::new();
                 let key = Self::get_group_member_nickname_key(group_id, *member);
                 if let Some(data) = contact_tree.get(key.as_bytes())? {
@@ -92,7 +107,10 @@ pub trait GroupMembersDb: Nickname {
                         nickname = String::from_utf8(data)?;
                     }
                 }
-                list.push(GroupMemberNickname{ u_id: *member, nickname });
+                list.push(GroupMemberNickname {
+                    u_id: *member,
+                    nickname,
+                });
             }
         };
         Ok(list)
@@ -108,5 +126,23 @@ pub trait GroupMembersDb: Nickname {
             0
         };
         Ok(count)
+    }
+
+    fn set_is_group_manager(db: Arc<Db>, group_id: u64, u_id: u64) -> ClientResult<()> {
+        let key = &Self::group_manager_key(group_id);
+        let tree = Self::open_group_member_tree(db.clone())?;
+        let mut res: HashMap<u64, bool> = HashMap::new();
+        if let Some(data) = tree.get(key)? {
+            let data = data.as_bytes();
+            res = serde_json::from_slice(data)?;
+            res.insert(u_id, true);
+        } else {
+            res.insert(u_id, true);
+        }
+
+        let data = serde_json::to_string(&res)?;
+        tree.insert(key, data.as_str())?;
+        tree.flush()?;
+        Ok(())
     }
 }

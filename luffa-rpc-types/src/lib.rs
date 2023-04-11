@@ -16,7 +16,7 @@ use libp2p::identity::{Keypair, PublicKey};
 use multihash::{Code, MultihashDigest};
 
 use aes_gcm::{
-    aead::{ Aead, KeyInit},
+    aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
 use chrono::Utc;
@@ -61,7 +61,7 @@ pub struct VersionResponse {
 }
 
 pub const KEY_SIZE: usize = 32;
-#[derive(Debug, Serialize, Deserialize,Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Event {
     // zero is all
     pub to: u64,
@@ -73,8 +73,7 @@ pub struct Event {
 }
 
 impl Event {
-    pub fn new(to: u64, msg: &Message, key: Option<Vec<u8>>, from_id: u64) -> Self
-    {
+    pub fn new(to: u64, msg: &Message, key: Option<Vec<u8>>, from_id: u64) -> Self {
         let event_time = Utc::now().timestamp_millis() as u64;
         let (msg, nonce) = msg.encrypt(key).unwrap();
 
@@ -97,7 +96,7 @@ impl Event {
 
     fn validate(&self) -> Result<()> {
         let now = Utc::now().timestamp_millis() as u64;
-        if self.event_time < now - 60 * 1000{
+        if self.event_time < now - 60 * 1000 {
             //return Err(anyhow::anyhow!("event time is invalid."));
         }
         let mut digest = crc64fast::Digest::new();
@@ -173,7 +172,7 @@ pub enum Message {
     },
 }
 
-#[derive(Debug, Serialize, Deserialize,Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum RtcAction {
     Push {
         audio_id: u32,
@@ -188,29 +187,33 @@ pub enum RtcAction {
         video_id: u32,
     },
     Status {
-        timestamp:u64,
-        code:u32,
-        info:String,
+        timestamp: u64,
+        code: u32,
+        info: String,
     },
-    Offer { dsp: String },
-    Answer { dsp: String },
+    Offer {
+        dsp: String,
+    },
+    Answer {
+        dsp: String,
+    },
 }
-#[derive(Debug, Serialize, Deserialize,Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Contacts {
     pub did: u64,
     pub r#type: ContactsTypes,
-    pub have_time:u64,
-    pub wants:Vec<u64>,
+    pub have_time: u64,
+    pub wants: Vec<u64>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy,PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ContactsTypes {
     Private,
     Group,
 }
 
-#[derive(Debug, Serialize, Deserialize,Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[repr(u8)]
 pub enum AppStatus {
     Active,
@@ -220,7 +223,7 @@ pub enum AppStatus {
     Bye,
 }
 
-#[derive(Debug,Serialize,Deserialize,Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 #[repr(u8)]
 pub enum FeedbackStatus {
     Sending,
@@ -241,21 +244,19 @@ impl Message {
         T: AsRef<[u8]>,
     {
         match &self {
-            
-            Self::ContactsExchange { .. } | Self::Chat { .. } | Self::WebRtc { .. }=> {
+            Self::ContactsExchange { .. } | Self::Chat { .. } | Self::WebRtc { .. } => {
                 let data = serde_cbor::to_vec(&self).map_err(|e| anyhow::anyhow!("{e:?}"))?;
-                
-                let cipher = 
-                match key {
-                    Some(k)=> Some(Aes256Gcm::new_from_slice(k.as_ref()).unwrap()),
-                    None=>{
+
+                let cipher = match key {
+                    Some(k) => Some(Aes256Gcm::new_from_slice(k.as_ref()).unwrap()),
+                    None => {
                         tracing::info!("----------");
                         self.exchange_key().map(|v| {
-                            tracing::info!("----------{:?}",v);
-                            
+                            tracing::info!("----------{:?}", v);
+
                             match Aes256Gcm::new_from_slice(&v) {
-                                Ok(a)=> a,
-                                Err(e)=>{
+                                Ok(a) => a,
+                                Err(e) => {
                                     panic!("{e:?}");
                                 }
                             }
@@ -305,34 +306,30 @@ impl Message {
 
     pub fn need_encrypt(&self) -> bool {
         match self {
-            Self::ContactsExchange { .. } | Self::Chat { .. } | Self::WebRtc { ..} => true,
+            Self::ContactsExchange { .. } | Self::Chat { .. } | Self::WebRtc { .. } => true,
             _ => false,
         }
     }
     pub fn is_contacts_exchange(&self) -> bool {
         match self {
-            Self::ContactsExchange { .. }=> true,
+            Self::ContactsExchange { .. } => true,
             _ => false,
         }
     }
     pub fn chat_content(&self) -> Option<&ContentData> {
         match self {
-            Self::Chat { content }=> {
-                match content {
-                    ChatContent::Send { data }=> Some(data),
-                    _=> None
-                }
+            Self::Chat { content } => match content {
+                ChatContent::Send { data } => Some(data),
+                _ => None,
             },
             _ => None,
         }
     }
-    pub fn chat_feedback(&self) -> Option<(u64,FeedbackStatus)> {
+    pub fn chat_feedback(&self) -> Option<(u64, FeedbackStatus)> {
         match self {
-            Self::Chat { content }=> {
-                match content {
-                    ChatContent::Feedback { crc,status }=> Some((*crc,*status)),
-                    _=> None
-                }
+            Self::Chat { content } => match content {
+                ChatContent::Feedback { crc, status } => Some((*crc, *status)),
+                _ => None,
             },
             _ => None,
         }
@@ -340,23 +337,13 @@ impl Message {
 
     pub fn exchange_key(&self) -> Option<Vec<u8>> {
         match &self {
-            Message::ContactsExchange { exchange }=>{
-                match exchange {
-                    ContactsEvent::Answer { token ,..} =>{
-                        Some(token.secret_key.clone())
-                    }
-                    ContactsEvent::Offer { token }=>{
-                        Some(token.secret_key.clone())
-                    }
-                    _=> None
-                    
-                }
-            }
-            _=>{
-                None
-            }
+            Message::ContactsExchange { exchange } => match exchange {
+                ContactsEvent::Answer { token, .. } => Some(token.secret_key.clone()),
+                ContactsEvent::Offer { token } => Some(token.secret_key.clone()),
+                _ => None,
+            },
+            _ => None,
         }
-
     }
 }
 
@@ -377,9 +364,13 @@ pub enum ContactsEvent {
         offer_crc: u64,
         group_nickname: String,
     },
+    Sync {
+        offer_crc: u64,
+        group_nickname: String,
+    },
 }
 
-#[derive(Debug, Serialize, Deserialize,Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ContactsToken {
     pub public_key: Vec<u8>,
     pub group_key: Option<Vec<u8>>,
@@ -399,15 +390,12 @@ impl ContactsToken {
     ) -> Result<Self> {
         let create_at = Utc::now().timestamp_millis() as u64;
         let public_key = local_key.public().to_protobuf_encoding();
-        let group_key =
-        match contacts_type {
-            ContactsTypes::Group=>{
+        let group_key = match contacts_type {
+            ContactsTypes::Group => {
                 let key = local_key.to_protobuf_encoding()?;
                 Some(key)
             }
-            ContactsTypes::Private=>{
-                None
-            }
+            ContactsTypes::Private => None,
         };
         let mut buf = vec![];
         buf.extend_from_slice(&create_at.to_be_bytes());
@@ -473,22 +461,14 @@ impl ContactsToken {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize,Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ChatContent {
-    Feedback {
-        crc:u64,
-        status: FeedbackStatus,
-    },
-    Burn {
-        crc:u64,
-        expires: u64,
-    },
-    Send {
-        data: ContentData,
-    },
+    Feedback { crc: u64, status: FeedbackStatus },
+    Burn { crc: u64, expires: u64 },
+    Send { data: ContentData },
 }
 
-#[derive(Debug, Serialize, Deserialize,Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ContentData {
     Text {
         source: DataSource,
@@ -505,7 +485,7 @@ pub enum ContentData {
         source: DataSource,
     },
 }
-#[derive(Debug, Serialize, Deserialize,Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[repr(u8)]
 pub enum MediaTypes {
     File,
@@ -515,7 +495,7 @@ pub enum MediaTypes {
     Html,
     Markdown,
 }
-#[derive(Debug, Serialize, Deserialize,Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum DataSource {
     Cid { cid: Vec<u8> },
     Raw { data: Vec<u8> },

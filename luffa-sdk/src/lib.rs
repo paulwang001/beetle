@@ -7,6 +7,7 @@ use aes_gcm::{
 };
 use anyhow::{bail, Context};
 use api::P2pClient;
+use event::group::EventGroup;
 use futures::StreamExt;
 use libp2p::identity::Keypair;
 use libp2p::identity::PublicKey;
@@ -61,6 +62,7 @@ use tokio::sync::oneshot::Sender as ShotSender;
 mod api;
 pub mod avatar_nickname;
 mod config;
+mod event;
 mod sled_db;
 
 use crate::config::Config;
@@ -306,6 +308,9 @@ impl Mnemonic for Client {}
 impl Nickname for Client {}
 
 impl SledDbAll for Client {}
+
+#[async_trait::async_trait]
+impl EventGroup for Client {}
 
 impl Client {
     pub fn new() -> Self {
@@ -621,7 +626,7 @@ impl Client {
                         did: i_id,
                         contacts,
                     };
-        
+
                     let event = Event::new(0, &sync, None, 0);
                     let data = event.encode().unwrap();
                     if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
@@ -2069,9 +2074,12 @@ impl Client {
         Ok(res)
     }
 
-    pub fn contacts_search_determinate(&self, c_type: u8, pattern: &str) -> ClientResult<Vec<ContactsView>> {
+    pub fn contacts_search_determinate(
+        &self,
+        c_type: u8,
+        pattern: &str,
+    ) -> ClientResult<Vec<ContactsView>> {
         let tree = Self::open_contact_tree(self.db())?;
-
 
         let tag_prefix = format!("TAG-");
         let itr = tree.scan_prefix(tag_prefix);
@@ -2110,11 +2118,15 @@ impl Client {
             }
         }
 
-        let res: Vec<_> = data.into_iter().filter_map(|(id, view)| {
-            (view.to_lowercase().contains(&(pattern.trim().to_lowercase()))
-            && pattern.trim().len() != 0)
-                .then_some(id)
-        })
+        let res: Vec<_> = data
+            .into_iter()
+            .filter_map(|(id, view)| {
+                (view
+                    .to_lowercase()
+                    .contains(&(pattern.trim().to_lowercase()))
+                    && pattern.trim().len() != 0)
+                    .then_some(id)
+            })
             .collect();
 
         Ok(res)
@@ -3802,16 +3814,17 @@ impl Client {
                                             have_time: 0,
                                             wants: vec![],
                                         }];
-                            
+
                                         let sync = Message::ContactsSync {
                                             did: my_id,
                                             contacts,
                                         };
-                            
-                                        let event = Event::new(did, &sync, Some(secret_key.clone()), my_id);
+
+                                        let event =
+                                            Event::new(did, &sync, Some(secret_key.clone()), my_id);
                                         let data = event.encode().unwrap();
-                                        if let Err(e) = client_t.chat_request(bytes::Bytes::from(data))
-                                        .await
+                                        if let Err(e) =
+                                            client_t.chat_request(bytes::Bytes::from(data)).await
                                         {
                                             error!("sync contacts {did} {e:?}");
                                         }
@@ -3950,6 +3963,32 @@ impl Client {
                                         group_nickname,
                                     } => {
                                         error!("ContactsEvent::Join1: {offer_crc} {group_nickname} {did} {from_id}");
+                                        Self::group_member_insert(db_t.clone(), did, vec![from_id])
+                                            .unwrap();
+                                        Self::set_group_member_nickname(
+                                            db_t.clone(),
+                                            did,
+                                            from_id,
+                                            &group_nickname,
+                                        )
+                                        .unwrap();
+                                        let secret_key = Self::get_key(db_t.clone(), &format!("SKEY-{}", did)).unwrap();
+                                        Self::group_sync(
+                                            db_t.clone(),
+                                            client_t.clone(),
+                                            secret_key,
+                                            did,
+                                            my_id,
+                                            offer_crc,
+                                        )
+                                        .await;
+                                    }
+
+                                    ContactsEvent::Sync {
+                                        offer_crc,
+                                        group_nickname,
+                                    } => {
+                                        error!("ContactsEvent::Sync1: {offer_crc} {group_nickname} {did} {from_id}");
                                         Self::group_member_insert(db_t.clone(), did, vec![from_id])
                                             .unwrap();
                                         Self::set_group_member_nickname(
@@ -4169,6 +4208,37 @@ impl Client {
                                         } => {
                                             error!("ContactsEvent::Join2: {offer_crc} {group_nickname} {did} {from_id}");
 
+                                            Self::group_member_insert(
+                                                db_t.clone(),
+                                                did,
+                                                vec![from_id],
+                                            )
+                                            .unwrap();
+                                            Self::set_group_member_nickname(
+                                                db_t.clone(),
+                                                did,
+                                                from_id,
+                                                &group_nickname,
+                                            )
+                                            .unwrap();
+
+                                            let secret_key = Self::get_key(db_t.clone(), &format!("SKEY-{}", did)).unwrap();
+                                            Self::group_sync(
+                                                db_t.clone(),
+                                                client_t.clone(),
+                                                secret_key,
+                                                did,
+                                                my_id,
+                                                offer_crc,
+                                            )
+                                                .await;
+
+                                        }
+                                        ContactsEvent::Sync {
+                                            offer_crc,
+                                            group_nickname,
+                                        } => {
+                                            error!("ContactsEvent::Sync2: {offer_crc} {group_nickname} {did} {from_id}");
                                             Self::group_member_insert(
                                                 db_t.clone(),
                                                 did,
