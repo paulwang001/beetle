@@ -2075,6 +2075,20 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         digest.write(&local_id.to_bytes());
         let my_id = digest.sum64();
         let my_idx = self.get_peer_index(my_id);
+        if let Some(p) = self.connected_peers.get(&did) {
+            if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+                let (tx, rx) = tokio::sync::oneshot::channel();
+
+                let req_id = chat.send_request(p, crate::behaviour::chat::Request(data));
+                self.pending_request.insert(req_id, (crc, did, tx));
+                tracing::warn!(
+                    "local chat connected to [{p:?}] send. crc >> {} to {did}",
+                    crc,
+                );
+
+                return Ok(Some(rx));
+            }
+        }
         if let Some(e_idx) = self.connections.find_edge(my_idx, target) {
             if let Some(w) = self.connections.edge_weight(e_idx) {
                 match w {
@@ -2104,6 +2118,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             }
             let mut idx = e_idx;
 
+            while let Some(e) = self.connections.next_edge(idx, Direction::Outgoing) {
+                let w = self.connections.edge_weight(e).unwrap();
+                tracing::warn!("local chat next edge :{w:?}");
+                idx = e;
+            }
             while let Some(e) = self.connections.next_edge(idx, Direction::Incoming) {
                 let w = self.connections.edge_weight(e).unwrap();
                 tracing::warn!("local chat next edge :{w:?}");
