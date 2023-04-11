@@ -27,8 +27,6 @@ interface Message {
 dictionary Contacts {
     u64 did;
     ContactsTypes type;
-    u64 have_time;
-    sequence<u64> wants;
 };
 
 dictionary ContactsToken {

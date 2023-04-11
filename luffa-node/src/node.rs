@@ -626,7 +626,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     let f = self.get_peer_index(my_id);
                     let t = self.get_peer_index(to_id);
                     // let time = Utc::now().timestamp_millis() as u64;
-                    tracing::warn!("local connection >> {my_id} --> {to_id}");
+                    tracing::info!("local connection >> {my_id} --> {to_id}");
                     self.connections
                         .update_edge(f, t, ConnectionEdge::Local(peer_id.clone()));
 
@@ -655,7 +655,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
                     if let Some(e) = self.connections.find_edge(f, t) {
                         self.connections.remove_edge(e);
-                        tracing::warn!("local disconnection >> {my_id} --> {to_id}");
+                        tracing::info!("local disconnection >> {my_id} --> {to_id}");
                     }
                     else{
                         tracing::error!("local disconnection >> {my_id} --> {to_id}");
@@ -1407,7 +1407,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 } = event;
                                 let mut feed_crc = vec![crc];
 
-                                tracing::warn!("chat request from relay {crc}");
+                                tracing::info!("chat request from relay {crc}");
                                 if let Some(pending) = self.pending_routing.get(&to) {
                                     if pending.iter().find(|(x,_)| *x == crc ).is_some() {
                                         tracing::warn!("CRC is pending routing {crc}");
