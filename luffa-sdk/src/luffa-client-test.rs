@@ -129,7 +129,7 @@ fn main() -> ClientResult<()> {
                     let show_code = client1.show_code("https://luffa.putdev.com", args).unwrap().unwrap();
                     tracing::error!("show_code: {show_code:?}");
                 }
-                // contacts_offer https://luffa.putdev.com/p/YGz62Wdxqx8/9farAph9G5KLaEfLYRkoj8Roo8EVfpfHNa5hSZaZeLNB/Uncharted Banana pepper
+                // contacts_offer https://luffa.putdev.com/p/YGz62Wdxqx8/3i4SZAFNnaqAfc3i5wPKdUfo76Wz8vVx3U4zWvYFyeLh/Uncharted Banana pepper
                 "contacts_offer" => {
                     let crc = client1.contacts_offer(&args.to_string()).unwrap();
                     tracing::error!("contacts_offer: {crc}");
@@ -173,6 +173,8 @@ fn main() -> ClientResult<()> {
                 "group_members" => {
                     // let members = client1.contacts_group_members(args.parse().unwrap()).unwrap();
                     // tracing::error!("contacts_group_members: {members:?}");
+                    let members = client1.contacts_group_members(args.parse().unwrap(), 1, 10).unwrap();
+                    tracing::error!("contacts_group_members: {members:?}");
                 }
                 _ => {}
             }

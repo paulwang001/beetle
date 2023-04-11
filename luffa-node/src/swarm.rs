@@ -29,7 +29,7 @@ async fn build_transport(
     // TODO: make transports configurable
 
     let port_reuse = true;
-    let connection_timeout = Duration::from_secs(30);
+    let connection_timeout = Duration::from_secs(5);
 
     // TCP
     let tcp_config = tcp::Config::default().port_reuse(port_reuse);
@@ -43,8 +43,9 @@ async fn build_transport(
     let mut quic_config = quic::Config::new(keypair);
     {
         // 自定义配置
-        quic_config.handshake_timeout = Duration::from_secs(3);
-        quic_config.max_idle_timeout = Duration::from_secs(3).as_millis() as u32;
+        quic_config.handshake_timeout = Duration::from_secs(5);
+        quic_config.max_idle_timeout = Duration::from_secs(5).as_millis() as u32;
+        quic_config.keep_alive_interval = Duration::from_secs(4);
     }
     let quic_transport = quic::tokio::Transport::new(quic_config);
 
