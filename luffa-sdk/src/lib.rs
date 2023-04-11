@@ -4098,10 +4098,10 @@ pub async fn start_node(
     Receiver<NetworkEvent>,
     Sender<luffa_node::rpc::RpcMessage>,
 )> {
-    config.libp2p.dial_concurrency_factor = 1;
-    config.libp2p.max_conns_per_peer = 1;
-    config.libp2p.max_conns_in = 1;
-    config.libp2p.max_conns_out = 1;
+    config.libp2p.dial_concurrency_factor = 2;
+    config.libp2p.max_conns_per_peer = 2;
+    config.libp2p.max_conns_in = 2;
+    config.libp2p.max_conns_out = 2;
     tracing::info!("node>>>{config:?}");
     let (mut p2p, sender) =
         Node::new(config, keychain, db, Some("Luffa".to_string()), filter).await?;

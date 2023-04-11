@@ -1370,7 +1370,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 request,
                                 channel,
                             } => {
-                                let event = luffa_rpc_types::Event::decode(request.data())?;
+                                let event = match luffa_rpc_types::Event::decode(request.data()) {
+                                    Ok(event) => event,
+                                    Err(e) => {
+                                        tracing::error!("{e}");
+                                        panic!("{}", e);
+                                        // return Ok(());
+                                    }
+                                };
                                 let luffa_rpc_types::Event {
                                     crc,
                                     from_id,
@@ -1790,7 +1797,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 };
                                 let feed = Message::Feedback { crc:feed_crc,from_id:Some(from_id),to_id:Some(to),status:feed_status };
                                 {
-                                    let evnt = luffa_rpc_types::Event::new(0,&feed,None,0);
+                                    let evnt = luffa_rpc_types::Event::new(0,&feed,None,my_id);
                                     let res = evnt.encode().unwrap();
                                     let res = crate::behaviour::chat::Response(res);
                                     let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
@@ -1799,7 +1806,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         tracing::error!("chat response failed: >>{e:?}");
                                     }
                                     else if nonce.is_some() {
-                                        tracing::info!("some nonce chat response ok: >>{crc}");
+                                        tracing::warn!("some nonce chat response ok: >>{crc}");
                                     }
 
                                     tracing::info!("-----{request_id:?}------");

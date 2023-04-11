@@ -171,8 +171,8 @@ fn main() -> ClientResult<()> {
                 }
                 // group_members 4832256763054520653
                 "group_members" => {
-                    let members = client1.contacts_group_members(args.parse().unwrap()).unwrap();
-                    tracing::error!("contacts_group_members: {members:?}");
+                    // let members = client1.contacts_group_members(args.parse().unwrap()).unwrap();
+                    // tracing::error!("contacts_group_members: {members:?}");
                 }
                 _ => {}
             }
