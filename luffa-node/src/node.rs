@@ -693,7 +693,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             let sender = sender.clone();
             tokio::task::spawn(async move {
                 if let Err(e) = sender.send(ev.clone()).await {
-                    tracing::info!("failed to send network event: {:?}", e);
+                    tracing::error!("failed to send network event: {:?}", e);
                 }
             });
         }

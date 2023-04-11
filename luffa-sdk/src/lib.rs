@@ -2622,7 +2622,7 @@ impl Client {
                                     } else {
                                         ContactsTypes::Group
                                     };
-                                    let have_time = Self::get_contacts_have_time(db_t.clone(), to);
+                                    // let have_time = Self::get_contacts_have_time(db_t.clone(), to);
                                     Contacts {
                                         did: to,
                                         r#type: c_type,
@@ -2649,7 +2649,7 @@ impl Client {
                             tracing::error!("pub contacts sync status >>> {e:?}");
                         }
                         else{
-                            tracing::warn!("pub contacts sync status >>> {d_size}",);
+                            tracing::warn!("pub contacts sync status >>> {sync:?}",);
 
                         }
                     });
@@ -2659,7 +2659,7 @@ impl Client {
 
                     let tag_prefix = format!("TAG-");
                     let itr = tree.scan_prefix(tag_prefix);
-                    let contacts = itr
+                    let mut contacts = itr
                         .map(|item| {
                             let (k, _v) = item.unwrap();
                             // let tag = String::from_utf8(v.to_vec()).unwrap();
@@ -2682,31 +2682,34 @@ impl Client {
                             }
                         })
                         .collect::<Vec<_>>();
-
-                    let sync = Message::ContactsSync {
-                        did: my_id,
-                        contacts,
-                    };
-                    let event = Event::new(0, &sync, None, my_id);
-                    let data = event.encode().unwrap();
+                    contacts.retain(|c| c.did != my_id); 
                     let client_t = client_t.clone();
-                    tokio::spawn(async move {
-                        let d_size = data.len();
-                        if let Err(e) = client_t
-                            .chat_request(bytes::Bytes::from(data.clone()))
-                            .await
-                        {
-                            tracing::error!("pub contacts sync status >>> {e:?}");
-                        }
-                        else{
-                            tracing::warn!("pub contacts sync status >>> {d_size}");
-                            if count == 0 {
-                                tracing::warn!("pub contacts sync status >>> {sync:?}");
+                    if !contacts.is_empty() {
+                        let sync = Message::ContactsSync {
+                            did: my_id,
+                            contacts,
+                        };
+                        let event = Event::new(0, &sync, None, my_id);
+                        let data = event.encode().unwrap();
 
+                        tokio::spawn(async move {
+                            let d_size = data.len();
+                            if let Err(e) = client_t
+                                .chat_request(bytes::Bytes::from(data.clone()))
+                                .await
+                            {
+                                tracing::error!("pub contacts sync status >>> {e:?}");
                             }
-
-                        }
-                    });
+                            else{
+                                tracing::warn!("pub contacts sync status >>> {d_size}");
+                                if count == 0 {
+                                    tracing::warn!("pub contacts sync status >>> {sync:?}");
+    
+                                }
+    
+                            }
+                        });
+                    }
                 }
 
                 count += 1;
@@ -2921,7 +2924,7 @@ impl Client {
                                         msg,
                                         ..
                                     } = im;
-
+                                    error!("decode {crc}");
                                     if to == my_id && nonce.is_none() {
                                         if let Ok(m) = Message::decrypt(
                                             bytes::Bytes::from(msg.clone()),
@@ -3049,8 +3052,8 @@ impl Client {
                                     let idx = idx.clone();
                                     let schema_tt = schema_tt.clone();
                                     {
-                                        let f_crc = fetching_crc.read();
-                                        if f_crc.contains(&crc) {
+                                        let mut f_crc = fetching_crc.write();
+                                        if !f_crc.insert(crc) {
                                             tracing::warn!("request has pushing record: {crc}, f> {from_id}, t> {to}");
                                             return;
                                         }
@@ -3068,7 +3071,12 @@ impl Client {
                                             f_crc.remove(&crc);
                                         }
                                     });
+                                    error!("finish {crc}");
                                 }
+                                else{
+                                    panic!("decode failed");
+                                }
+                                error!("finish");
                             }
                             luffa_node::ChatEvent::OutboundFailure {
                                 peer,
@@ -3119,6 +3127,7 @@ impl Client {
                         );
                     }
                 }
+                // tracing::warn!("");
             }
         });
 
@@ -3560,15 +3569,16 @@ impl Client {
                 status: luffa_rpc_types::FeedbackStatus::Reach,
             };
             let event = luffa_rpc_types::Event::new(0, &feed, None, my_id);
-            tracing::info!("send feedback reach to relay");
+            tracing::warn!("send feedback reach to relay {crc}");
             let event = event.encode().unwrap();
             if let Err(e) = client_t.chat_request(bytes::Bytes::from(event)).await {
                 error!("{e:?}");
             }
-
+            
             let did = if to == my_id { from_id } else { to };
-
+            
             if nonce.is_none() {
+                tracing::warn!("nonce is none>> {crc}");
                 tokio::spawn(async move {
                     cb.on_message(crc, from_id, to, event_time, msg);
                 });
@@ -3589,7 +3599,7 @@ impl Client {
                     ) {
                         // TODO: did is me or I'm a member any local group
                         let msg_data = serde_cbor::to_vec(&msg).unwrap();
-                        tracing::info!("from relay request e2e crc:[{crc}] msg>>>>{msg:?}");
+                        tracing::warn!("from relay request e2e crc:[{crc}] msg>>>>{msg:?}");
                         let mut will_save = false;
                         match msg {
                             Message::Chat { content } => {
@@ -3734,7 +3744,6 @@ impl Client {
                                 will_save = true;
                                 match exchange {
                                     ContactsEvent::Answer { token, offer_crc } => {
-                                        tracing::warn!("G> Answer>>>>>{token:?}");
                                         if offer_crc > 0 {
                                             Self::update_offer_status(
                                                 db_t.clone(),
@@ -3742,7 +3751,7 @@ impl Client {
                                                 OfferStatus::Answer,
                                             );
                                         }
-
+                                        
                                         let comment = token.comment.clone();
                                         let secret_key = token.secret_key.clone();
                                         let contacts_type = token.contacts_type.clone();
@@ -3756,6 +3765,7 @@ impl Client {
                                             db_t.clone(),
                                         )
                                         .await;
+                                        tracing::warn!("G> Answer>>>>>{did}");
 
                                         let contacts = vec![Contacts {
                                             did: did,
@@ -3794,7 +3804,7 @@ impl Client {
                                                 my_id,
                                             );
                                             let event = event.encode().unwrap();
-                                            tracing::info!("send join to group {did}");
+                                            tracing::warn!("send join to group {did}");
                                             if let Err(e) = client_t
                                                 .chat_request(bytes::Bytes::from(event))
                                                 .await
@@ -3908,7 +3918,7 @@ impl Client {
                                         offer_crc,
                                         group_nickname,
                                     } => {
-                                        error!("ContactsEvent::Join1: {offer_crc} {group_nickname} {did} {from_id}");
+                                        error!("ContactsEvent::Join1: crc {crc} ,{offer_crc} {group_nickname} {did} {from_id}");
                                         Self::group_member_insert(db_t.clone(), did, vec![from_id])
                                             .unwrap();
                                         Self::set_group_member_nickname(
@@ -3921,7 +3931,9 @@ impl Client {
                                     }
                                 }
                             }
-                            _ => {}
+                            _ => {
+                                error!("ContactsEvent::Unknown:{crc}");
+                            }
                         }
                         if will_save {
                             let table = format!("message_{did}");
@@ -3949,11 +3961,11 @@ impl Client {
                             cb.on_message(crc, from_id, to, event_time, msg_data);
                         });
                     } else {
-                        eprintln!("decrypt failes!!! {:?}", nonce);
+                        error!("decrypt failed!!! {crc} {:?}", nonce );
                     }
                 }
                 None => {
-                    tracing::info!("aes not in contacts {did}");
+                    tracing::warn!("aes not in contacts {did}  {crc}");
                     // warn!("Gossipsub> peer_id: {from:?} nonce:{:?}", nonce);
                     if let Some(key) = Self::get_offer_by_offer_id(db_t.clone(), from_id) {
                         tracing::info!("offer is:{}  nonce:{:?} key: {:?}", from_id, nonce, key);
@@ -3970,7 +3982,7 @@ impl Client {
                                 Message::ContactsExchange { exchange } => {
                                     match exchange {
                                         ContactsEvent::Answer { token, offer_crc } => {
-                                            tracing::info!("[P]Answer>>>>>{token:?}");
+                                            tracing::warn!("[P]Answer>>>>>{token:?}");
                                             if offer_crc > 0 {
                                                 Self::update_offer_status(
                                                     db_t.clone(),
@@ -4149,21 +4161,21 @@ impl Client {
                                         tracing::warn!("from offer Feedback crc<{crc}> {status:?}");
                                     }
                                     _ => {
-                                        tracing::error!("from offer content {content:?}");
+                                        tracing::error!("from offer content {crc} {content:?}");
                                     }
                                 },
                                 _ => {
-                                    tracing::error!("from offer msg {msg:?}");
+                                    tracing::error!("from offer msg {crc} {msg:?}");
                                 }
                             }
                             tokio::spawn(async move {
                                 cb.on_message(crc, from_id, to, event_time, msg_data);
                             });
                         } else {
-                            tracing::error!("decrypt failed:>>>>");
+                            tracing::error!("offer decrypt failed:>>>> crc: {crc}");
                         }
                     } else {
-                        tracing::error!("invalid msg {im:?}");
+                        tracing::error!("invalid msg crc[{crc}] {im:?}");
                     }
                 }
             }
