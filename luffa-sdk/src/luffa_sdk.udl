@@ -170,6 +170,7 @@ interface Client {
     [Throws=ClientError]
     sequence<ContactsView> contacts_search_determinate(u8 c_type,[ByRef] string pattern);
 
+
     [Throws=ClientError]
     sequence<ContactsGroupView> groups();
 
@@ -223,6 +224,8 @@ interface Client {
 
     [Throws=ClientError]
     void remove_local_msg(u64 did,u64 crc);
+    [Throws=ClientError]
+    void remove_offser(u64 did,u64 crc);
 
     [Throws=ClientError]
     void enable_silent(u64 did);
