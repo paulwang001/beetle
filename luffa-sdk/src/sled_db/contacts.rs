@@ -114,6 +114,25 @@ pub trait ContactsDb {
 
         tree.flush().unwrap();
     }
+
+    fn remove_offer_in_tree(db: Arc<Db>,crc: u64) {
+        let tree = db.open_tree("offer").unwrap();
+        tree.remove(format!("SK_{crc}")).unwrap();
+        tree.remove(format!("ST_{crc}")).unwrap();
+        tree.remove(format!("TP_{crc}")).unwrap();
+        tree.remove(format!("OF_{crc}")).unwrap();
+        tree.remove(format!("DID_{crc}")).unwrap();
+        tree.remove(format!("TAG_{crc}")).unwrap();
+
+        // offer_time 表中数据删除，做在读取消息时删除
+    }
+
+    fn if_exists_offer_in_tree(db: Arc<Db>, crc: u64) -> bool {
+        let tree = db.open_tree("offer").unwrap();
+
+        tree.contains_key(format!("SK_{crc}")).unwrap_or(false)
+    }
+
     fn get_answer_from_tree(db: Arc<Db>, crc: u64) -> Option<(u64, Vec<u8>, u8)> {
         let table = format!("offer");
         let tree = db.open_tree(&table).unwrap();
