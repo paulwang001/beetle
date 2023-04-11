@@ -654,7 +654,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     let t = self.get_peer_index(to_id);
 
                     if let Some(e) = self.connections.find_edge(f, t) {
-                        // self.connections.remove_edge(e);
+                        self.connections.remove_edge(e);
                         tracing::warn!("local disconnection >> {my_id} --> {to_id}");
                     }
                     else{

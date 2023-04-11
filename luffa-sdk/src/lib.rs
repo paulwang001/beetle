@@ -3791,6 +3791,26 @@ impl Client {
                                             db_t.clone(),
                                         )
                                         .await;
+
+                                        let contacts = vec![Contacts {
+                                            did: did,
+                                            r#type: ContactsTypes::Group,
+                                            have_time: 0,
+                                            wants: vec![],
+                                        }];
+                            
+                                        let sync = Message::ContactsSync {
+                                            did: my_id,
+                                            contacts,
+                                        };
+                            
+                                        let event = Event::new(did, &sync, Some(secret_key.clone()), my_id);
+                                        let data = event.encode().unwrap();
+                                        if let Err(e) = client_t.chat_request(bytes::Bytes::from(data))
+                                        .await
+                                        {
+                                            error!("sync contacts {did} {e:?}");
+                                        }
                                         let group_nickname = Self::get_group_member_nickname(
                                             db_t.clone(),
                                             did,
