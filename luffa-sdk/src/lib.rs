@@ -604,25 +604,29 @@ impl Client {
         };
         let invitee1 = invitee.clone();
         RUNTIME.block_on(async {
-            let contacts = vec![Contacts {
-                did: g_id,
-                r#type: ContactsTypes::Group,
-                have_time: 0,
-                wants: vec![],
-            }];
-
-            let sync = Message::ContactsSync {
-                did: my_id,
-                contacts,
-            };
-
-            let event = Event::new(0, &sync, None, my_id);
-            let data = event.encode().unwrap();
             let client_t = self.client.read().clone().unwrap();
             let tx = self.sender.read().clone().unwrap();
             tokio::spawn(async move {
-                if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
-                    tracing::warn!("send contacts sync status >>> {e:?}");
+                let mut sync_members = vec![my_id];
+                sync_members.extend_from_slice(&invitee1);
+                for i_id in sync_members {
+                    let contacts = vec![Contacts {
+                        did: g_id,
+                        r#type: ContactsTypes::Group,
+                        have_time: 0,
+                        wants: vec![],
+                    }];
+
+                    let sync = Message::ContactsSync {
+                        did: i_id,
+                        contacts,
+                    };
+        
+                    let event = Event::new(0, &sync, None, 0);
+                    let data = event.encode().unwrap();
+                    if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
+                        tracing::warn!("send contacts sync status >>> {e:?}");
+                    }
                 }
                 for i_id in invitee1 {
                     let (req, res) = tokio::sync::oneshot::channel();
