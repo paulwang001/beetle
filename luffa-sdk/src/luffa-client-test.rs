@@ -148,14 +148,14 @@ fn main() -> ClientResult<()> {
                         .unwrap();
                     tracing::error!("show_code: {show_code:?}");
                 }
-                // contacts_offer${ "command": "https://luffa.putdev.com/p/YGz62Wdxqx8/5TgnQzVQqqcPaBvErQRREYYZVE8UXg4UjGicTWxdg1qm/Uncharted Banana pepper"}
+                // contacts_offer${ "command": "https://luffa.putdev.com/p/YGz62Wdxqx8/ERX4hGkzmzj4RP3hJh8mq9uxAU7rVkAyXwrpBJCviPAu/Uncharted Banana pepper"}
                 "contacts_offer" => {
                     let crc = client1.contacts_offer(&params.command.unwrap()).unwrap();
                     tracing::error!("contacts_offer: {crc}");
                 }
                 // contacts_anwser$1314654236848723363
-                // contacts_anwser${ "to": 10871006697545602478, "command": "6922832792581256356" }
-                // contacts_anwser${ "to": 11837182690600253035, "command": "17452352708706392354" }
+                // contacts_anwser${ "to": 10871006697545602478, "command": "16358126469917777446" }
+                // contacts_anwser${ "to": 11837182690600253035, "command": "5554204468886462634" }
                 "contacts_anwser" => {
                     let id = client1
                         .contacts_anwser(
@@ -191,13 +191,15 @@ fn main() -> ClientResult<()> {
                     tracing::error!("contacts_search: {contacts:?}");
                 }
                 // 13685501506277185778 8191288328679216604
-                // group_create${ "groups": [10871006697545602478, 11837182690600253035], "command": "group_test9" }
+                // group_create${ "groups": [10871006697545602478, 11837182690600253035], "command": "group_test13" }
                 "group_create" => {
                     let group_id = client1
                         .contacts_group_create(params.groups.unwrap(), params.command)
                         .unwrap();
                     tracing::error!("group_id: {group_id:?}");
                 }
+                // nickname${ "command": "11837182690600253035" }
+                // nickname${ "command": "10871006697545602478" }
                 // nickname${ "command": "13473655988076347637" }
                 "nickname" => {
                     let nickname = client1
@@ -215,10 +217,10 @@ fn main() -> ClientResult<()> {
                         .unwrap();
                     tracing::error!("contacts_group_invite_member: {tag:?}");
                 }
-                // group_members${ "command": "11266639748810223080" }
+                // group_members${ "command": "4750053964748471727" }
                 "group_members" => {
                     let members = client1
-                        .contacts_group_members(params.command.unwrap().parse().unwrap(), 0, 10)
+                        .contacts_group_members(params.command.unwrap().parse().unwrap(), 1, 10)
                         .unwrap();
                     tracing::error!("contacts_group_members: {members:?}");
                 }

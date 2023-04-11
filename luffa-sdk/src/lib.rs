@@ -39,6 +39,7 @@ use std::{
     time::Instant,
 };
 use std::{fs, io};
+use std::thread::sleep;
 use tantivy::tokenizer::{LowerCaser, NgramTokenizer, SimpleTokenizer, Stemmer, TextAnalyzer};
 
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -650,6 +651,8 @@ impl Client {
                 }
             })
         });
+        Self::group_member_insert(self.db(), g_id, vec![my_id])?;
+        Self::set_is_group_manager(self.db(), g_id, my_id)?;
         Ok(g_id)
     }
 
@@ -3793,6 +3796,7 @@ impl Client {
                                                 my_id,
                                             );
                                             let event = event.encode().unwrap();
+                                            sleep(Duration::from_secs(3));
                                             tracing::info!("send join to group {did}");
                                             if let Err(e) = client_t
                                                 .chat_request(bytes::Bytes::from(event))
@@ -4046,6 +4050,7 @@ impl Client {
                                                     my_id,
                                                 );
                                                 let event = event.encode().unwrap();
+                                                sleep(Duration::from_secs(3));
                                                 tracing::error!("send join to group {did}");
                                                 if let Err(e) = client_t
                                                     .chat_request(bytes::Bytes::from(event))

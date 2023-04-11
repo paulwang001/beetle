@@ -91,8 +91,16 @@ pub trait GroupMembersDb: Nickname {
         if let Some(data) = tree.get(key)? {
             let members = Members::deserialize(data.as_bytes())?;
             let members: Vec<u64> = members.members.iter().map(|a| *a).collect();
+            let left = ((page_no - 1) * page_size) as usize;
+            let mut right = (page_size * page_size) as usize;
+            if left > members.len() {
+                return Ok(vec![])
+            }
+            if right > members.len() {
+                right = members.len();
+            }
             for member in members
-                .get((page_no - 1 * page_size) as usize..(page_size * page_size) as usize)
+                .get(left..right)
                 .unwrap()
             {
                 let mut nickname = String::new();
