@@ -2029,6 +2029,57 @@ impl Client {
         Ok(res)
     }
 
+    pub fn contacts_search_determinate(&self, c_type: u8, pattern: &str) -> ClientResult<Vec<ContactsView>> {
+        let tree = Self::open_contact_tree(self.db())?;
+
+
+        let tag_prefix = format!("TAG-");
+        let itr = tree.scan_prefix(tag_prefix);
+        let my_id = self.get_local_id()?;
+
+        let mut data = vec![];
+        for item in itr {
+            let (k, v) = item.unwrap();
+            let tag = String::from_utf8(v.to_vec())?;
+            let key = String::from_utf8(k.to_vec())?;
+            let to = key.split('-').last().unwrap();
+            let to: u64 = to.parse()?;
+            let to_id = bs58::encode(to.to_be_bytes().to_vec()).into_string();
+            // if to_id.to_lowercase().contains(keyword)
+            let mut flag = false;
+            if c_type > 1 {
+                flag = true;
+            } else {
+                if let Some(t) = Self::get_contacts_type(self.db(), to) {
+                    flag = c_type == t as u8 && Some(to) != my_id;
+                } else if c_type == 0 {
+                    flag = true && Some(to) != my_id;
+                };
+            }
+            if flag {
+                if let Some(t) = Self::get_contacts_type(self.db(), to) {
+                    let c_type = t as u8;
+                    let c_to = ContactsView {
+                        did: to,
+                        tag: tag.clone(),
+                        c_type,
+                    };
+
+                    data.push((c_to, format!("{to_id} {tag}")));
+                }
+            }
+        }
+
+        let res: Vec<_> = data.into_iter().filter_map(|(id, view)| {
+            (view.to_lowercase().contains(&(pattern.trim().to_lowercase()))
+            && pattern.trim().len() != 0)
+                .then_some(id)
+        })
+            .collect();
+
+        Ok(res)
+    }
+
     pub fn search(&self, query: String, offset: u32, limit: u32) -> ClientResult<Vec<String>> {
         //let idx = self.idx.read().clone().unwrap();
         let idx = self.idx_db()?;

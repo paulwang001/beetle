@@ -167,6 +167,8 @@ interface Client {
  
     [Throws=ClientError]
     sequence<ContactsView> contacts_search(u8 c_type,[ByRef] string pattern);
+    [Throws=ClientError]
+    sequence<ContactsView> contacts_search_determinate(u8 c_type,[ByRef] string pattern);
 
     [Throws=ClientError]
     sequence<ContactsGroupView> groups();
