@@ -196,7 +196,7 @@ fn main() -> Result<()> {
                             }
                         }
                         let groups = client.contacts_list(1).unwrap();
-                        if !members.is_empty() && groups.len() < 10 {
+                        if !members.is_empty() && groups.len() < 100 {
                             let created = client.contacts_group_create(members, None).is_ok();
                             tracing::warn!("group created:{created}");
                         }

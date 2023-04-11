@@ -2646,8 +2646,13 @@ impl Client {
                     let data = event.encode().unwrap();
                     let client_t = client_t.clone();
                     tokio::spawn(async move {
+                        let d_size = data.len();
                         if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
                             tracing::error!("pub contacts sync status >>> {e:?}");
+                        }
+                        else{
+                            tracing::warn!("pub contacts sync status >>> {d_size}",);
+
                         }
                     });
                 }
@@ -2691,11 +2696,20 @@ impl Client {
                     let data = event.encode().unwrap();
                     let client_t = client_t.clone();
                     tokio::spawn(async move {
+                        let d_size = data.len();
                         if let Err(e) = client_t
                             .chat_request(bytes::Bytes::from(data.clone()))
                             .await
                         {
                             tracing::error!("pub contacts sync status >>> {e:?}");
+                        }
+                        else{
+                            tracing::warn!("pub contacts sync status >>> {d_size}");
+                            if count == 0 {
+                                tracing::warn!("pub contacts sync status >>> {sync:?}");
+
+                            }
+
                         }
                     });
                 }
@@ -4361,8 +4375,8 @@ pub async fn start_node(
 )> {
     config.libp2p.dial_concurrency_factor = 3;
     config.libp2p.max_conns_per_peer = 1;
-    config.libp2p.max_conns_in = 1;
-    config.libp2p.max_conns_out = 1;
+    config.libp2p.max_conns_in = 2;
+    config.libp2p.max_conns_out = 2;
     tracing::info!("node>>>{config:?}");
     let (mut p2p, sender) =
         Node::new(config, keychain, db, Some("Luffa".to_string()), filter).await?;
