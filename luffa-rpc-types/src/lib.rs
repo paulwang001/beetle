@@ -195,12 +195,10 @@ pub enum RtcAction {
     Offer { dsp: String },
     Answer { dsp: String },
 }
-#[derive(Debug, Serialize, Deserialize,Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Contacts {
     pub did: u64,
     pub r#type: ContactsTypes,
-    pub have_time:u64,
-    pub wants:Vec<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy,PartialEq, Eq)]
