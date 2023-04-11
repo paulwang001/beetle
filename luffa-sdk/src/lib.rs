@@ -614,8 +614,6 @@ impl Client {
                     let contacts = vec![Contacts {
                         did: g_id,
                         r#type: ContactsTypes::Group,
-                        have_time: 0,
-                        wants: vec![],
                     }];
 
                     let sync = Message::ContactsSync {
@@ -1198,7 +1196,7 @@ impl Client {
                             };
                             if let Some(msg) = message_to(msg) {
                                 if self.send_msg(did, msg).unwrap() == 0 {
-                                    tracing::error!("send read feedback failed");
+                                    tracing::error!("send read feedback failed {crc}");
                                 }
                             }
                             // tracing::error!("send read feedback to {did}");
@@ -1232,7 +1230,7 @@ impl Client {
                         };
                         if let Some(msg) = message_to(msg) {
                             if self.send_msg(did, msg).unwrap() == 0 {
-                                tracing::error!("send read feedback failed");
+                                tracing::error!("send read feedback failed {crc}");
                             }
                         }
                         // tracing::error!("send read feedback to {did}");
@@ -1516,13 +1514,15 @@ impl Client {
                         }
                     }
                 });
-
+                
                 let vv = vv.unwrap_or_default();
-
+                if vv.is_none() {
+                    warn!("can not found crc {crc} in did {did}");
+                }  
                 vv
             }
             Err(e) => {
-                error!("{e:?}");
+                error!("get crc from kv:{crc} in did {did} {e:?}");
                 None
             }
         };
@@ -2626,8 +2626,6 @@ impl Client {
                                     Contacts {
                                         did: to,
                                         r#type: c_type,
-                                        have_time,
-                                        wants: vec![],
                                     }
                                 })
                                 .collect::<Vec<_>>();
@@ -2678,12 +2676,9 @@ impl Client {
                             } else {
                                 ContactsTypes::Group
                             };
-                            let have_time = Self::get_contacts_have_time(db_t.clone(), to);
                             Contacts {
                                 did: to,
                                 r#type: c_type,
-                                have_time,
-                                wants: vec![],
                             }
                         })
                         .collect::<Vec<_>>();
@@ -2756,98 +2751,7 @@ impl Client {
                                             let mut will_to_ui = true;
                                             let relay_id = from_id;
                                             match msg_d {
-                                                Message::ContactsSync { did, contacts } => {
-                                                    will_to_ui = false;
-                                                    if did != my_id {
-                                                        continue;
-                                                    }
-                                                    for ctt in contacts {
-                                                        let did = ctt.did;
-                                                        for crc in ctt.wants {
-                                                            let table =
-                                                                format!("message_{}", ctt.did);
-
-                                                            let clt = client_t.clone();
-                                                            let db_tt = db_t.clone();
-                                                            // add to wants crc of contacts
-                                                            let cb_t = cb.clone();
-                                                            let scm = schema_tt.clone();
-                                                            let idx = idx_tt.clone();
-                                                            tokio::spawn(async move {
-                                                                if !Self::have_in_tree(
-                                                                    db_tt.clone(),
-                                                                    crc,
-                                                                    &table,
-                                                                ) {
-                                                                    match clt
-                                                                        .get_crc_record(crc)
-                                                                        .await
-                                                                    {
-                                                                        Ok(res) => {
-                                                                            let data = res.data;
-                                                                            // TODO remove crc from wants and update want_time
-                                                                            tracing::info!(
-                                                                                "get record: {crc}"
-                                                                            );
-                                                                            Self::set_contacts_have_time(db_tt.clone(), did, event_time);
-                                                                            let data =
-                                                                                data.to_vec();
-                                                                            if !Self::have_in_tree(
-                                                                                db_tt.clone(),
-                                                                                crc,
-                                                                                &table,
-                                                                            ) {
-                                                                                Self::process_event(
-                                                                                    db_tt.clone(),
-                                                                                    cb_t.clone(),
-                                                                                    clt.clone(),
-                                                                                    idx.clone(),
-                                                                                    scm,
-                                                                                    &data,
-                                                                                    my_id,
-                                                                                )
-                                                                                    .await;
-                                                                            }
-                                                                            if let Ok(im) = Event::decode_uncheck(&data) {
-                                                                                let Event {
-                                                                                    msg,
-                                                                                    event_time,
-                                                                                    nonce,
-                                                                                    ..
-                                                                                } = im;
-                                                                                if let Some(key) = Self::get_aes_key_from_contacts(db_tt.clone(), did) {
-                                                                                    if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), Some(key), nonce) {
-                                                                                        let feedback = msg.chat_feedback();
-                                                                                        match feedback {
-                                                                                            Some((crc, status)) => {
-                                                                                                match status {
-                                                                                                    FeedbackStatus::Read => {
-                                                                                                        let table = format!("message_{did}");
-                                                                                                        Self::save_to_tree_status(db_tt.clone(), crc, &table, 5);
-                                                                                                    }
-                                                                                                    FeedbackStatus::Reach => {
-                                                                                                        let table = format!("message_{did}");
-                                                                                                        Self::save_to_tree_status(db_tt.clone(), crc, &table, 4);
-                                                                                                    }
-                                                                                                    _ => {}
-                                                                                                }
-                                                                                            }
-                                                                                            None => {}
-                                                                                        }
-                                                                                    }
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                        Err(e) => {
-                                                                            tracing::info!("get crc record failed:{e:?}");
-                                                                            Self::set_contacts_have_time(db_tt.clone(), did, event_time);
-                                                                        }
-                                                                    }
-                                                                }
-                                                            });
-                                                        }
-                                                    }
-                                                }
+                                                
                                                 Message::Feedback {
                                                     crc, to_id, status, ..
                                                 } => {
@@ -3856,8 +3760,6 @@ impl Client {
                                         let contacts = vec![Contacts {
                                             did: did,
                                             r#type: ContactsTypes::Group,
-                                            have_time: 0,
-                                            wants: vec![],
                                         }];
                             
                                         let sync = Message::ContactsSync {
