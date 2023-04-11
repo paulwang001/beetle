@@ -3101,15 +3101,15 @@ impl Client {
                                     let client_t = client_t.clone();
                                     let idx = idx.clone();
                                     let schema_tt = schema_tt.clone();
-                                    {
-                                        let mut f_crc = fetching_crc.write();
-                                        if !f_crc.insert(crc) {
-                                            tracing::warn!("request has pushing record: {crc}, f> {from_id}, t> {to}");
-                                            return;
-                                        }
-                                    }
                                     let fetching_crc_t = fetching_crc.clone();
                                     tokio::spawn(async move {
+                                        {
+                                            let mut f_crc = fetching_crc_t.write();
+                                            if !f_crc.insert(crc) {
+                                                tracing::warn!("request has pushing record: {crc}, f> {from_id}, t> {to}");
+                                                return;
+                                            }
+                                        }
                                         if !Self::have_in_tree(db_t.clone(), crc, &table) {
                                             Self::process_event(
                                                 db_t, cb, client_t, idx, schema_tt, &data, my_id,
@@ -3621,9 +3621,12 @@ impl Client {
             let event = luffa_rpc_types::Event::new(0, &feed, None, my_id);
             tracing::warn!("send feedback reach to relay {crc}");
             let event = event.encode().unwrap();
-            if let Err(e) = client_t.chat_request(bytes::Bytes::from(event)).await {
-                error!("{e:?}");
-            }
+            let client_tt = client_t.clone();
+            tokio::spawn(async move {
+                if let Err(e) = client_tt.chat_request(bytes::Bytes::from(event)).await {
+                    error!("{e:?}");
+                }
+            });
             
             let did = if to == my_id { from_id } else { to };
             
@@ -3830,40 +3833,45 @@ impl Client {
                                         let event =
                                             Event::new(did, &sync, Some(secret_key.clone()), my_id);
                                         let data = event.encode().unwrap();
-                                        if let Err(e) =
-                                            client_t.chat_request(bytes::Bytes::from(data)).await
-                                        {
-                                            error!("sync contacts {did} {e:?}");
-                                        }
-                                        let group_nickname = Self::get_group_member_nickname(
-                                            db_t.clone(),
-                                            did,
-                                            my_id,
-                                        )
-                                        .unwrap();
-                                        if contacts_type == ContactsTypes::Group {
-                                            let join = luffa_rpc_types::Message::ContactsExchange {
-                                                exchange: ContactsEvent::Join {
-                                                    offer_crc,
-                                                    group_nickname,
-                                                },
-                                            };
-                                            let event = luffa_rpc_types::Event::new(
-                                                did,
-                                                &join,
-                                                Some(secret_key),
-                                                my_id,
-                                            );
-                                            let event = event.encode().unwrap();
-                                            sleep(Duration::from_secs(3));
-                                            tracing::info!("send join to group {did}");
-                                            if let Err(e) = client_t
-                                                .chat_request(bytes::Bytes::from(event))
-                                                .await
+                                        let client_tt = client_t.clone();
+                                        let db_tt = db_t.clone();
+                                        tokio::spawn(async move {
+
+                                            if let Err(e) =
+                                                client_tt.chat_request(bytes::Bytes::from(data)).await
                                             {
-                                                error!("SendJoin2 {did} {e:?}");
+                                                error!("sync contacts {did} {e:?}");
                                             }
-                                        }
+                                            let group_nickname = Self::get_group_member_nickname(
+                                                db_tt.clone(),
+                                                did,
+                                                my_id,
+                                            )
+                                            .unwrap();
+                                            if contacts_type == ContactsTypes::Group {
+                                                let join = luffa_rpc_types::Message::ContactsExchange {
+                                                    exchange: ContactsEvent::Join {
+                                                        offer_crc,
+                                                        group_nickname,
+                                                    },
+                                                };
+                                                let event = luffa_rpc_types::Event::new(
+                                                    did,
+                                                    &join,
+                                                    Some(secret_key),
+                                                    my_id,
+                                                );
+                                                let event = event.encode().unwrap();
+                                                // sleep(Duration::from_secs(3));
+                                                tracing::warn!("send join to group {did}");
+                                                if let Err(e) = client_tt
+                                                    .chat_request(bytes::Bytes::from(event))
+                                                    .await
+                                                {
+                                                    error!("SendJoin2 {did} {e:?}");
+                                                }
+                                            }
+                                        });
                                         Self::update_session(
                                             db_t.clone(),
                                             did,
@@ -4034,9 +4042,12 @@ impl Client {
                             let event = luffa_rpc_types::Event::new(did, &feed, Some(key), my_id);
                             tracing::error!("send feedback reach to {from_id}");
                             let event = event.encode().unwrap();
-                            if let Err(e) = client_t.chat_request(bytes::Bytes::from(event)).await {
-                                error!("{e:?}");
-                            }
+                            let client_tt =client_t.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = client_tt.chat_request(bytes::Bytes::from(event)).await {
+                                    error!("{e:?}");
+                                }
+                            });
                         }
                         tokio::spawn(async move {
                             cb.on_message(crc, from_id, to, event_time, msg_data);
