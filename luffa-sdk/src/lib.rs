@@ -3035,8 +3035,8 @@ impl Client {
                                     let idx = idx.clone();
                                     let schema_tt = schema_tt.clone();
                                     {
-                                        let f_crc = fetching_crc.read();
-                                        if f_crc.contains(&crc) {
+                                        let mut f_crc = fetching_crc.write();
+                                        if !f_crc.insert(crc) {
                                             tracing::warn!("request has pushing record: {crc}, f> {from_id}, t> {to}");
                                             return;
                                         }
