@@ -19,13 +19,13 @@ fileprivate extension RustBuffer {
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
-        try! rustCall { ffi_LuffaRpcTypes_49cf_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
+        try! rustCall { ffi_LuffaRpcTypes_3205_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
     // Frees the buffer in place.
     // The buffer must not be used after this is called.
     func deallocate() {
-        try! rustCall { ffi_LuffaRpcTypes_49cf_rustbuffer_free(self, $0) }
+        try! rustCall { ffi_LuffaRpcTypes_3205_rustbuffer_free(self, $0) }
     }
 }
 
@@ -361,16 +361,12 @@ fileprivate struct FfiConverterString: FfiConverter {
 public struct Contacts {
     public var `did`: UInt64
     public var `type`: ContactsTypes
-    public var `haveTime`: UInt64
-    public var `wants`: [UInt64]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(`did`: UInt64, `type`: ContactsTypes, `haveTime`: UInt64, `wants`: [UInt64]) {
+    public init(`did`: UInt64, `type`: ContactsTypes) {
         self.`did` = `did`
         self.`type` = `type`
-        self.`haveTime` = `haveTime`
-        self.`wants` = `wants`
     }
 }
 
@@ -383,20 +379,12 @@ extension Contacts: Equatable, Hashable {
         if lhs.`type` != rhs.`type` {
             return false
         }
-        if lhs.`haveTime` != rhs.`haveTime` {
-            return false
-        }
-        if lhs.`wants` != rhs.`wants` {
-            return false
-        }
         return true
     }
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(`did`)
         hasher.combine(`type`)
-        hasher.combine(`haveTime`)
-        hasher.combine(`wants`)
     }
 }
 
@@ -405,17 +393,13 @@ public struct FfiConverterTypeContacts: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Contacts {
         return try Contacts(
             `did`: FfiConverterUInt64.read(from: &buf), 
-            `type`: FfiConverterTypeContactsTypes.read(from: &buf), 
-            `haveTime`: FfiConverterUInt64.read(from: &buf), 
-            `wants`: FfiConverterSequenceUInt64.read(from: &buf)
+            `type`: FfiConverterTypeContactsTypes.read(from: &buf)
         )
     }
 
     public static func write(_ value: Contacts, into buf: inout [UInt8]) {
         FfiConverterUInt64.write(value.`did`, into: &buf)
         FfiConverterTypeContactsTypes.write(value.`type`, into: &buf)
-        FfiConverterUInt64.write(value.`haveTime`, into: &buf)
-        FfiConverterSequenceUInt64.write(value.`wants`, into: &buf)
     }
 }
 
@@ -761,6 +745,7 @@ public enum ContactsEvent {
     case `answer`(`offerCrc`: UInt64, `token`: ContactsToken)
     case `reject`(`offerCrc`: UInt64, `publicKey`: [UInt8])
     case `join`(`offerCrc`: UInt64, `groupNickname`: String)
+    case `sync`(`offerCrc`: UInt64, `groupNickname`: String)
 }
 
 public struct FfiConverterTypeContactsEvent: FfiConverterRustBuffer {
@@ -785,6 +770,11 @@ public struct FfiConverterTypeContactsEvent: FfiConverterRustBuffer {
         )
         
         case 4: return .`join`(
+            `offerCrc`: try FfiConverterUInt64.read(from: &buf), 
+            `groupNickname`: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .`sync`(
             `offerCrc`: try FfiConverterUInt64.read(from: &buf), 
             `groupNickname`: try FfiConverterString.read(from: &buf)
         )
@@ -816,6 +806,12 @@ public struct FfiConverterTypeContactsEvent: FfiConverterRustBuffer {
         
         case let .`join`(`offerCrc`,`groupNickname`):
             writeInt(&buf, Int32(4))
+            FfiConverterUInt64.write(`offerCrc`, into: &buf)
+            FfiConverterString.write(`groupNickname`, into: &buf)
+            
+        
+        case let .`sync`(`offerCrc`,`groupNickname`):
+            writeInt(&buf, Int32(5))
             FfiConverterUInt64.write(`offerCrc`, into: &buf)
             FfiConverterString.write(`groupNickname`, into: &buf)
             
@@ -1613,7 +1609,7 @@ public func `messageFrom`(`msg`: [UInt8])  -> Message? {
     
     rustCall() {
     
-    LuffaRpcTypes_49cf_message_from(
+    LuffaRpcTypes_3205_message_from(
         FfiConverterSequenceUInt8.lower(`msg`), $0)
 }
     )
@@ -1627,7 +1623,7 @@ public func `messageTo`(`msg`: Message)  -> [UInt8]? {
     
     rustCall() {
     
-    LuffaRpcTypes_49cf_message_to(
+    LuffaRpcTypes_3205_message_to(
         FfiConverterTypeMessage.lower(`msg`), $0)
 }
     )

@@ -7,6 +7,7 @@ use aes_gcm::{
 };
 use anyhow::{bail, Context};
 use api::P2pClient;
+use event::group::EventGroup;
 use futures::StreamExt;
 use libp2p::identity::Keypair;
 use libp2p::identity::PublicKey;
@@ -38,6 +39,7 @@ use std::{
     time::Instant,
 };
 use std::{fs, io};
+use std::thread::sleep;
 use tantivy::tokenizer::{LowerCaser, NgramTokenizer, SimpleTokenizer, Stemmer, TextAnalyzer};
 
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -62,6 +64,7 @@ use tokio::sync::oneshot::Sender as ShotSender;
 mod api;
 pub mod avatar_nickname;
 mod config;
+mod event;
 mod sled_db;
 
 use crate::config::Config;
@@ -307,6 +310,9 @@ impl Mnemonic for Client {}
 impl Nickname for Client {}
 
 impl SledDbAll for Client {}
+
+#[async_trait::async_trait]
+impl EventGroup for Client {}
 
 impl Client {
     pub fn new() -> Self {
@@ -620,7 +626,7 @@ impl Client {
                         did: i_id,
                         contacts,
                     };
-        
+
                     let event = Event::new(0, &sync, None, 0);
                     let data = event.encode().unwrap();
                     if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
@@ -645,6 +651,8 @@ impl Client {
                 }
             })
         });
+        Self::group_member_insert(self.db(), g_id, vec![my_id])?;
+        Self::set_is_group_manager(self.db(), g_id, my_id)?;
         Ok(g_id)
     }
 
@@ -1078,7 +1086,7 @@ impl Client {
     }
 
     pub fn recent_offser(&self, top: u32) -> ClientResult<Vec<OfferView>> {
-        let mut msgs = vec![];
+        let mut msgs: Vec<OfferView> = vec![];
         let time_table = format!("offer_time");
         let offer_table = format!("offer");
         let tree = self.db().open_tree(&time_table)?;
@@ -1113,14 +1121,24 @@ impl Client {
             if let Ok(Some(tag)) = offer_tree.get(&format!("TAG_{crc}")) {
                 let tag = String::from_utf8(tag.to_vec()).unwrap();
                 let bs_did = bs58::encode(did.to_be_bytes()).into_string();
-                msgs.push(OfferView {
+                let view = OfferView {
                     did,
                     bs_did,
                     offer_crc: crc,
                     tag,
                     status,
                     event_time: event_meta.event_time,
-                });
+                };
+
+                if let Some((idx, v)) =
+                    msgs.iter().enumerate().find(|(_, x)| x.did == did) {
+                    if v.event_time < view.event_time {
+                        msgs[idx] = view;
+                    }
+                } else {
+                    msgs.push(view);
+                }
+
                 if msgs.len() >= top as usize {
                     break;
                 }
@@ -2099,9 +2117,12 @@ impl Client {
         Ok(res)
     }
 
-    pub fn contacts_search_determinate(&self, c_type: u8, pattern: &str) -> ClientResult<Vec<ContactsView>> {
+    pub fn contacts_search_determinate(
+        &self,
+        c_type: u8,
+        pattern: &str,
+    ) -> ClientResult<Vec<ContactsView>> {
         let tree = Self::open_contact_tree(self.db())?;
-
 
         let tag_prefix = format!("TAG-");
         let itr = tree.scan_prefix(tag_prefix);
@@ -2140,11 +2161,15 @@ impl Client {
             }
         }
 
-        let res: Vec<_> = data.into_iter().filter_map(|(id, view)| {
-            (view.to_lowercase().contains(&(pattern.trim().to_lowercase()))
-            && pattern.trim().len() != 0)
-                .then_some(id)
-        })
+        let res: Vec<_> = data
+            .into_iter()
+            .filter_map(|(id, view)| {
+                (view
+                    .to_lowercase()
+                    .contains(&(pattern.trim().to_lowercase()))
+                    && pattern.trim().len() != 0)
+                    .then_some(id)
+            })
             .collect();
 
         Ok(res)
@@ -2554,6 +2579,31 @@ impl Client {
         page_size: u64,
     ) -> ClientResult<Vec<GroupMemberNickname>> {
         Self::group_members_get(self.db(), g_id, page_no, page_size)
+    }
+
+    pub fn leave_group(&self, gid: u64) -> ClientResult<()> {
+        let ty = Self::get_contacts_type(self.db(), gid);
+        if ! matches!(ty, Some(ContactsTypes::Group)) {
+            // 考虑是否返回错误
+            return Ok(())
+        }
+
+        let id = self.get_local_id().expect("get local id failed")
+            .expect("local id is null in leave_group");
+
+        let _ = self.send_msg(gid,message_to(
+            Message::ContactsExchange {
+                exchange: ContactsEvent::Leave {
+                    id,
+                }
+            }
+        ).unwrap())
+            .expect("send leave msg failed");
+
+        let _ = Self::remove_contacts(self.db(), gid)?;
+        let _ = Self::remove_session(self.db(), gid);
+
+        Ok(())
     }
 
     /// run
@@ -3771,16 +3821,17 @@ impl Client {
                                             did: did,
                                             r#type: ContactsTypes::Group,
                                         }];
-                            
+
                                         let sync = Message::ContactsSync {
                                             did: my_id,
                                             contacts,
                                         };
-                            
-                                        let event = Event::new(did, &sync, Some(secret_key.clone()), my_id);
+
+                                        let event =
+                                            Event::new(did, &sync, Some(secret_key.clone()), my_id);
                                         let data = event.encode().unwrap();
-                                        if let Err(e) = client_t.chat_request(bytes::Bytes::from(data))
-                                        .await
+                                        if let Err(e) =
+                                            client_t.chat_request(bytes::Bytes::from(data)).await
                                         {
                                             error!("sync contacts {did} {e:?}");
                                         }
@@ -3804,7 +3855,8 @@ impl Client {
                                                 my_id,
                                             );
                                             let event = event.encode().unwrap();
-                                            tracing::warn!("send join to group {did}");
+                                            sleep(Duration::from_secs(3));
+                                            tracing::info!("send join to group {did}");
                                             if let Err(e) = client_t
                                                 .chat_request(bytes::Bytes::from(event))
                                                 .await
@@ -3928,6 +3980,35 @@ impl Client {
                                             &group_nickname,
                                         )
                                         .unwrap();
+                                        let secret_key = Self::get_key(db_t.clone(), &format!("SKEY-{}", did)).unwrap();
+                                        Self::group_sync(
+                                            db_t.clone(),
+                                            client_t.clone(),
+                                            secret_key,
+                                            did,
+                                            my_id,
+                                            offer_crc,
+                                        )
+                                        .await;
+                                    }
+                                    ContactsEvent::Leave {id} => {
+                                        Self::group_member_remove(db_t.clone(), did, id).expect("remove group member failed");
+                                    }
+
+                                    ContactsEvent::Sync {
+                                        offer_crc,
+                                        group_nickname,
+                                    } => {
+                                        error!("ContactsEvent::Sync1: {offer_crc} {group_nickname} {did} {from_id}");
+                                        Self::group_member_insert(db_t.clone(), did, vec![from_id])
+                                            .unwrap();
+                                        Self::set_group_member_nickname(
+                                            db_t.clone(),
+                                            did,
+                                            from_id,
+                                            &group_nickname,
+                                        )
+                                        .unwrap();
                                     }
                                 }
                             }
@@ -4033,6 +4114,7 @@ impl Client {
                                                     my_id,
                                                 );
                                                 let event = event.encode().unwrap();
+                                                sleep(Duration::from_secs(3));
                                                 tracing::error!("send join to group {did}");
                                                 if let Err(e) = client_t
                                                     .chat_request(bytes::Bytes::from(event))
@@ -4140,6 +4222,40 @@ impl Client {
                                         } => {
                                             error!("ContactsEvent::Join2: {offer_crc} {group_nickname} {did} {from_id}");
 
+                                            Self::group_member_insert(
+                                                db_t.clone(),
+                                                did,
+                                                vec![from_id],
+                                            )
+                                            .unwrap();
+                                            Self::set_group_member_nickname(
+                                                db_t.clone(),
+                                                did,
+                                                from_id,
+                                                &group_nickname,
+                                            )
+                                            .unwrap();
+
+                                            let secret_key = Self::get_key(db_t.clone(), &format!("SKEY-{}", did)).unwrap();
+                                            Self::group_sync(
+                                                db_t.clone(),
+                                                client_t.clone(),
+                                                secret_key,
+                                                did,
+                                                my_id,
+                                                offer_crc,
+                                            )
+                                                .await;
+
+                                        }
+                                        ContactsEvent::Leave {id} => {
+                                            Self::group_member_remove(db_t.clone(), did, id).expect("remove group member failed");
+                                        }
+                                        ContactsEvent::Sync {
+                                            offer_crc,
+                                            group_nickname,
+                                        } => {
+                                            error!("ContactsEvent::Sync2: {offer_crc} {group_nickname} {did} {from_id}");
                                             Self::group_member_insert(
                                                 db_t.clone(),
                                                 did,
