@@ -163,8 +163,8 @@ pub struct Node<KeyStorage: Storage> {
     listen_addrs: Vec<Multiaddr>,
     store: Arc<luffa_store::Store>,
     cache: DiGraph<u64, (u64, u64)>,
-    pub_pending: VecDeque<(Vec<u8>, Instant)>,
-    connections: UnGraph<u64, ConnectionEdge>,
+    pub_pending: VecDeque<(Vec<u8>, Instant, u8)>,
+    connections: DiGraph<u64, ConnectionEdge>,
     contacts: UnGraph<u64, u8>,
     agent: Option<String>,
 }
@@ -254,7 +254,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             }
         }
         let cache = DiGraph::<u64, (u64, u64)>::new();
-        let connections = UnGraph::<u64, ConnectionEdge>::with_capacity(1024, 1024);
+        let connections = DiGraph::<u64, ConnectionEdge>::with_capacity(1024, 1024);
         let contacts = UnGraph::<u64, u8>::with_capacity(1024, 1024);
         Ok((
             Node {
@@ -431,15 +431,19 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
     /// Re put pending routing.
     #[tracing::instrument(skip(self))]
     fn pub_pending_tick(&mut self) {
-        while let Some((evt, t)) = self.pub_pending.pop_back() {
-            if t.elapsed().as_secs() > 60 {
-                tracing::error!("pub event is timeout!!!");
+        while let Some((evt, t, c)) = self.pub_pending.pop_back() {
+            if c >= 6 {
+                tracing::error!("pub chat event is timeout!!!");
+                continue;
+            }
+            if t.elapsed().as_millis() < c as u128 * 500 {
+                self.pub_pending.push_back((evt, t,c));
                 continue;
             }
             if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
                 if let Err(e) = go.publish(TopicHash::from_raw(TOPIC_CHAT), evt.clone()) {
-                    tracing::info!("Message can not pub to any relay node>>> {e:?}");
-                    self.pub_pending.push_back((evt, t));
+                    tracing::warn!("Message can not pub chat to any relay node [{c}]>>> {e:?}");
+                    self.pub_pending.push_back((evt, Instant::now(),c+1));
                 }
             }
         }
@@ -650,7 +654,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     let t = self.get_peer_index(to_id);
 
                     if let Some(e) = self.connections.find_edge(f, t) {
-                        self.connections.remove_edge(e);
+                        // self.connections.remove_edge(e);
                         tracing::warn!("local disconnection >> {my_id} --> {to_id}");
                     }
                     else{
@@ -1121,7 +1125,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         if let Some(from) = from_id {
                                                             let pending = self.pending_routing.entry(from).or_insert(Vec::new());
                                                             for c in crc {
-                                                                pending.push((c,std::time::Instant::now()));
+                                                                if pending.iter().find(|(x,_)| *x == c ).is_none() {
+                                                                    pending.push((c,std::time::Instant::now()));
+                                                                }
                                                             }
                                                         }
                                                         else{
@@ -1158,7 +1164,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                                         t,
                                                                         ConnectionEdge::Remote(time),
                                                                     );
-                                                                    tracing::warn!("remote connection {from_id} -> {to}");
+                                                                    tracing::info!("remote connection {from_id} -> {to}");
                                                                 }
                                                                 _=>{
 
@@ -1176,7 +1182,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                                     self.connections.find_edge(f, t)
                                                                     {
                                                                         self.connections.remove_edge(i);
-                                                                        tracing::warn!("remote disconnection {from_id} -> {to}");
+                                                                        tracing::info!("remote disconnection {from_id} -> {to}");
                                                                     }
                                                                     else{
                                                                         tracing::error!("remote disconnection {from_id} -> {to}");
@@ -1208,38 +1214,16 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                             // let f = self.get_peer_index(my_id);
                                             let t = self.get_peer_index(to);
                                             let pending = self.pending_routing.entry(to).or_insert(Vec::new());
-                                            pending.push((crc,std::time::Instant::now()));
+                                            if pending.iter().find(|(x,_)| *x == crc ).is_none() {
+                                                pending.push((crc,std::time::Instant::now()));
+                                            }
 
                                             if let Ok(Some(rx)) =
-                                                self.local_send_if_connected(t, data)
+                                                self.local_send_if_connected(t,to, data)
                                             {
                                                 rx_any = Some(rx);
                                             }
-                                            // if rx_any.is_none() {
-                                            //     if let Some((cost, paths)) = astar(
-                                            //         &self.connections,
-                                            //         f,
-                                            //         |f| f == t,
-                                            //         |_e| 1,
-                                            //         |_| 0,
-                                            //     ) {
-                                            //         println!("[{cost}] paths 3>>>>>> {paths:?}");
-                                            //         //route this message to shortest node and then break if the node is connected.
-                                            //         for r in paths {
-                                            //             if r != f {
-                                            //                 match self
-                                            //                     .local_send_if_connected(r, data)
-                                            //                 {
-                                            //                     Ok(Some(rx)) => {
-                                            //                         rx_any = Some(rx);
-                                            //                         break;
-                                            //                     }
-                                            //                     _ => {}
-                                            //                 }
-                                            //             }
-                                            //         }
-                                            //     }
-                                            // }
+                                            
                                         } else {
                                             let g_idx = self.get_contacts_index(to);
                                             let members = self.contacts.edges(g_idx);
@@ -1255,24 +1239,40 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 .collect::<Vec<_>>();
                                             for t in targets {
                                                 if let Some(to_id) = self.contacts.node_weight(t) {
-                                                    if *to_id == from_id {
+                                                    if *to_id == my_id || *to_id == from_id {
                                                         continue;
                                                     }
                                                     let did = *to_id;
                                                     let pending = self.pending_routing.entry(did).or_insert(Vec::new());
-                                                    pending.push((crc,std::time::Instant::now()));
-                                                }
-                                                if let Ok(Some(rx)) =
-                                                    self.local_send_if_connected(t, data)
-                                                {
-                                                    tokio::spawn(async move {
-                                                        if let Ok(res) = rx.await {
-                                                            if let Ok(Some(cr)) = res {
-                                                                let res = crate::behaviour::chat::Response(cr.data);
-                                                                tracing::warn!("{res:?}");
-                                                            };
-                                                        }
-                                                    });
+                                                    if pending.iter().find(|(x,_)| *x == crc ).is_none() {
+                                                        pending.push((crc,std::time::Instant::now()));
+                                                        tracing::warn!("group msg [{crc}] route to {did}");
+                                                    }
+                                                    else{
+                                                        continue;
+                                                    }
+                                                    if let Ok(Some(rx)) =
+                                                        self.local_send_if_connected(t,did, data)
+                                                    {
+                                                        tokio::spawn(async move {
+                                                            if let Ok(res) = rx.await {
+                                                                if let Ok(Some(cr)) = res {
+                                                                    if let Ok(evt) = luffa_rpc_types::Event::decode(&cr.data) {
+
+                                                                        tracing::warn!("pub group msg {crc} push to {did} with res >>{evt:?}");
+                                                                    }
+                                                                    else{
+
+                                                                        let res = crate::behaviour::chat::Response(cr.data);
+                                                                        tracing::warn!("pub group msg {crc} push to {did} with res >>{res:?}");
+                                                                    }
+                                                                };
+                                                            }
+                                                        });
+                                                    }
+                                                    else{
+
+                                                    }
                                                 }
                                                 
                                             }
@@ -1298,13 +1298,32 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         }
                                     } else {
                                         // offer or answer
-                                        self.emit_network_event(NetworkEvent::Gossipsub(
-                                            GossipsubEvent::Message {
-                                                from: propagation_source,
-                                                id: message_id,
-                                                message,
-                                            },
-                                        ));
+                                        let t = self.get_peer_index(to);
+                                        let pending = self.pending_routing.entry(to).or_insert(Vec::new());
+                                        if pending.iter().find(|(x,_)| *x == crc ).is_none() {
+                                            pending.push((crc,std::time::Instant::now()));
+                                        }
+
+                                        if let Ok(Some(rx)) =
+                                            self.local_send_if_connected(t,to, data)
+                                        {
+                                            tokio::spawn(async move {
+                                                if let Ok(res) = rx.await {
+                                                    if let Ok(Some(cr)) = res {
+                                                        if let Ok(evt) = luffa_rpc_types::Event::decode(&cr.data) {
+                                                            let luffa_rpc_types::Event {
+                                                                crc,msg,nonce,..
+                                                            } = evt;
+                                                            if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg), None, nonce)
+                                                            {
+                                                                tracing::info!("[{crc}] res msg>> {msg:?}");
+                                                            }
+                                                        }
+                                                        
+                                                    };
+                                                }
+                                            });
+                                        }
                                     }
                                 }
                             }
@@ -1370,7 +1389,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 request,
                                 channel,
                             } => {
-                                let event = luffa_rpc_types::Event::decode(request.data())?;
+                                let event = match luffa_rpc_types::Event::decode(request.data()) {
+                                    Ok(event) => event,
+                                    Err(e) => {
+                                        tracing::error!("{e}");
+                                        panic!("{}", e);
+                                        // return Ok(());
+                                    }
+                                };
                                 let luffa_rpc_types::Event {
                                     crc,
                                     from_id,
@@ -1494,7 +1520,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                                     evt.clone(),
                                                                 ) {
                                                                     tracing::warn!("Feedback>>>{e:?}  msg: {msg_t:?}");
-                                                                    self.pub_pending.push_back((evt,Instant::now()));
+                                                                    self.pub_pending.push_back((evt,Instant::now(),1));
                                                                 }
                                                             }
                                                         }
@@ -1552,29 +1578,34 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 ChatEvent::Response { request_id:Some(request_id), data },
                                             ));
                                             let pending = self.pending_routing.entry(to).or_insert(Vec::new());
-                                            pending.push((crc,std::time::Instant::now()));
+                                            if pending.iter().find(|(x,_)| *x == crc ).is_none() {
+                                                pending.push((crc,std::time::Instant::now()));
+                                            }
                                             let t = self.get_peer_index(to);
 
                                             if let Ok(Some(rx)) =
-                                                self.local_send_if_connected(t, request.data())
+                                                self.local_send_if_connected(t,to, request.data())
                                             {
                                                 rx_any = Some(rx);
                                             }
                                             if rx_any.is_none() {
                                                 let f = self.get_peer_index(my_id);
-                                                if let Some((cost, paths)) = astar(
+                                                if let Some((cost, mut paths)) = astar(
                                                     &self.connections,
                                                     f,
                                                     |f| f == t,
                                                     |_e| 1,
                                                     |_| 0,
                                                 ) {
+                                                    paths.reverse();
                                                     tracing::warn!("[{cost}] paths>>>>>> {paths:?}");
                                                     //route this message to shortest node and then break if the node is connected.
                                                     for r in paths {
                                                         if r != f {
+                                                            let r_id = self.connections[r];
                                                             match self.local_send_if_connected(
                                                                 r,
+                                                                r_id,
                                                                 request.data(),
                                                             ) {
                                                                 Ok(Some(rx)) => {
@@ -1618,7 +1649,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             request.data().to_vec(),
                                                         ) {
                                                             tracing::error!("[{tp}]:Message can not route to any relay node>>> {e:?}");
-                                                            self.pub_pending.push_back((request.data().to_vec(),Instant::now()));
+                                                            self.pub_pending.push_back((request.data().to_vec(),Instant::now(),1));
                                                         }
                                                         let status = FeedbackStatus::Routing;
                                                         let msg_t = Message::Feedback {crc:vec![crc],from_id:Some(to),to_id:Some(to),status};
@@ -1629,7 +1660,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             evt.clone(),
                                                         ) {
                                                             tracing::error!("[{tp}] Routing can not route to any relay node>>> {e:?}");
-                                                            self.pub_pending.push_back((evt,Instant::now()));
+                                                            self.pub_pending.push_back((evt,Instant::now(),1));
                                                         }
 
                                                         
@@ -1650,7 +1681,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     request.data().to_vec(),
                                                 ) {
                                                     tracing::error!("group msg pub>>>{e:?}");
-                                                    self.pub_pending.push_back((request.data().to_vec(),Instant::now()));
+                                                    self.pub_pending.push_back((request.data().to_vec(),Instant::now(),1));
                                                 }
                                             }
 
@@ -1668,12 +1699,19 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 })
                                                 .collect::<Vec<_>>();
                                             for t in targets {
+                                                let mut did = 0;
                                                 if let Some(to_id) = self.contacts.node_weight(t) {
-                                                    if *to_id == from_id {
+                                                    if *to_id == my_id || *to_id == from_id{
                                                         continue;
                                                     }
+                                                    did = to_id.clone();
                                                     let pending = self.pending_routing.entry(*to_id).or_insert(Vec::new());
-                                                    pending.push((crc,std::time::Instant::now()));
+                                                    if pending.iter().find(|(x,_)| *x == crc ).is_none() {
+                                                        pending.push((crc,std::time::Instant::now()));
+                                                    }
+                                                    else{
+                                                        continue;
+                                                    }
                                                     let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(*to_id), status: FeedbackStatus::Notice };
                                                     let evt = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id);
                                                     let data = evt.encode()?;
@@ -1681,22 +1719,24 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         ChatEvent::Response { request_id:Some(request_id), data },
                                                     ));
                                                 }
-                                                
                                                 if let Ok(Some(rx)) =
-                                                    self.local_send_if_connected(t, request.data())
+                                                    self.local_send_if_connected(t,did, request.data())
                                                 {
                                                     
                                                     tokio::spawn(async move {
                                                         if let Ok(res) = rx.await {
                                                             if let Ok(Some(cr)) = res {
                                                                 let res = crate::behaviour::chat::Response(cr.data);
-                                                                tracing::warn!(
-                                                                    "group msg to >>> {res:?}"
-                                                                );
+                                                                tracing::warn!("chat group msg {crc} push to {did} with res >>{res:?}");
                                                             };
                                                         }
                                                     });
                                                 }
+                                                else{
+                                                    tracing::warn!("chat group msg {crc} can not push to {did}");
+
+                                                }
+                                                
                                              
                                                 
                                             }
@@ -1706,32 +1746,35 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         //contacts exchange
                                         if nonce.is_some() {
 
-                                            tracing::error!("contacts edge not found [{from_id} -> {to}]");
+                                            tracing::warn!("contacts edge not found [{from_id} -> {to}] {crc}");
                                         }
                                         let mut rx_any = None;
                                         let t = self.get_peer_index(to);
                                         let pending = self.pending_routing.entry(to).or_insert(Vec::new());
                                         pending.push((crc,std::time::Instant::now()));
                                         if let Ok(Some(rx)) =
-                                            self.local_send_if_connected(t, request.data())
+                                            self.local_send_if_connected(t,to, request.data())
                                         {
                                             rx_any = Some(rx);
                                         }
                                         if rx_any.is_none() {
                                             let f = self.get_peer_index(my_id);
-                                            if let Some((cost, paths)) = astar(
+                                            if let Some((cost, mut paths)) = astar(
                                                 &self.connections,
                                                 f,
                                                 |f| f == t,
                                                 |_e| 1,
                                                 |_| 0,
                                             ) {
+                                                paths.reverse();
                                                 println!("[{cost}] paths 2>>>>>> {paths:?}");
                                                 //route this message to shortest node and then break if the node is connected.
                                                 for r in paths {
                                                     if r != f {
+                                                        let r_id = self.connections[r];
                                                         match self.local_send_if_connected(
                                                             r,
+                                                            r_id,
                                                             request.data(),
                                                         ) {
                                                             Ok(Some(rx)) => {
@@ -1775,7 +1818,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         request.data().to_vec(),
                                                     ) {
                                                         tracing::warn!("not route,publish failed, {e:?}");
-                                                        self.pub_pending.push_back((request.data().to_vec(),Instant::now()));
+                                                        self.pub_pending.push_back((request.data().to_vec(),Instant::now(),1));
                                                     }
                                                 }
                                                
@@ -1790,7 +1833,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 };
                                 let feed = Message::Feedback { crc:feed_crc,from_id:Some(from_id),to_id:Some(to),status:feed_status };
                                 {
-                                    let evnt = luffa_rpc_types::Event::new(0,&feed,None,0);
+                                    let evnt = luffa_rpc_types::Event::new(0,&feed,None,my_id);
                                     let res = evnt.encode().unwrap();
                                     let res = crate::behaviour::chat::Response(res);
                                     let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
@@ -1799,7 +1842,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         tracing::error!("chat response failed: >>{e:?}");
                                     }
                                     else if nonce.is_some() {
-                                        tracing::info!("some nonce chat response ok: >>{crc}");
+                                        tracing::warn!("some nonce chat response ok: >>{crc}");
                                     }
 
                                     tracing::info!("-----{request_id:?}------");
@@ -1894,13 +1937,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             Err(anyhow!("handle_chat_response> Chat request failed"))
         }
     }
-    async fn handle_chat_routing(
-        &mut self,
-        peer_id:PeerId,
-        crc:Vec<u64>,
-    )->Result<()> 
-    
-    {
+    async fn handle_chat_routing(&mut self, peer_id: PeerId, crc: Vec<u64>) -> Result<()> {
         let local_id = self.local_peer_id();
         let mut digest = crc64fast::Digest::new();
         digest.write(&local_id.to_bytes());
@@ -1921,7 +1958,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             tokio::spawn(async move {
                 match rx.await {
                     Ok(Ok(Some(res))) =>{
-                        tracing::warn!("request successful:{:?}", res);
+                        tracing::info!("request successful:{:?}", res);
                     }
                     _=>{
                         tracing::error!("request successful");
@@ -2033,71 +2070,73 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
     fn local_send_if_connected(
         &mut self,
         target: NodeIndex,
+        did: u64,
         data: &Vec<u8>,
     ) -> Result<Option<tokio::sync::oneshot::Receiver<Result<Option<ChatResponse>, anyhow::Error>>>>
     {
-        
         // this node is connected to the target of this message?
-        let mut edges = self.connections.edges(target);
-        if let Some(local) = edges.find(|e| match e.weight() {
-            ConnectionEdge::Local(_) => true,
-            _ => false,
-        }) 
-        {
-            match local.weight() {
-                ConnectionEdge::Local(p) => {
-                    if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-                        let (tx, rx) = tokio::sync::oneshot::channel();
-                        let data = data.to_vec();
-                        let luffa_rpc_types::Event { crc ,..} = luffa_rpc_types::Event::decode_uncheck(&data)?;
-                        let mut digest = crc64fast::Digest::new();
-                        digest.write(&p.clone().to_bytes());
-                        let to_id = digest.sum64();
-                        let req_id = chat.send_request(p, crate::behaviour::chat::Request(data));
-                        self.pending_request.insert(req_id, (crc,to_id,tx));
-                        tracing::info!("local chat to [{p:?}] send. {:?}", req_id);
+        let data = data.to_vec();
+        let luffa_rpc_types::Event { crc, .. } = luffa_rpc_types::Event::decode_uncheck(&data)?;
+        let local_id = self.local_peer_id();
+        let mut digest = crc64fast::Digest::new();
+        digest.write(&local_id.to_bytes());
+        let my_id = digest.sum64();
+        let my_idx = self.get_peer_index(my_id);
+        if let Some(p) = self.connected_peers.get(&did) {
+            if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+                let (tx, rx) = tokio::sync::oneshot::channel();
 
-                        return Ok(Some(rx));
-                    }
-                }
-                _ => {
-                    unreachable!()
-                }
+                let req_id = chat.send_request(p, crate::behaviour::chat::Request(data));
+                self.pending_request.insert(req_id, (crc, did, tx));
+                tracing::warn!(
+                    "local chat connected to [{p:?}] send. crc >> {} to {did}",
+                    crc,
+                );
+
+                return Ok(Some(rx));
             }
         }
-        // else{
-        //     if let Some(to) = self.contacts.node_weight(target) {
-        //         let peer_id =
-        //         match self.swarm.behaviour().peer_manager.all_peers().iter().find(|peer|{
-        //             let mut digest = crc64fast::Digest::new();
-        //             digest.write(&peer.clone().to_bytes());
-        //             let to_id = digest.sum64();
-        //             to_id == *to 
-        //         })
-        //         {
-        //             Some(p)=>{
-        //                 Some(p.clone().clone())
-        //             }
-        //             None=>{
-        //                 None
-        //             }
-        //         };
-        //         if let Some(p) = peer_id {
-        //             let data = data.to_vec();
-        //             let luffa_rpc_types::Event { crc ,..} = luffa_rpc_types::Event::decode_uncheck(&data)?;
-        //             if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-                        
-        //                 let (tx, rx) = tokio::sync::oneshot::channel();
-        //                 let req_id = chat.send_request(&p, crate::behaviour::chat::Request(data));
-        //                 self.pending_request.insert(req_id, (crc,*to,tx));
-        //                 tracing::warn!("remote>> chat send. {:?}", req_id);
-        //                 return Ok(Some(rx)); 
-        //             }
+        if let Some(e_idx) = self.connections.find_edge(my_idx, target) {
+            if let Some(w) = self.connections.edge_weight(e_idx) {
+                match w {
+                    ConnectionEdge::Local(p) => {
+                        let mut digest = crc64fast::Digest::new();
+                        digest.write(&p.clone().to_bytes());
+                        let p_id = digest.sum64();
+                        if p_id != did {
+                            tracing::error!("[{crc}] to failed {p:?} [{p_id} != {did}]");
+                        }
+                        if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+                            let (tx, rx) = tokio::sync::oneshot::channel();
+                            let mut digest = crc64fast::Digest::new();
+                            digest.write(&p.clone().to_bytes());
+                            let to_id = digest.sum64();
+                            let req_id = chat.send_request(p, crate::behaviour::chat::Request(data));
+                            self.pending_request.insert(req_id, (crc,to_id,tx));
+                            tracing::warn!("local chat to [{p:?}] send. crc >> {} match [{} {p_id} === {did}]", crc,p_id == did);
+                            
+                            return Ok(Some(rx));
+                        }
+                    },
+                    _ => {
+                        // NA
+                    },
+                }
+            }
+            let mut idx = e_idx;
 
-        //         }
-                
-        //     }
-        // }
+            while let Some(e) = self.connections.next_edge(idx, Direction::Outgoing) {
+                let w = self.connections.edge_weight(e).unwrap();
+                tracing::warn!("local chat next edge :{w:?}");
+                idx = e;
+            }
+            while let Some(e) = self.connections.next_edge(idx, Direction::Incoming) {
+                let w = self.connections.edge_weight(e).unwrap();
+                tracing::warn!("local chat next edge :{w:?}");
+                idx = e;
+            }
+        }
+        tracing::warn!("local chat msg {crc} can not push to {did}");
         Ok(None)
     }
 
