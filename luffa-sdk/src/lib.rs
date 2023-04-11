@@ -4329,7 +4329,7 @@ pub async fn start_node(
     Receiver<NetworkEvent>,
     Sender<luffa_node::rpc::RpcMessage>,
 )> {
-    config.libp2p.dial_concurrency_factor = 1;
+    config.libp2p.dial_concurrency_factor = 3;
     config.libp2p.max_conns_per_peer = 1;
     config.libp2p.max_conns_in = 1;
     config.libp2p.max_conns_out = 1;
