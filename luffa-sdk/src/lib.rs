@@ -3870,6 +3870,23 @@ impl Client {
                                                 {
                                                     error!("SendJoin2 {did} {e:?}");
                                                 }
+                                                Self::group_member_insert(db_tt.clone(), did, vec![my_id])
+                                                    .unwrap();
+                                                let group_nickname =
+                                                    Self::get_group_member_nickname(
+                                                        db_tt.clone(),
+                                                        did,
+                                                        my_id,
+                                                    )
+                                                        .unwrap();
+                                                Self::set_group_member_nickname(
+                                                    db_tt.clone(),
+                                                    did,
+                                                    my_id,
+                                                    &group_nickname,
+                                                )
+                                                    .unwrap();
+
                                             }
                                         });
                                         Self::update_session(
@@ -4133,6 +4150,24 @@ impl Client {
                                                 {
                                                     error!("SendJoin1 {did} {e:?}");
                                                 }
+
+                                                Self::group_member_insert(db_t.clone(), did, vec![my_id])
+                                                    .unwrap();
+                                                let group_nickname =
+                                                    Self::get_group_member_nickname(
+                                                        db_t.clone(),
+                                                        did,
+                                                        my_id,
+                                                    )
+                                                        .unwrap();
+                                                Self::set_group_member_nickname(
+                                                    db_t.clone(),
+                                                    did,
+                                                    my_id,
+                                                    &group_nickname,
+                                                )
+                                                    .unwrap();
+
                                             }
                                             Self::update_session(
                                                 db_t.clone(),
