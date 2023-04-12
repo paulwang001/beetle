@@ -29,7 +29,7 @@ pub trait Nickname: ContactsDb {
     }
 
     fn get_group_member_nickname_key(group_id: u64, u_id: u64) -> String {
-        format!("TAG-{}-{}", group_id, u_id)
+        format!("GROUP-{}-{}", group_id, u_id)
     }
 
     fn get_group_member_nickname(db: Arc<Db>, group_id: u64, u_id: u64) -> ClientResult<String> {
