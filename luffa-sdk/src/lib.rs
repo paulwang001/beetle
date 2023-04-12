@@ -115,6 +115,7 @@ pub struct ContactsGroupView {
     pub tag: String,
     pub c_type: u8,
     pub count: u64,
+    pub is_manager: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -570,7 +571,7 @@ impl Client {
 
         let secret_key = Aes256Gcm::generate_key(&mut OsRng);
         let secret_key = secret_key.to_vec();
-        let (g_id, msg) = {
+        let (g_id, msg, members, member_ids) = {
             let token = ContactsToken::new(
                 &g_key,
                 tag,
@@ -599,14 +600,20 @@ impl Client {
                 comment,
                 g_key.to_protobuf_encoding().ok(),
             );
+            let mut member_ids = invitee.clone();
+            member_ids.push(my_id);
+            let members = Self::get_group_members_info(self.db(), g_id, member_ids.clone())?;
             (
                 g_id,
                 Message::ContactsExchange {
                     exchange: ContactsEvent::Answer {
                         token,
                         offer_crc: 0,
+                        members: members.clone(),
                     },
                 },
+                members,
+                member_ids,
             )
         };
         let invitee1 = invitee.clone();
@@ -651,8 +658,9 @@ impl Client {
                 }
             })
         });
-        Self::group_member_insert(self.db(), g_id, vec![my_id])?;
+        Self::group_member_insert(self.db(), g_id, member_ids)?;
         Self::set_is_group_manager(self.db(), g_id, my_id)?;
+        Self::set_group_members_nickname(self.db(), g_id, members)?;
         Ok(g_id)
     }
 
@@ -670,6 +678,9 @@ impl Client {
 
         let my_id = self.get_local_id()?.unwrap();
 
+        let mut member_ids = invitee.clone();
+        member_ids.push(my_id);
+        let members = Self::get_group_members_info(self.db(), g_id, member_ids.clone())?;
         let msg = {
             let token = ContactsToken::new(
                 &g_key,
@@ -681,6 +692,7 @@ impl Client {
             Message::ContactsExchange {
                 exchange: ContactsEvent::Answer {
                     token,
+                    members: members.clone(),
                     offer_crc: 0,
                 },
             }
@@ -704,6 +716,9 @@ impl Client {
                 }
             });
         });
+        Self::group_member_insert(self.db(), g_id, member_ids)?;
+        Self::set_group_members_nickname(self.db(), g_id, members)?;
+
         Ok(true)
     }
 
@@ -771,6 +786,7 @@ impl Client {
                                         Message::ContactsExchange {
                                             exchange: ContactsEvent::Answer {
                                                 token,
+                                                members: vec![],
                                                 offer_crc: crc,
                                             },
                                         }
@@ -942,7 +958,11 @@ impl Client {
 
         let msg = {
             Message::ContactsExchange {
-                exchange: ContactsEvent::Answer { offer_crc, token },
+                exchange: ContactsEvent::Answer {
+                    offer_crc,
+                    members: vec![],
+                    token,
+                },
             }
         };
 
@@ -2039,6 +2059,7 @@ impl Client {
         let tag_prefix = format!("TAG-");
         let itr = tree.scan_prefix(tag_prefix);
         let mut list = vec![];
+        let my_id = self.get_local_id()?.unwrap();
         for item in itr {
             let (k, v) = item.unwrap();
             let tag = String::from_utf8(v.to_vec())?;
@@ -2050,11 +2071,13 @@ impl Client {
                 let c_type = t as u8;
                 if c_type == 1 {
                     let count = Self::get_member_count(self.db(), to)?;
+                    let is_manager = Self::get_is_group_manager(self.db(), to, my_id)?;
                     list.push(ContactsGroupView {
                         did: to,
                         tag: tag.clone(),
                         c_type,
                         count,
+                        is_manager,
                     });
                 };
             }
@@ -3800,7 +3823,11 @@ impl Client {
                             Message::ContactsExchange { exchange } => {
                                 will_save = true;
                                 match exchange {
-                                    ContactsEvent::Answer { token, offer_crc } => {
+                                    ContactsEvent::Answer {
+                                        token,
+                                        members,
+                                        offer_crc,
+                                    } => {
                                         if offer_crc > 0 {
                                             Self::update_offer_status(
                                                 db_t.clone(),
@@ -3822,6 +3849,23 @@ impl Client {
                                             db_t.clone(),
                                         )
                                         .await;
+
+                                        if members.len() > 0 {
+                                            let member_ids: Vec<u64> =
+                                                members.iter().map(|a| a.u_id).collect();
+                                            Self::group_member_insert(
+                                                db_t.clone(),
+                                                did,
+                                                member_ids,
+                                            )
+                                            .unwrap();
+                                            Self::set_group_members_nickname(
+                                                db_t.clone(),
+                                                did,
+                                                members,
+                                            )
+                                            .unwrap();
+                                        }
                                         tracing::warn!("G> Answer>>>>>{did}");
 
                                         let contacts = vec![Contacts {
@@ -4060,7 +4104,11 @@ impl Client {
                             match msg_t {
                                 Message::ContactsExchange { exchange } => {
                                     match exchange {
-                                        ContactsEvent::Answer { token, offer_crc } => {
+                                        ContactsEvent::Answer {
+                                            token,
+                                            offer_crc,
+                                            members,
+                                        } => {
                                             tracing::warn!("[P]Answer>>>>>{token:?}");
                                             if offer_crc > 0 {
                                                 Self::update_offer_status(
@@ -4090,13 +4138,22 @@ impl Client {
                                                 event_time,
                                             );
                                             if token.contacts_type == ContactsTypes::Group {
-                                                let group_nickname =
-                                                    Self::get_group_member_nickname(
+                                                if members.len() > 0 {
+                                                    let member_ids: Vec<u64> =
+                                                        members.iter().map(|a| a.u_id).collect();
+                                                    Self::group_member_insert(
                                                         db_t.clone(),
                                                         did,
-                                                        my_id,
+                                                        member_ids,
                                                     )
                                                     .unwrap();
+                                                    Self::set_group_members_nickname(
+                                                        db_t.clone(),
+                                                        did,
+                                                        members,
+                                                    )
+                                                    .unwrap();
+                                                }
                                                 Self::send_group_join(
                                                     db_t.clone(),
                                                     client_t.clone(),

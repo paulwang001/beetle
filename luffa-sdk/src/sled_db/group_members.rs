@@ -61,16 +61,23 @@ pub trait GroupMembersDb: Nickname {
     }
 
     fn group_member_insert(db: Arc<Db>, group_id: u64, member_ids: Vec<u64>) -> ClientResult<()> {
-        tracing::error!("group_id: {}, member_ids: {:?}", group_id, member_ids.clone());
+        tracing::error!(
+            "group_id: {}, member_ids: {:?}",
+            group_id,
+            member_ids.clone()
+        );
         let key = &Self::group_member_key(group_id);
         let tree = Self::open_group_member_tree(db)?;
         let mut res = vec![];
         if let Some(data) = tree.get(key)? {
             let data = data.as_bytes();
             let mut members = Members::deserialize(data)?;
-            let _: Vec<_> = member_ids.iter().map(|member_id| {
-                members.members.insert(*member_id);
-            }).collect();
+            let _: Vec<_> = member_ids
+                .iter()
+                .map(|member_id| {
+                    members.members.insert(*member_id);
+                })
+                .collect();
             res = members.to_bytes()?;
         } else {
             res = Members::new(group_id, member_ids).to_bytes()?
@@ -96,15 +103,12 @@ pub trait GroupMembersDb: Nickname {
             let left = ((page_no - 1) * page_size) as usize;
             let mut right = (page_size * page_size) as usize;
             if left > members.len() {
-                return Ok(vec![])
+                return Ok(vec![]);
             }
             if right > members.len() {
                 right = members.len();
             }
-            for member in members
-                .get(left..right)
-                .unwrap()
-            {
+            for member in members.get(left..right).unwrap() {
                 let mut nickname = String::new();
                 let key = Self::get_group_member_nickname_key(group_id, *member);
                 if let Some(data) = contact_tree.get(key.as_bytes())? {
@@ -156,6 +160,18 @@ pub trait GroupMembersDb: Nickname {
         Ok(())
     }
 
+    fn get_is_group_manager(db: Arc<Db>, group_id: u64, u_id: u64) -> ClientResult<bool> {
+        let key = &Self::group_manager_key(group_id);
+        let tree = Self::open_group_member_tree(db.clone())?;
+        if let Some(data) = tree.get(key)? {
+            let data = data.as_bytes();
+            let res: HashMap<u64, bool> = serde_json::from_slice(data)?;
+            Ok(*res.get(&u_id).unwrap_or(&false))
+        } else {
+            Ok(false)
+        }
+    }
+
     fn group_member_remove(db: Arc<Db>, group_id: u64, u_id: u64) -> ClientResult<()> {
         let key = &Self::group_member_key(group_id);
         let tree = Self::open_group_member_tree(db)?;
@@ -166,7 +182,7 @@ pub trait GroupMembersDb: Nickname {
 
             members.to_bytes()?
         } else {
-            return Ok(())
+            return Ok(());
         };
         tree.insert(key, data)?;
         tree.flush()?;

@@ -352,6 +352,7 @@ pub enum ContactsEvent {
     },
     Answer {
         token: ContactsToken,
+        members: Vec<Member>,
         offer_crc: u64,
     },
     Reject {
@@ -370,6 +371,12 @@ pub enum ContactsEvent {
         g_id: u64,
         group_nickname: String,
     },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Member {
+    pub u_id: u64,
+    pub group_nickname: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

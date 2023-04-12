@@ -29,6 +29,7 @@ dictionary ContactsGroupView {
     string tag;
     u8 c_type;
     u64 count;
+	boolean is_manager;
 };
 
 dictionary GroupMemberNickname {

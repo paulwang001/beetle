@@ -159,7 +159,7 @@ fn main() -> ClientResult<()> {
                 "contacts_anwser" => {
                     let id = client1
                         .contacts_anwser(
-                                params.to.unwrap(),
+                            params.to.unwrap(),
                             params.command.unwrap().parse().unwrap(),
                         )
                         .unwrap();
@@ -169,7 +169,7 @@ fn main() -> ClientResult<()> {
                 "read_msg" => {
                     let data = client1
                         .read_msg_with_meta(
-                                params.to.unwrap(),
+                            params.to.unwrap(),
                             params.command.unwrap().parse().unwrap(),
                         )
                         .unwrap()
@@ -211,7 +211,7 @@ fn main() -> ClientResult<()> {
                 "group_invite" => {
                     let tag = client1
                         .contacts_group_invite_member(
-                                params.group_id.unwrap(),
+                            params.group_id.unwrap(),
                             params.groups.unwrap(),
                         )
                         .unwrap();
@@ -270,7 +270,11 @@ fn main() -> ClientResult<()> {
                     let to = digest.sum64();
                     // let crc = client2.contacts_anwser(to, from_id, crc,secret_key.clone(),secret_key);
                 }
-                ContactsEvent::Answer { offer_crc, token } => {
+                ContactsEvent::Answer {
+                    offer_crc,
+                    token,
+                    members,
+                } => {
                     let ContactsToken {
                         public_key,
                         create_at,
