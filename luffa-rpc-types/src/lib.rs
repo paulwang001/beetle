@@ -366,7 +366,8 @@ pub enum ContactsEvent {
         id: u64,
     },
     Sync {
-        offer_crc: u64,
+        u_id: u64,
+        g_id: u64,
         group_nickname: String,
     },
 }
