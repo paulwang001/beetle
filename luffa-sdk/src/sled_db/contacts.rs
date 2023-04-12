@@ -1,5 +1,5 @@
 use crate::api::P2pClient;
-use crate::{ClientResult, OfferStatus};
+use crate::{ClientResult, OfferRole, OfferStatus};
 use libp2p::identity::PublicKey;
 use libp2p::PeerId;
 use luffa_rpc_types::{ChatContent, ContactsToken, ContactsTypes};
@@ -109,6 +109,57 @@ pub trait ContactsDb {
         tag: String,
         event_time: u64,
     ) {
+        Self:: _save_offer_to_tree(
+            db,
+            did,
+            crc,
+            offer_id,
+            offer_key,
+            status,
+            OfferRole::Acceptor,
+            c_type,
+            tag,
+            event_time,
+        )
+    }
+
+    fn save_offer_to_tree_for_applicant(
+        db: Arc<Db>,
+        did: u64,
+        crc: u64,
+        offer_id: u64,
+        offer_key: Vec<u8>,
+        status: OfferStatus,
+        c_type: ContactsTypes,
+        tag: String,
+        event_time: u64,
+    ) {
+       Self:: _save_offer_to_tree(
+            db,
+            did,
+            crc,
+            offer_id,
+            offer_key,
+            status,
+            OfferRole::Applicant,
+            c_type,
+            tag,
+            event_time,
+        )
+    }
+
+    fn _save_offer_to_tree(
+        db: Arc<Db>,
+        did: u64,
+        crc: u64,
+        offer_id: u64,
+        offer_key: Vec<u8>,
+        status: OfferStatus,
+        role: OfferRole,
+        c_type: ContactsTypes,
+        tag: String,
+        event_time: u64,
+    )  {
         let table = format!("offer");
         let tree = db.open_tree(&table).unwrap();
 
@@ -123,6 +174,7 @@ pub trait ContactsDb {
                 tree.insert(format!("DID_{crc}"), did.to_be_bytes().to_vec())
                     .unwrap();
                 tree.insert(format!("TAG_{crc}"), tag.as_bytes()).unwrap();
+                tree.insert(format!("ROLE_{crc}"), vec![role as u8]).unwrap();
                 let tree_time = db.open_tree(&format!("{table}_time")).unwrap();
                 tree_time
                     .insert(event_time.to_be_bytes(), crc.to_be_bytes().to_vec())
@@ -135,6 +187,7 @@ pub trait ContactsDb {
         tree.flush().unwrap();
     }
 
+
     fn remove_offer_in_tree(db: Arc<Db>,crc: u64) {
         let tree = db.open_tree("offer").unwrap();
         tree.remove(format!("SK_{crc}")).unwrap();
@@ -143,6 +196,7 @@ pub trait ContactsDb {
         tree.remove(format!("OF_{crc}")).unwrap();
         tree.remove(format!("DID_{crc}")).unwrap();
         tree.remove(format!("TAG_{crc}")).unwrap();
+        tree.remove(format!("ROLE_{crc}")).unwrap();
 
         // offer_time 表中数据删除，做在读取消息时删除
     }
