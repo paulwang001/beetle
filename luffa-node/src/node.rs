@@ -1083,6 +1083,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 sequence_number,
                                 topic,
                             } => {
+
                                 let event = luffa_rpc_types::Event::decode(data)?;
                                 let luffa_rpc_types::Event {
                                     crc,
@@ -1099,7 +1100,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     }
                                 }
                                 if nonce.is_none() {
-                                    
+                                    let event_from_id = from_id;
                                     if let Ok(msg) =
                                         Message::decrypt(bytes::Bytes::from(msg), None, nonce)
                                     {
@@ -1125,34 +1126,35 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     } 
                                                 }
                                             }
-                                            Message::Feedback { crc,status,from_id,.. }=>{
+                                            Message::Feedback { crc,status,..}=>{
                                                 match status {
-                                                    FeedbackStatus::Reach | FeedbackStatus::Read =>{
-                                                        if let Some(from) = from_id {
-                                                            let pending = self.pending_routing.entry(from).or_insert(Vec::new());
-                                                            pending.retain(|(c,_t)| !crc.contains(c));
-                                                            for c in crc {
-                                                                let reach = self.reach_routing.entry(from).or_insert(Vec::new());
-                                                                reach.push((c,from));
-                                                            }
+                                                    FeedbackStatus::Reach =>{
+                                                        
+                                                        let pending = self.pending_routing.entry(event_from_id).or_insert(Vec::new());
+                                                        pending.retain(|(c,_t)| !crc.contains(c));
 
+                                                        for c in crc {
+                                                            let reach = self.reach_routing.entry(event_from_id).or_insert(Vec::new());
+                                                            if reach.iter().find(|(cc,_)| cc == &c).is_none() {
+                                                                reach.push((c,event_from_id));
+                                                            }
                                                         }
-                                                        else{
-                                                            tracing::warn!("reach or read feedback which from is None");
-                                                        }
+                                                        // if let Some(from) = from_id {
+                                                        //     let to = to_id.unwrap_or_default();
+                                                        //     let did = if to == event_from_id { from } else { to };
+                                                        // }
+                                                        // else{
+                                                        //     tracing::warn!("reach or read feedback which from is None");
+                                                        // }
                                                     }
                                                     FeedbackStatus::Routing=>{
-                                                        if let Some(from) = from_id {
-                                                            let pending = self.pending_routing.entry(from).or_insert(Vec::new());
-                                                            for c in crc {
-                                                                if pending.iter().find(|(x,_)| *x == c ).is_none() {
-                                                                    pending.push((c,std::time::Instant::now()));
-                                                                }
+                                                        let pending = self.pending_routing.entry(event_from_id).or_insert(Vec::new());
+                                                        for c in crc {
+                                                            if pending.iter().find(|(x,_)| *x == c ).is_none() {
+                                                                pending.push((c,std::time::Instant::now()));
                                                             }
                                                         }
-                                                        else{
-                                                            tracing::warn!("reach or read feedback which from is None");
-                                                        }
+                                                        
                                                     }
                                                     _=>{
                                                         
@@ -1433,6 +1435,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         // return Ok(());
                                     }
                                 };
+                              
                                 let luffa_rpc_types::Event {
                                     crc,
                                     from_id,
@@ -1448,6 +1451,19 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 
                                 let mut feed_status = luffa_rpc_types::FeedbackStatus::Routing;
                                 if nonce.is_none() {
+                                    if self.agent == Some(format!("Relay")) {
+
+                                        if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
+                                            let data = request.data();
+                                            if let Err(e) = go.publish(
+                                                TopicHash::from_raw(TOPIC_STATUS),
+                                                data.clone(),
+                                            ) {
+                                                tracing::error!("STATUS pub>>>:{e:?}");
+                                                self.pub_pending.push_back((data.clone(),Instant::now(),1));
+                                            }
+                                        }
+                                    }
                                     if let Ok(msg) =
                                         Message::decrypt(bytes::Bytes::from(msg), None, nonce.clone())
                                     {
@@ -1497,17 +1513,6 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         
                                                     }
                                                 }
-                                                if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
-                                                    let msg_t = Message::StatusSync {to:from_id,from_id:my_id,status};
-                                                    let evt = luffa_rpc_types::Event::new(0,&msg_t,None,from_id);
-                                                    let evt = evt.encode()?;
-                                                    if let Err(e) = go.publish(
-                                                        TopicHash::from_raw(TOPIC_STATUS),
-                                                        evt,
-                                                    ) {
-                                                        tracing::error!("[{from_id}] StatusSync pub>>>:{e:?}");
-                                                    }
-                                                }
                                                 
                                             }
                                             Message::ContactsSync { did, contacts } => {
@@ -1530,43 +1535,18 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         }
                                                     } 
                                                 }
-                                                let evt = luffa_rpc_types::Event::new(0,&msg_t,None,from_id);
-                                                let evt = evt.encode()?;
-                                                if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
-                                                    if let Err(e) = go.publish(
-                                                        TopicHash::from_raw(TOPIC_STATUS),
-                                                        evt,
-                                                    ) {
-                                                        tracing::error!("[{did}]ContactsSync pub>>>:{e:?}");
-                                                    }
-                                                }
+                                                
                                             }
                                             Message::Feedback { crc,status,from_id,.. }=>{
                                                 match &status {
-                                                    FeedbackStatus::Reach | FeedbackStatus::Read =>{
+                                                    FeedbackStatus::Reach =>{
                                                         if let Some(from) = from_id {
                                                             let pending = self.pending_routing.entry(from).or_insert(Vec::new());
                                                             pending.retain(|(c,_t)| !crc.contains(c));
-                                                            // if !pending.is_empty() {
-                                                            // }
-                                                            tracing::info!("from {from} Reach>>>> {:?}", pending);
-                                                            if let Some(go) = self
-                                                            .swarm
-                                                            .behaviour_mut()
-                                                            .gossipsub
-                                                            .as_mut()
-                                                            {
-                                                                let msg_t = Message::Feedback {crc,from_id:Some(from),to_id:None,status};
-                                                                let evt = luffa_rpc_types::Event::new(0,&msg_t,None,my_id);
-                                                                let evt = evt.encode()?;
-                                                                if let Err(e) = go.publish(
-                                                                    TopicHash::from_raw(TOPIC_STATUS),
-                                                                    evt.clone(),
-                                                                ) {
-                                                                    tracing::warn!("Feedback>>>{e:?}  msg: {msg_t:?}");
-                                                                    self.pub_pending.push_back((evt,Instant::now(),1));
-                                                                }
+                                                            if !pending.is_empty() {
+                                                                tracing::info!("from {from} Reach>>>> {:?}", pending);
                                                             }
+                                                            
                                                         }
                                                         else{
                                                             tracing::warn!("reach or read feedback which from is None");
@@ -1862,6 +1842,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 });
                                             }
                                             None => {
+                                                 //Group msg
                                                 if let Some(go) =
                                                     self.swarm.behaviour_mut().gossipsub.as_mut()
                                                 {
@@ -1869,16 +1850,68 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         TopicHash::from_raw(TOPIC_CHAT),
                                                         request.data().to_vec(),
                                                     ) {
-                                                        tracing::warn!("not route,publish failed, {e:?}");
+                                                        tracing::error!("group msg pub>>>{e:?}");
                                                         self.pub_pending.push_back((request.data().to_vec(),Instant::now(),1));
                                                     }
+                                                    let pending = self.pending_routing.entry(to).or_insert(Vec::new());
+                                                    if pending.iter().find(|(x,_)| *x == crc ).is_none() {
+                                                        pending.push((crc,std::time::Instant::now()));
+                                                    }
                                                 }
-                                               
-                                                self.emit_network_event(
-                                                    NetworkEvent::RequestResponse(
-                                                        ChatEvent::Request(request.data().to_vec()),
-                                                    ),
-                                                );
+                                                    
+                                                let g_idx = self.get_contacts_index(to);
+                                                let members = self.contacts.edges(g_idx);
+                                                let targets = members
+                                                    .into_iter()
+                                                    .map(|m| {
+                                                        if m.source() == g_idx {
+                                                            m.target()
+                                                        } else {
+                                                            m.source()
+                                                        }
+                                                        
+                                                    })
+                                                    .collect::<Vec<_>>();
+                                                for t in targets {
+                                                    let mut did = 0;
+                                                    if let Some(to_id) = self.contacts.node_weight(t) {
+                                                        if *to_id == my_id || *to_id == from_id{
+                                                            continue;
+                                                        }
+                                                        did = to_id.clone();
+                                                        let pending = self.pending_routing.entry(*to_id).or_insert(Vec::new());
+                                                        if pending.iter().find(|(x,_)| *x == crc ).is_none() {
+                                                            pending.push((crc,std::time::Instant::now()));
+                                                        }
+                                                        else{
+                                                            continue;
+                                                        }
+                                                        let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(*to_id), status: FeedbackStatus::Notice };
+                                                        let evt = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id);
+                                                        let data = evt.encode()?;
+                                                        self.emit_network_event(NetworkEvent::RequestResponse(
+                                                            ChatEvent::Response { request_id:Some(request_id), data },
+                                                        ));
+                                                    }
+                                                    if let Ok(Some(rx)) =
+                                                        self.local_send_if_connected(t,did, request.data())
+                                                    {
+                                                        
+                                                        tokio::spawn(async move {
+                                                            if let Ok(res) = rx.await {
+                                                                if let Ok(Some(cr)) = res {
+                                                                    let res = crate::behaviour::chat::Response(cr.data);
+                                                                    tracing::warn!("chat group join msg {crc} push to {did} with res >>{res:?}");
+                                                                };
+                                                            }
+                                                        });
+                                                    }
+                                                    else{
+                                                        tracing::warn!("chat group jion msg {crc} can not push to {did}");
+
+                                                    }
+                                                    
+                                                }
                                             }
                                         }
                                     }

@@ -61,6 +61,10 @@ pub struct VersionResponse {
 }
 
 pub const KEY_SIZE: usize = 32;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Session {}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Event {
     // zero is all
