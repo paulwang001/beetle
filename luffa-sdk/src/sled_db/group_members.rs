@@ -172,4 +172,13 @@ pub trait GroupMembersDb: Nickname {
         tree.flush()?;
         Ok(())
     }
+
+    fn group_remove(db: Arc<Db>, group_id: u64) -> ClientResult<()> {
+        let key = &Self::group_member_key(group_id);
+        let tree = Self::open_group_member_tree(db)?;
+
+        let _ = tree.remove(key)?;
+
+        Ok(())
+    }
 }
