@@ -3996,7 +3996,6 @@ impl Client {
                                             secret_key,
                                             did,
                                             my_id,
-                                            offer_crc,
                                         )
                                         .await;
                                     }
@@ -4005,16 +4004,17 @@ impl Client {
                                     }
 
                                     ContactsEvent::Sync {
-                                        offer_crc,
+                                        u_id,
+                                        g_id,
                                         group_nickname,
                                     } => {
-                                        error!("ContactsEvent::Sync1: {offer_crc} {group_nickname} {did} {from_id}");
-                                        Self::group_member_insert(db_t.clone(), did, vec![from_id])
+                                        error!("ContactsEvent::Sync1: {group_nickname} {g_id} {u_id}");
+                                        Self::group_member_insert(db_t.clone(), g_id, vec![u_id])
                                             .unwrap();
                                         Self::set_group_member_nickname(
                                             db_t.clone(),
-                                            did,
-                                            from_id,
+                                            g_id,
+                                            u_id,
                                             &group_nickname,
                                         )
                                         .unwrap();
@@ -4255,7 +4255,6 @@ impl Client {
                                                 secret_key,
                                                 did,
                                                 my_id,
-                                                offer_crc,
                                             )
                                                 .await;
 
@@ -4264,23 +4263,20 @@ impl Client {
                                             Self::group_member_remove(db_t.clone(), did, id).expect("remove group member failed");
                                         }
                                         ContactsEvent::Sync {
-                                            offer_crc,
+                                            u_id,
+                                            g_id,
                                             group_nickname,
                                         } => {
-                                            error!("ContactsEvent::Sync2: {offer_crc} {group_nickname} {did} {from_id}");
-                                            Self::group_member_insert(
-                                                db_t.clone(),
-                                                did,
-                                                vec![from_id],
-                                            )
-                                            .unwrap();
+                                            error!("ContactsEvent::Sync2: {group_nickname} {g_id} {u_id}");
+                                            Self::group_member_insert(db_t.clone(), g_id, vec![u_id])
+                                                .unwrap();
                                             Self::set_group_member_nickname(
                                                 db_t.clone(),
-                                                did,
-                                                from_id,
+                                                g_id,
+                                                u_id,
                                                 &group_nickname,
                                             )
-                                            .unwrap();
+                                                .unwrap();
                                         }
                                     };
                                 }

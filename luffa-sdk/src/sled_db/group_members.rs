@@ -61,19 +61,21 @@ pub trait GroupMembersDb: Nickname {
     }
 
     fn group_member_insert(db: Arc<Db>, group_id: u64, member_ids: Vec<u64>) -> ClientResult<()> {
+        tracing::error!("group_id: {}, member_ids: {:?}", group_id, member_ids.clone());
         let key = &Self::group_member_key(group_id);
         let tree = Self::open_group_member_tree(db)?;
-        let data = if let Some(data) = tree.get(key)? {
+        let mut res = vec![];
+        if let Some(data) = tree.get(key)? {
             let data = data.as_bytes();
             let mut members = Members::deserialize(data)?;
-            let _ = member_ids.iter().map(|member_id| {
+            let _: Vec<_> = member_ids.iter().map(|member_id| {
                 members.members.insert(*member_id);
-            });
-            members.to_bytes()?
+            }).collect();
+            res = members.to_bytes()?;
         } else {
-            Members::new(group_id, member_ids).to_bytes()?
+            res = Members::new(group_id, member_ids).to_bytes()?
         };
-        tree.insert(key, data)?;
+        tree.insert(key, res)?;
         tree.flush()?;
         Ok(())
     }

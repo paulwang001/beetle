@@ -19,13 +19,13 @@ fileprivate extension RustBuffer {
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
-        try! rustCall { ffi_LuffaRpcTypes_3205_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
+        try! rustCall { ffi_LuffaRpcTypes_14dd_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
     // Frees the buffer in place.
     // The buffer must not be used after this is called.
     func deallocate() {
-        try! rustCall { ffi_LuffaRpcTypes_3205_rustbuffer_free(self, $0) }
+        try! rustCall { ffi_LuffaRpcTypes_14dd_rustbuffer_free(self, $0) }
     }
 }
 
@@ -745,6 +745,7 @@ public enum ContactsEvent {
     case `answer`(`offerCrc`: UInt64, `token`: ContactsToken)
     case `reject`(`offerCrc`: UInt64, `publicKey`: [UInt8])
     case `join`(`offerCrc`: UInt64, `groupNickname`: String)
+    case `leave`(`id`: UInt64)
     case `sync`(`offerCrc`: UInt64, `groupNickname`: String)
 }
 
@@ -774,7 +775,11 @@ public struct FfiConverterTypeContactsEvent: FfiConverterRustBuffer {
             `groupNickname`: try FfiConverterString.read(from: &buf)
         )
         
-        case 5: return .`sync`(
+        case 5: return .`leave`(
+            `id`: try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        case 6: return .`sync`(
             `offerCrc`: try FfiConverterUInt64.read(from: &buf), 
             `groupNickname`: try FfiConverterString.read(from: &buf)
         )
@@ -810,8 +815,13 @@ public struct FfiConverterTypeContactsEvent: FfiConverterRustBuffer {
             FfiConverterString.write(`groupNickname`, into: &buf)
             
         
-        case let .`sync`(`offerCrc`,`groupNickname`):
+        case let .`leave`(`id`):
             writeInt(&buf, Int32(5))
+            FfiConverterUInt64.write(`id`, into: &buf)
+            
+        
+        case let .`sync`(`offerCrc`,`groupNickname`):
+            writeInt(&buf, Int32(6))
             FfiConverterUInt64.write(`offerCrc`, into: &buf)
             FfiConverterString.write(`groupNickname`, into: &buf)
             
@@ -1609,7 +1619,7 @@ public func `messageFrom`(`msg`: [UInt8])  -> Message? {
     
     rustCall() {
     
-    LuffaRpcTypes_3205_message_from(
+    LuffaRpcTypes_14dd_message_from(
         FfiConverterSequenceUInt8.lower(`msg`), $0)
 }
     )
@@ -1623,7 +1633,7 @@ public func `messageTo`(`msg`: Message)  -> [UInt8]? {
     
     rustCall() {
     
-    LuffaRpcTypes_3205_message_to(
+    LuffaRpcTypes_14dd_message_to(
         FfiConverterTypeMessage.lower(`msg`), $0)
 }
     )
