@@ -134,6 +134,7 @@ pub struct OfferView {
 pub struct EventMeta {
     pub from_id: u64,
     pub to_id: u64,
+    pub session_type: u8,
     pub from_tag: String,
     pub to_tag: String,
     pub event_time: u64,
@@ -1239,11 +1240,12 @@ impl Client {
             msg,
             ..
         } = evt;
-        let (to_tag, _) = Self::get_contacts_tag(self.db(), to).unwrap_or_default();
+        let (to_tag, session_type) = Self::get_contacts_tag(self.db(), to).unwrap_or_default();
         let (from_tag, _) = Self::get_contacts_tag(self.db(), from_id).unwrap_or_default();
         Ok(EventMeta {
             from_id,
             to_id: to,
+            session_type,
             from_tag,
             to_tag,
             event_time,
@@ -1548,7 +1550,7 @@ impl Client {
                         //     }
                         // }
 
-                        let (to_tag, _) =
+                        let (to_tag, session_type) =
                             Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
                         let (from_tag, _) =
                             Self::get_contacts_tag(db_t.clone(), from_id).unwrap_or_default();
@@ -1556,6 +1558,7 @@ impl Client {
                             Some(msg) => Some(EventMeta {
                                 from_id,
                                 to_id: to,
+                                session_type,
                                 from_tag,
                                 to_tag,
                                 event_time,
@@ -1571,7 +1574,7 @@ impl Client {
                             {
                                 let status =
                                     Self::get_crc_tree_status(db_t.clone(), crc, &table) as u32;
-                                let (to_tag, _) =
+                                let (to_tag, session_type) =
                                     Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
                                 let (from_tag, _) = Self::get_contacts_tag(db_t.clone(), from_id)
                                     .unwrap_or_default();
@@ -1579,6 +1582,7 @@ impl Client {
                                     Some(msg) => Some(EventMeta {
                                         from_id,
                                         to_id: to,
+                                        session_type,
                                         from_tag,
                                         to_tag,
                                         event_time,

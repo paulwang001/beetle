@@ -40,7 +40,7 @@ open class RustBuffer : Structure() {
 
     companion object {
         internal fun alloc(size: Int = 0) = rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_14dd_rustbuffer_alloc(size, status).also {
+            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_3570_rustbuffer_alloc(size, status).also {
                 if(it.data == null) {
                    throw RuntimeException("RustBuffer.alloc() returned null data pointer (size=${size})")
                }
@@ -48,7 +48,7 @@ open class RustBuffer : Structure() {
         }
 
         internal fun free(buf: RustBuffer.ByValue) = rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_14dd_rustbuffer_free(buf, status)
+            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_3570_rustbuffer_free(buf, status)
         }
     }
 
@@ -257,27 +257,27 @@ internal interface _UniFFILib : Library {
         }
     }
 
-    fun LuffaRpcTypes_14dd_message_from(`msg`: RustBuffer.ByValue,
+    fun LuffaRpcTypes_3570_message_from(`msg`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaRpcTypes_14dd_message_to(`msg`: RustBuffer.ByValue,
+    fun LuffaRpcTypes_3570_message_to(`msg`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_14dd_rustbuffer_alloc(`size`: Int,
+    fun ffi_LuffaRpcTypes_3570_rustbuffer_alloc(`size`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_14dd_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,
+    fun ffi_LuffaRpcTypes_3570_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_14dd_rustbuffer_free(`buf`: RustBuffer.ByValue,
+    fun ffi_LuffaRpcTypes_3570_rustbuffer_free(`buf`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): Unit
 
-    fun ffi_LuffaRpcTypes_14dd_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,
+    fun ffi_LuffaRpcTypes_3570_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
@@ -519,6 +519,35 @@ public object FfiConverterTypeEvent: FfiConverterRustBuffer<Event> {
 
 
 
+data class Member (
+    var `uId`: ULong, 
+    var `groupNickname`: String
+) {
+    
+}
+
+public object FfiConverterTypeMember: FfiConverterRustBuffer<Member> {
+    override fun read(buf: ByteBuffer): Member {
+        return Member(
+            FfiConverterULong.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: Member) = (
+            FfiConverterULong.allocationSize(value.`uId`) +
+            FfiConverterString.allocationSize(value.`groupNickname`)
+    )
+
+    override fun write(value: Member, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`uId`, buf)
+            FfiConverterString.write(value.`groupNickname`, buf)
+    }
+}
+
+
+
+
 enum class AppStatus {
     ACTIVE,DEACTIVE,DISCONNECTED,CONNECTED,BYE;
 }
@@ -637,7 +666,8 @@ sealed class ContactsEvent {
         ) : ContactsEvent()
     data class Answer(
         val `offerCrc`: ULong, 
-        val `token`: ContactsToken
+        val `token`: ContactsToken, 
+        val `members`: List<Member>
         ) : ContactsEvent()
     data class Reject(
         val `offerCrc`: ULong, 
@@ -651,7 +681,8 @@ sealed class ContactsEvent {
         val `id`: ULong
         ) : ContactsEvent()
     data class Sync(
-        val `offerCrc`: ULong, 
+        val `uId`: ULong, 
+        val `gId`: ULong, 
         val `groupNickname`: String
         ) : ContactsEvent()
     
@@ -668,6 +699,7 @@ public object FfiConverterTypeContactsEvent : FfiConverterRustBuffer<ContactsEve
             2 -> ContactsEvent.Answer(
                 FfiConverterULong.read(buf),
                 FfiConverterTypeContactsToken.read(buf),
+                FfiConverterSequenceTypeMember.read(buf),
                 )
             3 -> ContactsEvent.Reject(
                 FfiConverterULong.read(buf),
@@ -681,6 +713,7 @@ public object FfiConverterTypeContactsEvent : FfiConverterRustBuffer<ContactsEve
                 FfiConverterULong.read(buf),
                 )
             6 -> ContactsEvent.Sync(
+                FfiConverterULong.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterString.read(buf),
                 )
@@ -702,6 +735,7 @@ public object FfiConverterTypeContactsEvent : FfiConverterRustBuffer<ContactsEve
                 4
                 + FfiConverterULong.allocationSize(value.`offerCrc`)
                 + FfiConverterTypeContactsToken.allocationSize(value.`token`)
+                + FfiConverterSequenceTypeMember.allocationSize(value.`members`)
             )
         }
         is ContactsEvent.Reject -> {
@@ -731,7 +765,8 @@ public object FfiConverterTypeContactsEvent : FfiConverterRustBuffer<ContactsEve
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
                 4
-                + FfiConverterULong.allocationSize(value.`offerCrc`)
+                + FfiConverterULong.allocationSize(value.`uId`)
+                + FfiConverterULong.allocationSize(value.`gId`)
                 + FfiConverterString.allocationSize(value.`groupNickname`)
             )
         }
@@ -748,6 +783,7 @@ public object FfiConverterTypeContactsEvent : FfiConverterRustBuffer<ContactsEve
                 buf.putInt(2)
                 FfiConverterULong.write(value.`offerCrc`, buf)
                 FfiConverterTypeContactsToken.write(value.`token`, buf)
+                FfiConverterSequenceTypeMember.write(value.`members`, buf)
                 Unit
             }
             is ContactsEvent.Reject -> {
@@ -769,7 +805,8 @@ public object FfiConverterTypeContactsEvent : FfiConverterRustBuffer<ContactsEve
             }
             is ContactsEvent.Sync -> {
                 buf.putInt(6)
-                FfiConverterULong.write(value.`offerCrc`, buf)
+                FfiConverterULong.write(value.`uId`, buf)
+                FfiConverterULong.write(value.`gId`, buf)
                 FfiConverterString.write(value.`groupNickname`, buf)
                 Unit
             }
@@ -1579,10 +1616,35 @@ public object FfiConverterSequenceTypeContacts: FfiConverterRustBuffer<List<Cont
     }
 }
 
+
+
+
+public object FfiConverterSequenceTypeMember: FfiConverterRustBuffer<List<Member>> {
+    override fun read(buf: ByteBuffer): List<Member> {
+        val len = buf.getInt()
+        return List<Member>(len) {
+            FfiConverterTypeMember.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<Member>): Int {
+        val sizeForLength = 4
+        val sizeForItems = value.map { FfiConverterTypeMember.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<Member>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.forEach {
+            FfiConverterTypeMember.write(it, buf)
+        }
+    }
+}
+
 fun `messageFrom`(`msg`: List<UByte>): Message? {
     return FfiConverterOptionalTypeMessage.lift(
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaRpcTypes_14dd_message_from(FfiConverterSequenceUByte.lower(`msg`), _status)
+    _UniFFILib.INSTANCE.LuffaRpcTypes_3570_message_from(FfiConverterSequenceUByte.lower(`msg`), _status)
 })
 }
 
@@ -1591,7 +1653,7 @@ fun `messageFrom`(`msg`: List<UByte>): Message? {
 fun `messageTo`(`msg`: Message): List<UByte>? {
     return FfiConverterOptionalSequenceUByte.lift(
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaRpcTypes_14dd_message_to(FfiConverterTypeMessage.lower(`msg`), _status)
+    _UniFFILib.INSTANCE.LuffaRpcTypes_3570_message_to(FfiConverterTypeMessage.lower(`msg`), _status)
 })
 }
 
