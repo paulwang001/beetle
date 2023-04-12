@@ -165,7 +165,7 @@ async fn main() -> Result<()> {
                         let nb = NoticeBody {
 
                             id:format!("{task}"),
-                            title:format!("luffa://open/chat?id={task}&type={c}"),
+                            title:format!("luffa://open/chat?id={f}&type={c}"),
                             body:format!("{}",t),
                             current_key:format!("AIzaSyCG7wT4KYvbSf_HYU6xAmn7g5bgKOdGb0s")
                         };

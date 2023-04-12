@@ -146,6 +146,7 @@ pub struct Node<KeyStorage: Storage> {
     routing_rx: Receiver<(PeerId, Vec<u64>)>,
     dial_queries: AHashMap<PeerId, Vec<OneShotSender<Result<()>>>>,
     pending_routing: AHashMap<u64, Vec<(u64, Instant)>>,
+    reach_routing: AHashMap<u64, Vec<(u64, u64)>>,
     connected_peers: AHashMap<u64, PeerId>,
     lookup_queries: AHashMap<PeerId, Vec<oneshot::Sender<Result<IdentifyInfo>>>>,
     // TODO(ramfox): use new providers queue instead
@@ -266,6 +267,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 routing_rx,
                 dial_queries: Default::default(),
                 pending_routing: Default::default(),
+                reach_routing: Default::default(),
                 connected_peers: Default::default(),
                 lookup_queries: Default::default(),
                 // TODO(ramfox): use new providers queue instead
@@ -1108,6 +1110,19 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     let t = self.get_contacts_index(ctt.did);
                                                     let tp = ctt.r#type as u8;
                                                     self.contacts.update_edge(f, t, tp);
+                                                    if tp == 1 {
+                                                        if let Some(peer_id) = self.connected_peers.get(&did) {
+                                                            if let Some(reach) = self.reach_routing.get(&ctt.did) {
+    
+                                                                if let Some(pending) = self.pending_routing.get(&ctt.did) {
+                                                                    let new_pending = pending.iter().filter(|(crc,_)| reach.iter().find(|(c,d)| c == crc && d == &did).is_none()).map(|(crc,_)| *crc).collect::<Vec<_>>();    
+                                                                    if let Err(e) = self.routing_tx.send((peer_id.clone(),new_pending)).await {
+                                                                        tracing::error!("{e:?}");
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    } 
                                                 }
                                             }
                                             Message::Feedback { crc,status,from_id,.. }=>{
@@ -1116,6 +1131,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         if let Some(from) = from_id {
                                                             let pending = self.pending_routing.entry(from).or_insert(Vec::new());
                                                             pending.retain(|(c,_t)| !crc.contains(c));
+                                                            for c in crc {
+                                                                let reach = self.reach_routing.entry(from).or_insert(Vec::new());
+                                                                reach.push((c,from));
+                                                            }
+
                                                         }
                                                         else{
                                                             tracing::warn!("reach or read feedback which from is None");
@@ -1225,6 +1245,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                             }
                                             
                                         } else {
+                                            {
+                                                let pending = self.pending_routing.entry(to).or_insert(Vec::new());
+                                                if pending.iter().find(|(x,_)| *x == crc ).is_none() {
+                                                    pending.push((crc,std::time::Instant::now()));
+                                                }
+                                                pending.retain(|(_,t)|t.elapsed().as_secs() < 24 * 60 * 60 );
+                                                
+                                            }
                                             let g_idx = self.get_contacts_index(to);
                                             let members = self.contacts.edges(g_idx);
                                             let targets = members
@@ -1243,13 +1271,17 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         continue;
                                                     }
                                                     let did = *to_id;
-                                                    let pending = self.pending_routing.entry(did).or_insert(Vec::new());
-                                                    if pending.iter().find(|(x,_)| *x == crc ).is_none() {
-                                                        pending.push((crc,std::time::Instant::now()));
-                                                        tracing::warn!("group msg [{crc}] route to {did}");
-                                                    }
-                                                    else{
-                                                        continue;
+                                                    {
+
+                                                        let pending = self.pending_routing.entry(did).or_insert(Vec::new());
+                                                        if pending.iter().find(|(x,_)| *x == crc ).is_none() {
+                                                            pending.push((crc,std::time::Instant::now()));
+                                                            tracing::warn!("group msg [{crc}] route to {did}");
+                                                        }
+                                                        else{
+                                                            continue;
+                                                        }
+                                                        pending.retain(|(_,t)|t.elapsed().as_secs() < 24 * 60 * 60 );
                                                     }
                                                     if let Ok(Some(rx)) =
                                                         self.local_send_if_connected(t,did, data)
@@ -1299,9 +1331,13 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     } else {
                                         // offer or answer
                                         let t = self.get_peer_index(to);
-                                        let pending = self.pending_routing.entry(to).or_insert(Vec::new());
-                                        if pending.iter().find(|(x,_)| *x == crc ).is_none() {
-                                            pending.push((crc,std::time::Instant::now()));
+                                        {
+
+                                            let pending = self.pending_routing.entry(to).or_insert(Vec::new());
+                                            if pending.iter().find(|(x,_)| *x == crc ).is_none() {
+                                                pending.push((crc,std::time::Instant::now()));
+                                            }
+                                            pending.retain(|(_,t)|t.elapsed().as_secs() < 24 * 60 * 60 );
                                         }
 
                                         if let Ok(Some(rx)) =
@@ -1408,17 +1444,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 let mut feed_crc = vec![crc];
 
                                 tracing::info!("chat request from relay {crc}");
-                                if let Some(pending) = self.pending_routing.get(&to) {
-                                    if pending.iter().find(|(x,_)| *x == crc ).is_some() {
-                                        tracing::warn!("CRC is pending routing {crc}");
-                                        return Ok(());
-                                    }
-                                    if let Err(e) = self
-                                    .put_to_dht(crc, request.data().to_vec())
-                                    {
-                                        tracing::error!("put to dht {e:?}");
-                                    }
-                                }
+                                
                                 
                                 let mut feed_status = luffa_rpc_types::FeedbackStatus::Routing;
                                 if nonce.is_none() {
@@ -1490,6 +1516,19 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     let t = self.get_contacts_index(ctt.did);
                                                     let tp = ctt.r#type as u8;
                                                     self.contacts.update_edge(f, t, tp);
+                                                    if tp == 1 {
+                                                        if let Some(peer_id) = self.connected_peers.get(&did) {
+                                                            if let Some(reach) = self.reach_routing.get(&ctt.did) {
+    
+                                                                if let Some(pending) = self.pending_routing.get(&ctt.did) {
+                                                                    let new_pending = pending.iter().filter(|(crc,_)| reach.iter().find(|(c,d)| c == crc && d == &did).is_none()).map(|(crc,_)| *crc).collect::<Vec<_>>();    
+                                                                    if let Err(e) = self.routing_tx.send((peer_id.clone(),new_pending)).await {
+                                                                        tracing::error!("{e:?}");
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    } 
                                                 }
                                                 let evt = luffa_rpc_types::Event::new(0,&msg_t,None,from_id);
                                                 let evt = evt.encode()?;
@@ -1560,15 +1599,25 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 else {
                                     let f = self.get_contacts_index(from_id);
                                     let t = self.get_contacts_index(to);
-                                    
-                                    // tracing::info!("{crc}");
-                                    // check that from and to was in any contacts ?
+                                    if let Err(e) = self
+                                    .put_to_dht(crc, request.data().to_vec())
+                                    {
+                                        tracing::error!("put to dht {e:?}");
+                                    }
 
                                     if let Some(idx) = self.contacts.find_edge(f, t) {
                                         let tp = self.contacts.edge_weight(idx).unwrap();
                                         let mut rx_any = None;
                                         let tp = *tp;
                                         if tp == 0 {
+
+                                            if let Some(pending) = self.pending_routing.get(&to) {
+                                                if pending.iter().find(|(x,_)| *x == crc ).is_some() {
+                                                    tracing::warn!("CRC is pending routing {crc}");
+                                                    return Ok(());
+                                                }
+                                            }
+
                                             // contact is private
                                             let notice = Message::Feedback {crc:vec![crc],from_id:None, to_id: Some(to), status: FeedbackStatus::Notice };
                                             let evt = luffa_rpc_types::Event::new(to,&notice,None,from_id);
@@ -1682,8 +1731,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     tracing::error!("group msg pub>>>{e:?}");
                                                     self.pub_pending.push_back((request.data().to_vec(),Instant::now(),1));
                                                 }
+                                                let pending = self.pending_routing.entry(to).or_insert(Vec::new());
+                                                if pending.iter().find(|(x,_)| *x == crc ).is_none() {
+                                                    pending.push((crc,std::time::Instant::now()));
+                                                }
                                             }
-
+                                                
                                             let g_idx = self.get_contacts_index(to);
                                             let members = self.contacts.edges(g_idx);
                                             let targets = members
