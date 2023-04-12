@@ -1860,7 +1860,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     }
                                     let msg = Message::Feedback { crc:vec![crc], from_id:None, to_id: Some(to), status: FeedbackStatus::Send };
                                     self.local_feedback(Some(request_id), msg );
-                                    tracing::info!("channel response ok: [{crc}]");
+                                    tracing::warn!("status Send channel response ok: [{crc}]");
                                 }
                                 self.emit_network_event(NetworkEvent::RequestResponse(
                                     ChatEvent::Response { request_id:Some(request_id), data },
@@ -2209,7 +2209,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         let req_id =
                         chat.send_request(peer, crate::behaviour::chat::Request(data.msg));
                         self.pending_request.insert(req_id, (crc,to,response_channel));
-                        self.local_feedback(Some(req_id.clone()), Message::Feedback { crc:vec![crc], from_id:Some(from_id), to_id: Some(to), status: FeedbackStatus::Sending });
+                        if nonce.is_some() {
+                            self.local_feedback(Some(req_id.clone()), Message::Feedback { crc:vec![crc], from_id:Some(from_id), to_id: Some(to), status: FeedbackStatus::Sending });
+                        }
                         tracing::warn!("found peer for event to >> chat send. {:?}", peer);
                         return Ok(false);
                     }
@@ -2242,7 +2244,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         let req_id =
                         chat.send_request(&dft_peer, crate::behaviour::chat::Request(data.msg));
                         self.pending_request.insert(req_id, (crc,to,response_channel));
-                        self.local_feedback(Some(req_id.clone()), Message::Feedback { crc:vec![crc], from_id:Some(from_id), to_id: Some(to), status: FeedbackStatus::Sending });
+                        if nonce.is_some() {
+                            self.local_feedback(Some(req_id.clone()), Message::Feedback { crc:vec![crc], from_id:Some(from_id), to_id: Some(to), status: FeedbackStatus::Sending });
+                        }
                         tracing::warn!("2 chat send to default ({dft_peer:?}). {:?}", req_id);
                         return Ok(false);
                     }
