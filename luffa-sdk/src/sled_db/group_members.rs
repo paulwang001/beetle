@@ -60,6 +60,10 @@ pub trait GroupMembersDb: Nickname {
         format!("manager-{}", group_id)
     }
 
+    fn group_join_status_key(group_id: u64, u_id: u64) -> String {
+        format!("MEMBER_STATUS-{group_id}-{u_id}")
+    }
+
     fn group_member_insert(db: Arc<Db>, group_id: u64, member_ids: Vec<u64>) -> ClientResult<()> {
         tracing::error!(
             "group_id: {}, member_ids: {:?}",
@@ -208,5 +212,27 @@ pub trait GroupMembersDb: Nickname {
         let _ = tree.remove(key)?;
 
         Ok(())
+    }
+
+    // 1: join
+    fn set_member_to_join_status(db: Arc<Db>, group_id: u64, u_id: u64) -> ClientResult<()> {
+        let key = Self::group_join_status_key(group_id, u_id);
+        let tree = Self::open_group_member_tree(db)?;
+        tree.insert(key, "1")?;
+        tree.flush()?;
+        Ok(())
+    }
+
+    // 1: join
+    fn get_member_to_join_status(db: Arc<Db>, group_id: u64, u_id: u64) -> ClientResult<u8> {
+        let key = Self::group_join_status_key(group_id, u_id);
+        let tree = Self::open_group_member_tree(db)?;
+        if let Some(data) = tree.get(key)? {
+            let data = String::from_utf8(data.to_vec())?;
+            let data: u8 = data.parse()?;
+            Ok(data)
+        } else {
+            Ok(0)
+        }
     }
 }
