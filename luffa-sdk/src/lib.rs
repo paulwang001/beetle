@@ -2602,8 +2602,13 @@ impl Client {
 
         let _ = Self::remove_contacts(self.db(), gid)?;
         let _ = Self::remove_session(self.db(), gid);
+        let _ = Self::group_remove(self.db(), gid)?;
 
         Ok(())
+    }
+
+    pub fn remove_contact(&self, did: u64) -> ClientResult<()> {
+        unimplemented!()
     }
 
     /// run
