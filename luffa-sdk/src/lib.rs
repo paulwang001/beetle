@@ -1094,7 +1094,7 @@ impl Client {
         let mut itr = tree.into_iter();
         let mut remove_keys = vec![];
         while let Some(val) = itr.next_back() {
-            let (_k, v) = val?;
+            let (k, v) = val?;
             let mut key = [0u8; 8];
             key.clone_from_slice(&v[..8]);
             let crc = u64::from_be_bytes(key);
@@ -1111,11 +1111,13 @@ impl Client {
             let status =
                 Self::get_u8_from_tree(&offer_tree, &format!("ST_{crc}")).unwrap_or_default();
             let status = OfferStatus::from(status);
-            let event_meta = match self.read_msg_meta_without_chat_session(did, crc)? {
-                Some(e) => e,
+            let event_meta_at = match self.read_msg_meta_without_chat_session(did, crc)? {
+                Some(e) => e.event_time,
                 _ => {
-                    warn!("event meta is null in recent offser");
-                    continue;
+                    let mut v = [0u8; 8];
+                    v.clone_from_slice(&k[..8]);
+                    let at = u64::from_be_bytes(v);
+                    at
                 }
             };
             if let Ok(Some(tag)) = offer_tree.get(&format!("TAG_{crc}")) {
@@ -1127,7 +1129,7 @@ impl Client {
                     offer_crc: crc,
                     tag,
                     status,
-                    event_time: event_meta.event_time,
+                    event_time: event_meta_at,
                 };
 
                 if let Some((idx, v)) = msgs.iter().enumerate().find(|(_, x)| x.did == did) {
