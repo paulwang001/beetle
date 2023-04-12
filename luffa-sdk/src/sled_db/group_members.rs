@@ -16,6 +16,8 @@ pub const KVDB_GROUP_MEMBERS_TREE: &str = "luffa_group_members";
 pub struct GroupMemberNickname {
     pub u_id: u64,
     pub nickname: String,
+    /// 1: join 0: not join
+    pub status: u8,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -137,9 +139,11 @@ pub trait GroupMembersDb: Nickname {
                         nickname = String::from_utf8(data)?;
                     }
                 }
+                let status = Self::get_member_to_join_status(db.clone(), group_id, *member)?;
                 list.push(GroupMemberNickname {
                     u_id: *member,
                     nickname,
+                    status,
                 });
             }
         };
