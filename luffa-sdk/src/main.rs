@@ -136,7 +136,10 @@ fn main() -> Result<()> {
                                 }
                                 None => {
                                     if code.is_empty() {
-                                        code = client.show_code("https://luffa.putdev.com", "p").unwrap().unwrap();
+                                        code = client
+                                            .show_code("https://luffa.putdev.com", "p")
+                                            .unwrap()
+                                            .unwrap();
                                     }
                                     tracing::warn!("scan me :{}", code);
                                 }
@@ -157,15 +160,19 @@ fn main() -> Result<()> {
                     }
                     None => {
                         if code.is_empty() {
-                            code = client.show_code("https://luffa.putdev.com", "p").unwrap().unwrap();
+                            code = client
+                                .show_code("https://luffa.putdev.com", "p")
+                                .unwrap()
+                                .unwrap();
                         }
                         let relays = client.relay_list().unwrap();
                         tracing::warn!("scan me :{}  --->>{:?}", code, relays);
                         let offers = client.recent_offser(10).unwrap();
-                        for offer in offers  {
+                        for offer in offers {
                             tracing::warn!("offer>>> {offer:?}");
                             if offer.status == OfferStatus::Offer {
-                                let ret = client.contacts_anwser(offer.did, offer.offer_crc).unwrap();
+                                let ret =
+                                    client.contacts_anwser(offer.did, offer.offer_crc).unwrap();
                                 tracing::warn!("anwser>>> {ret}");
                             }
                         }
@@ -173,7 +180,7 @@ fn main() -> Result<()> {
                         let mut members = vec![];
                         for c in list {
                             members.push(c.did);
-                            let ls = client.recent_messages(c.did, 0,10).unwrap();
+                            let ls = client.recent_messages(c.did, 0, 10).unwrap();
                             {
                                 let msg_len = ls.len();
                                 tracing::info!(" contacts>> {:?} msg_len>>{}", c, msg_len);
@@ -201,32 +208,35 @@ fn main() -> Result<()> {
                             tracing::warn!("group created:{created}");
                         }
                         if !groups.is_empty() {
-                            let x:usize = rand::random();
+                            let x: usize = rand::random();
                             let x = x % groups.len();
-                            for (i,g) in groups.into_iter().enumerate() {
+                            for (i, g) in groups.into_iter().enumerate() {
                                 if x != i {
                                     continue;
                                 }
                                 let msgs = client.recent_messages(g.did, 0, 10000).unwrap();
                                 let msg_len = msgs.len();
-                                let mut from_count = 0_u32 ;
+                                let mut from_count = 0_u32;
                                 for msg in msgs {
                                     if let Ok(Some(evt)) = client.read_msg_with_meta(g.did, msg) {
                                         if evt.from_id != peer_id {
-
                                             let msg = message_from(evt.msg).unwrap();
-                                            tracing::info!("evt:from> {} >msg: {:?}",evt.from_id, msg);
+                                            tracing::info!(
+                                                "evt:from> {} >msg: {:?}",
+                                                evt.from_id,
+                                                msg
+                                            );
                                             from_count += 1;
                                         }
                                     }
-
                                 }
                                 // if from_count == 0 {
                                 //     let created = client.contacts_group_create(members.clone(), Some(g.tag.clone())).unwrap();
                                 //     tracing::warn!("empty msg>>> group created:{created} [{}] invitee:{:?}",g.tag,&members);
                                 //     continue;
                                 // }
-                                let mnemonic = Mnemonic::new(MnemonicType::Words24, Language::English);
+                                let mnemonic =
+                                    Mnemonic::new(MnemonicType::Words24, Language::English);
                                 let msg = Message::Chat {
                                     content: luffa_rpc_types::ChatContent::Send {
                                         data: luffa_rpc_types::ContentData::Text {
@@ -239,7 +249,9 @@ fn main() -> Result<()> {
                                 };
                                 let msg = message_to(msg).unwrap();
                                 let crc = client.send_msg(g.did, msg).unwrap();
-                                tracing::error!("[len: {from_count}] group [{g:?}] msg send seccess {crc}");
+                                tracing::error!(
+                                    "[len: {from_count}] group [{g:?}] msg send seccess {crc}"
+                                );
                             }
                         }
                         let list = client.session_list(10).unwrap();
@@ -249,7 +261,12 @@ fn main() -> Result<()> {
                             let did = s.did;
                             for crc in s.reach_crc {
                                 if let Some(meta) = client.read_msg_with_meta(did, crc).unwrap() {
-                                    tracing::warn!("read msg> {} ,from: {} to:{}", crc,meta.from_id,meta.to_id);
+                                    tracing::warn!(
+                                        "read msg> {} ,from: {} to:{}",
+                                        crc,
+                                        meta.from_id,
+                                        meta.to_id
+                                    );
                                 }
                             }
                         }
@@ -262,10 +279,10 @@ fn main() -> Result<()> {
     while let Ok((crc, from_id, to, data)) = rx.recv() {
         let msg: Message = serde_cbor::from_slice(&data).unwrap();
         let peer_id = client_t.get_local_id().unwrap().unwrap();
-        let did = if to == peer_id { from_id } else {to};
+        let did = if to == peer_id { from_id } else { to };
         match &msg {
-            Message::Ping { relay_id, ttl_ms }=>{
-                tracing::info!("-----relay------{} ---ttl:{} ms",relay_id,ttl_ms);
+            Message::Ping { relay_id, ttl_ms } => {
+                tracing::info!("-----relay------{} ---ttl:{} ms", relay_id, ttl_ms);
             }
             Message::WebRtc { stream_id, action } => match action {
                 RtcAction::Status {
@@ -296,7 +313,11 @@ fn main() -> Result<()> {
                     let to = digest.sum64();
                     // let crc = client_t.contacts_anwser(to, from_id, crc,secret_key.clone(),secret_key);
                 }
-                ContactsEvent::Answer {offer_crc ,token } => {
+                ContactsEvent::Answer {
+                    offer_crc,
+                    token,
+                    members,
+                } => {
                     let ContactsToken {
                         public_key,
                         create_at,
@@ -328,30 +349,33 @@ fn main() -> Result<()> {
                     let crc = client_t.send_msg(to, msg).unwrap();
                     tracing::info!("Answer from:offer_id {} ,did {}  ==> {}", from_id, to, crc);
                 }
-                _=> {
-                    
+                _ => {}
+            },
+            Message::Chat { content } => match content {
+                ChatContent::Send { .. } => match client_t.read_msg_with_meta(did, crc)? {
+                    Some(meta) => {
+                        let msg = message_from(meta.msg.clone()).unwrap();
+                        tracing::error!(
+                            "on message meta>>crc: {crc}  from: {} to: {} >> {:?}",
+                            meta.from_id,
+                            meta.to_id,
+                            msg
+                        );
+                    }
+                    None => {
+                        tracing::error!("msg not found {}->{} msg:{:?}", did, crc, msg);
+                    }
+                },
+                _ => {
+                    tracing::warn!("msg is reach? {}->{} msg:{:?}", did, crc, msg);
                 }
             },
-            Message::Chat { content } => {
-                match content {
-                    ChatContent::Send { .. }=>{
-                        match client_t.read_msg_with_meta(did, crc)? {
-                            Some(meta) => {
-                                let msg = message_from(meta.msg.clone()).unwrap();
-                                tracing::error!("on message meta>>crc: {crc}  from: {} to: {} >> {:?}", meta.from_id,meta.to_id,msg );
-                            }
-                            None => {
-                                tracing::error!("msg not found {}->{} msg:{:?}", did, crc, msg);
-                            }
-                        }
-                    }
-                    _=>{
-                        tracing::warn!("msg is reach? {}->{} msg:{:?}", did, crc, msg);
-
-                    }
-                }
-            },
-            Message::Feedback {crc,status,from_id,to_id} => {
+            Message::Feedback {
+                crc,
+                status,
+                from_id,
+                to_id,
+            } => {
                 if from_id.unwrap_or_default() > 0 && to_id.unwrap_or_default() > 0 {
                     tracing::warn!("crc {crc:?} status change {status:?}");
                 }

@@ -29,6 +29,7 @@ dictionary ContactsGroupView {
     string tag;
     u8 c_type;
     u64 count;
+	boolean is_manager;
 };
 
 dictionary GroupMemberNickname {
@@ -42,12 +43,19 @@ enum OfferStatus {
   "Reject"
 };
 
+
+enum OfferRole {
+    "Applicant",
+    "Acceptor",
+};
+
 dictionary OfferView {
   u64 did;
   string bs_did;
   u64 offer_crc;
   string tag;
   OfferStatus status;
+  OfferRole role;
   u64 event_time;
 };
 

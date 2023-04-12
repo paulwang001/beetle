@@ -39,6 +39,11 @@ dictionary ContactsToken {
     string? comment;
 };
 
+dictionary Member {
+    u64 u_id;
+    string  group_nickname;
+};
+
 [Enum]
 interface RtcAction {
     Push(u32 audio_id,u32 video_id);
@@ -52,7 +57,7 @@ interface RtcAction {
 [Enum]
 interface ContactsEvent {
     Offer(ContactsToken token);
-    Answer(u64 offer_crc,ContactsToken token);
+    Answer(u64 offer_crc,ContactsToken token, sequence<Member> members);
     Reject(u64 offer_crc,sequence<u8> public_key);
     Join(u64 offer_crc, string group_nickname);
     Leave(u64 id);
