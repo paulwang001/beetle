@@ -35,6 +35,7 @@ dictionary ContactsGroupView {
 dictionary GroupMemberNickname {
    u64 u_id;
    string nickname;
+   u8 status;
 };
 
 enum OfferStatus {
