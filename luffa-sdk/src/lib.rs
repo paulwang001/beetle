@@ -1111,6 +1111,7 @@ impl Client {
         let offer_tree = self.db().open_tree(&offer_table)?;
         let mut itr = tree.into_iter();
         let mut remove_keys = vec![];
+        let mut remove_keys_old_offer = vec![];
         while let Some(val) = itr.next_back() {
             let (k, v) = val?;
             let mut key = [0u8; 8];
@@ -1160,9 +1161,19 @@ impl Client {
                 };
 
                 if let Some((idx, v)) = msgs.iter().enumerate().find(|(_, x)| x.did == did) {
-                    if v.event_time < view.event_time {
+                    let old = if v.event_time < view.event_time {
+                        let old = msgs.get(idx).unwrap();
+                        let did = old.did;
+                        let crc = old.offer_crc;
+
                         msgs[idx] = view;
-                    }
+
+                        (did, crc)
+                    } else {
+                        (view.did, view.offer_crc)
+                    };
+
+                    remove_keys_old_offer.push(old)
                 } else {
                     msgs.push(view);
                 }
@@ -1176,6 +1187,11 @@ impl Client {
         // 删除一个不存在的key
         remove_keys.into_iter().for_each(|x| {
             let _ = tree.remove(x.to_be_bytes());
+        });
+
+        // remove old offer
+        remove_keys_old_offer.into_iter().for_each(|(did, crc)| {
+            let _ = self.remove_offser(did, crc);
         });
 
         Ok(msgs)
