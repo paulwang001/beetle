@@ -332,18 +332,33 @@ fn main() -> Result<()> {
                     
                 }
             },
-            Message::Chat { .. } => match client_t.read_msg_with_meta(did, crc)? {
-                Some(meta) => {
-                    let msg = message_from(meta.msg.clone()).unwrap();
-                    tracing::error!("on message meta>>crc: {crc}  from: {} to: {} >> {:?}", meta.from_id,meta.to_id,msg );
-                }
-                None => {
-                    tracing::error!("msg not found {}->{}", did, crc);
+            Message::Chat { content } => {
+                match content {
+                    ChatContent::Send { .. }=>{
+                        match client_t.read_msg_with_meta(did, crc)? {
+                            Some(meta) => {
+                                let msg = message_from(meta.msg.clone()).unwrap();
+                                tracing::error!("on message meta>>crc: {crc}  from: {} to: {} >> {:?}", meta.from_id,meta.to_id,msg );
+                            }
+                            None => {
+                                tracing::error!("msg not found {}->{} msg:{:?}", did, crc, msg);
+                            }
+                        }
+                    }
+                    _=>{
+                        tracing::warn!("msg is reach? {}->{} msg:{:?}", did, crc, msg);
+
+                    }
                 }
             },
+            Message::Feedback {crc,status,from_id,to_id} => {
+                if from_id.unwrap_or_default() > 0 && to_id.unwrap_or_default() > 0 {
+                    tracing::warn!("crc {crc:?} status change {status:?}");
+                }
+            }
             _ => {
                 let list = client_t.contacts_list(0)?;
-                tracing::debug!("contacts>> {:?}", list);
+                tracing::warn!("contacts>> {:?}", list);
                 let list = client_t.session_list(10)?;
 
                 tracing::debug!(" session>> {:?}", list);
