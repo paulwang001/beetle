@@ -43,6 +43,7 @@ enum OfferStatus {
   "Reject"
 };
 
+
 enum OfferRole {
     "Applicant",
     "Acceptor",
