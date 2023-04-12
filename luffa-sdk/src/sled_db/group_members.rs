@@ -114,7 +114,7 @@ pub trait GroupMembersDb: Nickname {
         let key = Self::group_member_key(group_id);
         let tree = Self::open_group_member_tree(db.clone())?;
         let mut list = vec![];
-        let contact_tree = Self::open_contact_tree(db)?;
+        let contact_tree = Self::open_contact_tree(db.clone())?;
         if let Some(data) = tree.get(key)? {
             let members = Members::deserialize(data.as_bytes())?;
             let members: Vec<u64> = members.members.iter().map(|a| *a).collect();
