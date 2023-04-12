@@ -2771,7 +2771,7 @@ impl Client {
         let db_t = db.clone();
         let idx = idx_writer.clone();
         let idx_t = idx.clone();
-        let idx_tt = idx.clone();
+        
         let schema_t = schema.clone();
         let schema_tt = schema.clone();
         let cb_local = cb.clone();
