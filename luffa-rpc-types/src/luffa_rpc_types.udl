@@ -55,6 +55,8 @@ interface ContactsEvent {
     Answer(u64 offer_crc,ContactsToken token);
     Reject(u64 offer_crc,sequence<u8> public_key);
     Join(u64 offer_crc, string group_nickname);
+    Leave(u64 id);
+    Sync(u64 offer_crc, string group_nickname);
 };
 
 [Enum]

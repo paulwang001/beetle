@@ -7,6 +7,7 @@ use aes_gcm::{
 };
 use anyhow::{bail, Context};
 use api::P2pClient;
+use event::group::EventGroup;
 use futures::StreamExt;
 use libp2p::identity::Keypair;
 use libp2p::identity::PublicKey;
@@ -38,6 +39,7 @@ use std::{
     time::Instant,
 };
 use std::{fs, io};
+use std::thread::sleep;
 use tantivy::tokenizer::{LowerCaser, NgramTokenizer, SimpleTokenizer, Stemmer, TextAnalyzer};
 
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -62,6 +64,7 @@ use tokio::sync::oneshot::Sender as ShotSender;
 mod api;
 pub mod avatar_nickname;
 mod config;
+mod event;
 mod sled_db;
 
 use crate::config::Config;
@@ -307,6 +310,9 @@ impl Mnemonic for Client {}
 impl Nickname for Client {}
 
 impl SledDbAll for Client {}
+
+#[async_trait::async_trait]
+impl EventGroup for Client {}
 
 impl Client {
     pub fn new() -> Self {
@@ -620,7 +626,7 @@ impl Client {
                         did: i_id,
                         contacts,
                     };
-        
+
                     let event = Event::new(0, &sync, None, 0);
                     let data = event.encode().unwrap();
                     if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
@@ -645,6 +651,8 @@ impl Client {
                 }
             })
         });
+        Self::group_member_insert(self.db(), g_id, vec![my_id])?;
+        Self::set_is_group_manager(self.db(), g_id, my_id)?;
         Ok(g_id)
     }
 
@@ -1078,7 +1086,7 @@ impl Client {
     }
 
     pub fn recent_offser(&self, top: u32) -> ClientResult<Vec<OfferView>> {
-        let mut msgs = vec![];
+        let mut msgs: Vec<OfferView> = vec![];
         let time_table = format!("offer_time");
         let offer_table = format!("offer");
         let tree = self.db().open_tree(&time_table)?;
@@ -1113,14 +1121,24 @@ impl Client {
             if let Ok(Some(tag)) = offer_tree.get(&format!("TAG_{crc}")) {
                 let tag = String::from_utf8(tag.to_vec()).unwrap();
                 let bs_did = bs58::encode(did.to_be_bytes()).into_string();
-                msgs.push(OfferView {
+                let view = OfferView {
                     did,
                     bs_did,
                     offer_crc: crc,
                     tag,
                     status,
                     event_time: event_meta.event_time,
-                });
+                };
+
+                if let Some((idx, v)) =
+                    msgs.iter().enumerate().find(|(_, x)| x.did == did) {
+                    if v.event_time < view.event_time {
+                        msgs[idx] = view;
+                    }
+                } else {
+                    msgs.push(view);
+                }
+
                 if msgs.len() >= top as usize {
                     break;
                 }
@@ -2099,9 +2117,12 @@ impl Client {
         Ok(res)
     }
 
-    pub fn contacts_search_determinate(&self, c_type: u8, pattern: &str) -> ClientResult<Vec<ContactsView>> {
+    pub fn contacts_search_determinate(
+        &self,
+        c_type: u8,
+        pattern: &str,
+    ) -> ClientResult<Vec<ContactsView>> {
         let tree = Self::open_contact_tree(self.db())?;
-
 
         let tag_prefix = format!("TAG-");
         let itr = tree.scan_prefix(tag_prefix);
@@ -2140,11 +2161,15 @@ impl Client {
             }
         }
 
-        let res: Vec<_> = data.into_iter().filter_map(|(id, view)| {
-            (view.to_lowercase().contains(&(pattern.trim().to_lowercase()))
-            && pattern.trim().len() != 0)
-                .then_some(id)
-        })
+        let res: Vec<_> = data
+            .into_iter()
+            .filter_map(|(id, view)| {
+                (view
+                    .to_lowercase()
+                    .contains(&(pattern.trim().to_lowercase()))
+                    && pattern.trim().len() != 0)
+                    .then_some(id)
+            })
             .collect();
 
         Ok(res)
@@ -2556,6 +2581,31 @@ impl Client {
         Self::group_members_get(self.db(), g_id, page_no, page_size)
     }
 
+    pub fn leave_group(&self, gid: u64) -> ClientResult<()> {
+        let ty = Self::get_contacts_type(self.db(), gid);
+        if ! matches!(ty, Some(ContactsTypes::Group)) {
+            // 考虑是否返回错误
+            return Ok(())
+        }
+
+        let id = self.get_local_id().expect("get local id failed")
+            .expect("local id is null in leave_group");
+
+        let _ = self.send_msg(gid,message_to(
+            Message::ContactsExchange {
+                exchange: ContactsEvent::Leave {
+                    id,
+                }
+            }
+        ).unwrap())
+            .expect("send leave msg failed");
+
+        let _ = Self::remove_contacts(self.db(), gid)?;
+        let _ = Self::remove_session(self.db(), gid);
+
+        Ok(())
+    }
+
     /// run
     async fn run(
         db: Arc<Db>,
@@ -2622,7 +2672,7 @@ impl Client {
                                     } else {
                                         ContactsTypes::Group
                                     };
-                                    let have_time = Self::get_contacts_have_time(db_t.clone(), to);
+                                    // let have_time = Self::get_contacts_have_time(db_t.clone(), to);
                                     Contacts {
                                         did: to,
                                         r#type: c_type,
@@ -2644,8 +2694,13 @@ impl Client {
                     let data = event.encode().unwrap();
                     let client_t = client_t.clone();
                     tokio::spawn(async move {
+                        let d_size = data.len();
                         if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
                             tracing::error!("pub contacts sync status >>> {e:?}");
+                        }
+                        else{
+                            tracing::warn!("pub contacts sync status >>> {sync:?}",);
+
                         }
                     });
                 }
@@ -2654,7 +2709,7 @@ impl Client {
 
                     let tag_prefix = format!("TAG-");
                     let itr = tree.scan_prefix(tag_prefix);
-                    let contacts = itr
+                    let mut contacts = itr
                         .map(|item| {
                             let (k, _v) = item.unwrap();
                             // let tag = String::from_utf8(v.to_vec()).unwrap();
@@ -2677,22 +2732,34 @@ impl Client {
                             }
                         })
                         .collect::<Vec<_>>();
-
-                    let sync = Message::ContactsSync {
-                        did: my_id,
-                        contacts,
-                    };
-                    let event = Event::new(0, &sync, None, my_id);
-                    let data = event.encode().unwrap();
+                    contacts.retain(|c| c.did != my_id); 
                     let client_t = client_t.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = client_t
-                            .chat_request(bytes::Bytes::from(data.clone()))
-                            .await
-                        {
-                            tracing::error!("pub contacts sync status >>> {e:?}");
-                        }
-                    });
+                    if !contacts.is_empty() {
+                        let sync = Message::ContactsSync {
+                            did: my_id,
+                            contacts,
+                        };
+                        let event = Event::new(0, &sync, None, my_id);
+                        let data = event.encode().unwrap();
+
+                        tokio::spawn(async move {
+                            let d_size = data.len();
+                            if let Err(e) = client_t
+                                .chat_request(bytes::Bytes::from(data.clone()))
+                                .await
+                            {
+                                tracing::error!("pub contacts sync status >>> {e:?}");
+                            }
+                            else{
+                                tracing::warn!("pub contacts sync status >>> {d_size}");
+                                if count == 0 {
+                                    tracing::warn!("pub contacts sync status >>> {sync:?}");
+    
+                                }
+    
+                            }
+                        });
+                    }
                 }
 
                 count += 1;
@@ -2907,7 +2974,7 @@ impl Client {
                                         msg,
                                         ..
                                     } = im;
-
+                                    error!("decode {crc}");
                                     if to == my_id && nonce.is_none() {
                                         if let Ok(m) = Message::decrypt(
                                             bytes::Bytes::from(msg.clone()),
@@ -3034,15 +3101,15 @@ impl Client {
                                     let client_t = client_t.clone();
                                     let idx = idx.clone();
                                     let schema_tt = schema_tt.clone();
-                                    {
-                                        let mut f_crc = fetching_crc.write();
-                                        if !f_crc.insert(crc) {
-                                            tracing::warn!("request has pushing record: {crc}, f> {from_id}, t> {to}");
-                                            return;
-                                        }
-                                    }
                                     let fetching_crc_t = fetching_crc.clone();
                                     tokio::spawn(async move {
+                                        {
+                                            let mut f_crc = fetching_crc_t.write();
+                                            if !f_crc.insert(crc) {
+                                                tracing::warn!("request has pushing record: {crc}, f> {from_id}, t> {to}");
+                                                return;
+                                            }
+                                        }
                                         if !Self::have_in_tree(db_t.clone(), crc, &table) {
                                             Self::process_event(
                                                 db_t, cb, client_t, idx, schema_tt, &data, my_id,
@@ -3054,7 +3121,12 @@ impl Client {
                                             f_crc.remove(&crc);
                                         }
                                     });
+                                    error!("finish {crc}");
                                 }
+                                else{
+                                    panic!("decode failed");
+                                }
+                                error!("finish");
                             }
                             luffa_node::ChatEvent::OutboundFailure {
                                 peer,
@@ -3105,6 +3177,7 @@ impl Client {
                         );
                     }
                 }
+                // tracing::warn!("");
             }
         });
 
@@ -3546,15 +3619,19 @@ impl Client {
                 status: luffa_rpc_types::FeedbackStatus::Reach,
             };
             let event = luffa_rpc_types::Event::new(0, &feed, None, my_id);
-            tracing::info!("send feedback reach to relay");
+            tracing::warn!("send feedback reach to relay {crc}");
             let event = event.encode().unwrap();
-            if let Err(e) = client_t.chat_request(bytes::Bytes::from(event)).await {
-                error!("{e:?}");
-            }
-
+            let client_tt = client_t.clone();
+            tokio::spawn(async move {
+                if let Err(e) = client_tt.chat_request(bytes::Bytes::from(event)).await {
+                    error!("{e:?}");
+                }
+            });
+            
             let did = if to == my_id { from_id } else { to };
-
+            
             if nonce.is_none() {
+                tracing::warn!("nonce is none>> {crc}");
                 tokio::spawn(async move {
                     cb.on_message(crc, from_id, to, event_time, msg);
                 });
@@ -3575,7 +3652,7 @@ impl Client {
                     ) {
                         // TODO: did is me or I'm a member any local group
                         let msg_data = serde_cbor::to_vec(&msg).unwrap();
-                        tracing::info!("from relay request e2e crc:[{crc}] msg>>>>{msg:?}");
+                        tracing::warn!("from relay request e2e crc:[{crc}] msg>>>>{msg:?}");
                         let mut will_save = false;
                         match msg {
                             Message::Chat { content } => {
@@ -3720,7 +3797,6 @@ impl Client {
                                 will_save = true;
                                 match exchange {
                                     ContactsEvent::Answer { token, offer_crc } => {
-                                        tracing::warn!("G> Answer>>>>>{token:?}");
                                         if offer_crc > 0 {
                                             Self::update_offer_status(
                                                 db_t.clone(),
@@ -3728,7 +3804,7 @@ impl Client {
                                                 OfferStatus::Answer,
                                             );
                                         }
-
+                                        
                                         let comment = token.comment.clone();
                                         let secret_key = token.secret_key.clone();
                                         let contacts_type = token.contacts_type.clone();
@@ -3742,52 +3818,60 @@ impl Client {
                                             db_t.clone(),
                                         )
                                         .await;
+                                        tracing::warn!("G> Answer>>>>>{did}");
 
                                         let contacts = vec![Contacts {
                                             did: did,
                                             r#type: ContactsTypes::Group,
                                         }];
-                            
+
                                         let sync = Message::ContactsSync {
                                             did: my_id,
                                             contacts,
                                         };
-                            
-                                        let event = Event::new(did, &sync, Some(secret_key.clone()), my_id);
+
+                                        let event =
+                                            Event::new(did, &sync, Some(secret_key.clone()), my_id);
                                         let data = event.encode().unwrap();
-                                        if let Err(e) = client_t.chat_request(bytes::Bytes::from(data))
-                                        .await
-                                        {
-                                            error!("sync contacts {did} {e:?}");
-                                        }
-                                        let group_nickname = Self::get_group_member_nickname(
-                                            db_t.clone(),
-                                            did,
-                                            my_id,
-                                        )
-                                        .unwrap();
-                                        if contacts_type == ContactsTypes::Group {
-                                            let join = luffa_rpc_types::Message::ContactsExchange {
-                                                exchange: ContactsEvent::Join {
-                                                    offer_crc,
-                                                    group_nickname,
-                                                },
-                                            };
-                                            let event = luffa_rpc_types::Event::new(
-                                                did,
-                                                &join,
-                                                Some(secret_key),
-                                                my_id,
-                                            );
-                                            let event = event.encode().unwrap();
-                                            tracing::info!("send join to group {did}");
-                                            if let Err(e) = client_t
-                                                .chat_request(bytes::Bytes::from(event))
-                                                .await
+                                        let client_tt = client_t.clone();
+                                        let db_tt = db_t.clone();
+                                        tokio::spawn(async move {
+
+                                            if let Err(e) =
+                                                client_tt.chat_request(bytes::Bytes::from(data)).await
                                             {
-                                                error!("SendJoin2 {did} {e:?}");
+                                                error!("sync contacts {did} {e:?}");
                                             }
-                                        }
+                                            let group_nickname = Self::get_group_member_nickname(
+                                                db_tt.clone(),
+                                                did,
+                                                my_id,
+                                            )
+                                            .unwrap();
+                                            if contacts_type == ContactsTypes::Group {
+                                                let join = luffa_rpc_types::Message::ContactsExchange {
+                                                    exchange: ContactsEvent::Join {
+                                                        offer_crc,
+                                                        group_nickname,
+                                                    },
+                                                };
+                                                let event = luffa_rpc_types::Event::new(
+                                                    did,
+                                                    &join,
+                                                    Some(secret_key),
+                                                    my_id,
+                                                );
+                                                let event = event.encode().unwrap();
+                                                // sleep(Duration::from_secs(3));
+                                                tracing::warn!("send join to group {did}");
+                                                if let Err(e) = client_tt
+                                                    .chat_request(bytes::Bytes::from(event))
+                                                    .await
+                                                {
+                                                    error!("SendJoin2 {did} {e:?}");
+                                                }
+                                            }
+                                        });
                                         Self::update_session(
                                             db_t.clone(),
                                             did,
@@ -3894,7 +3978,36 @@ impl Client {
                                         offer_crc,
                                         group_nickname,
                                     } => {
-                                        error!("ContactsEvent::Join1: {offer_crc} {group_nickname} {did} {from_id}");
+                                        error!("ContactsEvent::Join1: crc {crc} ,{offer_crc} {group_nickname} {did} {from_id}");
+                                        Self::group_member_insert(db_t.clone(), did, vec![from_id])
+                                            .unwrap();
+                                        Self::set_group_member_nickname(
+                                            db_t.clone(),
+                                            did,
+                                            from_id,
+                                            &group_nickname,
+                                        )
+                                        .unwrap();
+                                        let secret_key = Self::get_key(db_t.clone(), &format!("SKEY-{}", did)).unwrap();
+                                        Self::group_sync(
+                                            db_t.clone(),
+                                            client_t.clone(),
+                                            secret_key,
+                                            did,
+                                            my_id,
+                                            offer_crc,
+                                        )
+                                        .await;
+                                    }
+                                    ContactsEvent::Leave {id} => {
+                                        Self::group_member_remove(db_t.clone(), did, id).expect("remove group member failed");
+                                    }
+
+                                    ContactsEvent::Sync {
+                                        offer_crc,
+                                        group_nickname,
+                                    } => {
+                                        error!("ContactsEvent::Sync1: {offer_crc} {group_nickname} {did} {from_id}");
                                         Self::group_member_insert(db_t.clone(), did, vec![from_id])
                                             .unwrap();
                                         Self::set_group_member_nickname(
@@ -3907,7 +4020,9 @@ impl Client {
                                     }
                                 }
                             }
-                            _ => {}
+                            _ => {
+                                error!("ContactsEvent::Unknown:{crc}");
+                            }
                         }
                         if will_save {
                             let table = format!("message_{did}");
@@ -3927,19 +4042,22 @@ impl Client {
                             let event = luffa_rpc_types::Event::new(did, &feed, Some(key), my_id);
                             tracing::error!("send feedback reach to {from_id}");
                             let event = event.encode().unwrap();
-                            if let Err(e) = client_t.chat_request(bytes::Bytes::from(event)).await {
-                                error!("{e:?}");
-                            }
+                            let client_tt =client_t.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = client_tt.chat_request(bytes::Bytes::from(event)).await {
+                                    error!("{e:?}");
+                                }
+                            });
                         }
                         tokio::spawn(async move {
                             cb.on_message(crc, from_id, to, event_time, msg_data);
                         });
                     } else {
-                        eprintln!("decrypt failes!!! {:?}", nonce);
+                        error!("decrypt failed!!! {crc} {:?}", nonce );
                     }
                 }
                 None => {
-                    tracing::info!("aes not in contacts {did}");
+                    tracing::warn!("aes not in contacts {did}  {crc}");
                     // warn!("Gossipsub> peer_id: {from:?} nonce:{:?}", nonce);
                     if let Some(key) = Self::get_offer_by_offer_id(db_t.clone(), from_id) {
                         tracing::info!("offer is:{}  nonce:{:?} key: {:?}", from_id, nonce, key);
@@ -3956,7 +4074,7 @@ impl Client {
                                 Message::ContactsExchange { exchange } => {
                                     match exchange {
                                         ContactsEvent::Answer { token, offer_crc } => {
-                                            tracing::info!("[P]Answer>>>>>{token:?}");
+                                            tracing::warn!("[P]Answer>>>>>{token:?}");
                                             if offer_crc > 0 {
                                                 Self::update_offer_status(
                                                     db_t.clone(),
@@ -4007,6 +4125,7 @@ impl Client {
                                                     my_id,
                                                 );
                                                 let event = event.encode().unwrap();
+                                                sleep(Duration::from_secs(3));
                                                 tracing::error!("send join to group {did}");
                                                 if let Err(e) = client_t
                                                     .chat_request(bytes::Bytes::from(event))
@@ -4127,6 +4246,40 @@ impl Client {
                                                 &group_nickname,
                                             )
                                             .unwrap();
+
+                                            let secret_key = Self::get_key(db_t.clone(), &format!("SKEY-{}", did)).unwrap();
+                                            Self::group_sync(
+                                                db_t.clone(),
+                                                client_t.clone(),
+                                                secret_key,
+                                                did,
+                                                my_id,
+                                                offer_crc,
+                                            )
+                                                .await;
+
+                                        }
+                                        ContactsEvent::Leave {id} => {
+                                            Self::group_member_remove(db_t.clone(), did, id).expect("remove group member failed");
+                                        }
+                                        ContactsEvent::Sync {
+                                            offer_crc,
+                                            group_nickname,
+                                        } => {
+                                            error!("ContactsEvent::Sync2: {offer_crc} {group_nickname} {did} {from_id}");
+                                            Self::group_member_insert(
+                                                db_t.clone(),
+                                                did,
+                                                vec![from_id],
+                                            )
+                                            .unwrap();
+                                            Self::set_group_member_nickname(
+                                                db_t.clone(),
+                                                did,
+                                                from_id,
+                                                &group_nickname,
+                                            )
+                                            .unwrap();
                                         }
                                     };
                                 }
@@ -4135,21 +4288,21 @@ impl Client {
                                         tracing::warn!("from offer Feedback crc<{crc}> {status:?}");
                                     }
                                     _ => {
-                                        tracing::error!("from offer content {content:?}");
+                                        tracing::error!("from offer content {crc} {content:?}");
                                     }
                                 },
                                 _ => {
-                                    tracing::error!("from offer msg {msg:?}");
+                                    tracing::error!("from offer msg {crc} {msg:?}");
                                 }
                             }
                             tokio::spawn(async move {
                                 cb.on_message(crc, from_id, to, event_time, msg_data);
                             });
                         } else {
-                            tracing::error!("decrypt failed:>>>>");
+                            tracing::error!("offer decrypt failed:>>>> crc: {crc}");
                         }
                     } else {
-                        tracing::error!("invalid msg {im:?}");
+                        tracing::error!("invalid msg crc[{crc}] {im:?}");
                     }
                 }
             }
@@ -4263,8 +4416,8 @@ pub async fn start_node(
 )> {
     config.libp2p.dial_concurrency_factor = 3;
     config.libp2p.max_conns_per_peer = 1;
-    config.libp2p.max_conns_in = 1;
-    config.libp2p.max_conns_out = 1;
+    config.libp2p.max_conns_in = 2;
+    config.libp2p.max_conns_out = 2;
     tracing::info!("node>>>{config:?}");
     let (mut p2p, sender) =
         Node::new(config, keychain, db, Some("Luffa".to_string()), filter).await?;

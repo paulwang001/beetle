@@ -127,7 +127,7 @@ fn main() -> Result<()> {
                             };
                             let msg = message_to(msg).unwrap();
                             let crc = client.send_msg(to_id, msg).unwrap();
-                            tracing::info!("send seccess {crc}");
+                            tracing::warn!("send seccess {crc}");
                         }
                         None => {
                             match scan.as_ref() {
@@ -196,11 +196,11 @@ fn main() -> Result<()> {
                             }
                         }
                         let groups = client.contacts_list(1).unwrap();
-                        if !members.is_empty() && groups.is_empty() {
+                        if !members.is_empty() && groups.len() < 1 {
                             let created = client.contacts_group_create(members, None).is_ok();
                             tracing::warn!("group created:{created}");
                         }
-                        else if !groups.is_empty() {
+                        if !groups.is_empty() {
                             let x:usize = rand::random();
                             let x = x % groups.len();
                             for (i,g) in groups.into_iter().enumerate() {
