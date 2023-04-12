@@ -49,10 +49,10 @@ static ALL_NAMES: Lazy<(Vec<String>, Vec<String>)> = Lazy::new(||{
 
 pub fn generate_nickname(peer_id: &str) -> String {
     let peer_id = my_hash(peer_id.as_bytes());
-    let left = ALL_NAMES.0.len();
-    let right = ALL_NAMES.1.len();
-    let res_name_index = (peer_id as usize).rem(left * right);
-    let left = res_name_index.div(right);
-    let right = res_name_index.rem(right);
+    let adjs = ALL_NAMES.0.len();
+    let vegetables = ALL_NAMES.1.len();
+    let res_name_index = (peer_id as usize).rem(adjs * vegetables);
+    let left = res_name_index.div(vegetables);
+    let right = res_name_index.rem(vegetables);
     format!("{} {}",ALL_NAMES.0.get(left).unwrap(), ALL_NAMES.1.get(right).unwrap() )
 }
