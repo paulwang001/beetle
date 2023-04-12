@@ -126,7 +126,6 @@ pub struct OfferView {
     pub tag: String,
     // pub secret_key: Vec<u8>,
     pub status: OfferStatus,
-    pub role: OfferRole,
     pub event_time: u64,
 }
 
@@ -157,22 +156,6 @@ impl From<u8> for OfferStatus {
             0 => OfferStatus::Offer,
             1 => OfferStatus::Answer,
             _ => OfferStatus::Reject,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum OfferRole {
-    Applicant,
-    Acceptor,
-}
-
-impl From<u8> for OfferRole {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => Self::Applicant,
-            _ => Self::Acceptor,
         }
     }
 }
@@ -496,7 +479,7 @@ impl Client {
     ///Offer contacts
     pub fn contacts_offer(&self, code: &String) -> ClientResult<u64> {
         let mut tmp = code.split('/');
-        let from_tag = tmp.next_back();
+        let _from_tag = tmp.next_back();
         let key = tmp.next_back();
         let uid = tmp.next_back();
         let c_type = match tmp.next_back() {
@@ -556,8 +539,7 @@ impl Client {
             Ok(crc) => {
                 // Self::update_offer_status(self.db(), crc, OfferStatus::Offer);
                 let now = Utc::now().timestamp_millis() as u64;
-                // let acceptor_name = tmp.last().map(String::from).unwrap_or(tag);
-                Self::save_offer_to_tree_for_applicant(
+                Self::save_offer_to_tree(
                     self.db(),
                     to,
                     crc,
@@ -565,7 +547,7 @@ impl Client {
                     secret_key,
                     OfferStatus::Offer,
                     c_type,
-                    from_tag.map(String::from).unwrap_or(tag),
+                    tag,
                     now,
                 );
                 crc
@@ -697,8 +679,12 @@ impl Client {
         let my_id = self.get_local_id()?.unwrap();
 
         let mut member_ids = invitee.clone();
-        member_ids.push(my_id);
-        let members = Self::get_group_members_info(self.db(), g_id, member_ids.clone())?;
+        let invitee_members = Self::get_group_members_info(self.db(), g_id, invitee.clone())?;
+        let group_members = Self::group_members_ids(self.db(), g_id)?;
+        let mut members = Self::get_group_members_info(self.db(), g_id, group_members)?;
+        for invitee_member in invitee_members.iter() {
+            members.push(invitee_member.clone());
+        }
         let msg = {
             let token = ContactsToken::new(
                 &g_key,
@@ -735,7 +721,7 @@ impl Client {
             });
         });
         Self::group_member_insert(self.db(), g_id, member_ids)?;
-        Self::set_group_members_nickname(self.db(), g_id, members)?;
+        Self::set_group_members_nickname(self.db(), g_id, invitee_members)?;
 
         Ok(true)
     }
@@ -1132,7 +1118,6 @@ impl Client {
         let offer_tree = self.db().open_tree(&offer_table)?;
         let mut itr = tree.into_iter();
         let mut remove_keys = vec![];
-        let mut remove_keys_old_offer = vec![];
         while let Some(val) = itr.next_back() {
             let (k, v) = val?;
             let mut key = [0u8; 8];
@@ -1163,38 +1148,19 @@ impl Client {
             if let Ok(Some(tag)) = offer_tree.get(&format!("TAG_{crc}")) {
                 let tag = String::from_utf8(tag.to_vec()).unwrap();
                 let bs_did = bs58::encode(did.to_be_bytes()).into_string();
-                let role = offer_tree.get(&format!("ROLE_{crc}"))
-                    .ok()
-                    .flatten()
-                    .and_then(|v| {
-                        v.get(0).map(|x| x.clone())
-                    })
-                    .unwrap_or(0_u8);
-
                 let view = OfferView {
                     did,
                     bs_did,
                     offer_crc: crc,
                     tag,
                     status,
-                    role: role.into(),
                     event_time: event_meta_at,
                 };
 
                 if let Some((idx, v)) = msgs.iter().enumerate().find(|(_, x)| x.did == did) {
-                    let old = if v.event_time < view.event_time {
-                        let old = msgs.get(idx).unwrap();
-                        let did = old.did;
-                        let crc = old.offer_crc;
-
+                    if v.event_time < view.event_time {
                         msgs[idx] = view;
-
-                        (did, crc)
-                    } else {
-                        (view.did, view.offer_crc)
-                    };
-
-                    remove_keys_old_offer.push(old)
+                    }
                 } else {
                     msgs.push(view);
                 }
@@ -1208,11 +1174,6 @@ impl Client {
         // 删除一个不存在的key
         remove_keys.into_iter().for_each(|x| {
             let _ = tree.remove(x.to_be_bytes());
-        });
-
-        // remove old offer
-        remove_keys_old_offer.into_iter().for_each(|(did, crc)| {
-            let _ = self.remove_offser(did, crc);
         });
 
         Ok(msgs)

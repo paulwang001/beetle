@@ -87,6 +87,18 @@ pub trait GroupMembersDb: Nickname {
         Ok(())
     }
 
+    fn group_members_ids(db: Arc<Db>, group_id: u64) -> ClientResult<Vec<u64>> {
+        let key = Self::group_member_key(group_id);
+        let tree = Self::open_group_member_tree(db.clone())?;
+        if let Some(data) = tree.get(key)? {
+            let members = Members::deserialize(data.as_bytes())?;
+            let members: Vec<u64> = members.members.iter().map(|a| *a).collect();
+            Ok(members)
+        } else {
+            Ok(vec![])
+        }
+    }
+
     fn group_members_get(
         db: Arc<Db>,
         group_id: u64,
