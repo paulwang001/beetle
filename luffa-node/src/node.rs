@@ -1362,6 +1362,62 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 }
                                             });
                                         }
+                                        else{
+                                           
+                                            let g_idx = self.get_contacts_index(to);
+                                            let members = self.contacts.edges(g_idx);
+                                            let targets = members
+                                                .into_iter()
+                                                .map(|m| {
+                                                    if m.source() == g_idx {
+                                                        m.target()
+                                                    } else {
+                                                        m.source()
+                                                    }
+                                                    
+                                                })
+                                                .collect::<Vec<_>>();
+                                            for t in targets {
+                                                let mut did = 0;
+                                                if let Some(to_id) = self.contacts.node_weight(t) {
+                                                    if *to_id == my_id || *to_id == from_id{
+                                                        continue;
+                                                    }
+                                                    did = to_id.clone();
+                                                    let pending = self.pending_routing.entry(*to_id).or_insert(Vec::new());
+                                                    if pending.iter().find(|(x,_)| *x == crc ).is_none() {
+                                                        pending.push((crc,std::time::Instant::now()));
+                                                    }
+                                                    else{
+                                                        continue;
+                                                    }
+                                                    let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(*to_id), status: FeedbackStatus::Notice };
+                                                    let evt = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id);
+                                                    let data = evt.encode()?;
+                                                    self.emit_network_event(NetworkEvent::RequestResponse(
+                                                        ChatEvent::Response { request_id:None, data },
+                                                    ));
+                                                }
+                                                if let Ok(Some(rx)) =
+                                                    self.local_send_if_connected(t,did, data)
+                                                {
+                                                    
+                                                    tokio::spawn(async move {
+                                                        if let Ok(res) = rx.await {
+                                                            if let Ok(Some(cr)) = res {
+                                                                let res = crate::behaviour::chat::Response(cr.data);
+                                                                tracing::warn!("chat group join msg {crc} push to {did} with res >>{res:?}");
+                                                            };
+                                                        }
+                                                    });
+                                                }
+                                                else{
+                                                    tracing::warn!("chat group join msg {crc} can not push to {did}");
+
+                                                }
+                                                
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1459,8 +1515,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                 TopicHash::from_raw(TOPIC_STATUS),
                                                 data.clone(),
                                             ) {
-                                                tracing::error!("STATUS pub>>>:{e:?}");
-                                                self.pub_pending.push_back((data.clone(),Instant::now(),1));
+                                                tracing::warn!("STATUS pub>>>:{e:?}");
                                             }
                                         }
                                     }
