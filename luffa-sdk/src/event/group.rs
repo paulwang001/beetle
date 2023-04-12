@@ -13,12 +13,12 @@ pub trait EventGroup: Nickname {
         secret_key: Vec<u8>,
         did: u64,
         my_id: u64,
-        offer_crc: u64,
     ) {
         let group_nickname = Self::get_group_member_nickname(db_t.clone(), did, my_id).unwrap();
         let join = luffa_rpc_types::Message::ContactsExchange {
             exchange: ContactsEvent::Sync {
-                offer_crc,
+                u_id: my_id,
+                g_id: did,
                 group_nickname,
             },
         };

@@ -2813,7 +2813,7 @@ impl Client {
                                                         | FeedbackStatus::Routing => {
                                                             let to = to_id.unwrap_or_default();
                                                             if to > 0 {
-                                                                tracing::info!("clinet>>>>>on_message send {crc:?} from {from_id} to {to} msg:{msg_t:?}");
+                                                                tracing::warn!("response>>>>>on_message send {crc:?} from {from_id} to {to} msg:{msg_t:?}");
                                                                 let table = format!("message_{to}");
                                                                 for c in crc {
                                                                     Self::save_to_tree_status(
@@ -2824,7 +2824,7 @@ impl Client {
                                                                     );
                                                                 }
                                                             } else {
-                                                                tracing::info!("ccc clinet>>>>>on_message send {crc:?} from {from_id} to {to} msg:{msg_t:?}");
+                                                                tracing::warn!("ccc clinet>>>>>on_message send {crc:?} from {from_id} to {to} msg:{msg_t:?}");
                                                                 will_to_ui = false;
                                                             }
                                                         }
@@ -3231,9 +3231,9 @@ impl Client {
                                     status: FeedbackStatus::Send,
                                 };
                                 let feed = serde_cbor::to_vec(&feed).unwrap();
-                                cb_tt.on_message(req.crc, my_id, to, event_time, feed);
                                 let table = format!("message_{to}");
                                 Self::save_to_tree_status(db_t2.clone(), req.crc, &table, 1);
+                                cb_tt.on_message(req.crc, my_id, to, event_time, feed);
                             }
                             tracing::debug!("{res:?}");
                         }
@@ -3470,16 +3470,16 @@ impl Client {
                         let event_time = req.event_time;
                         let pendings_t = pendings.clone();
                         let cb_t = cb_local.clone();
-                        if req.nonce.is_some() {
-                            let sending = Message::Feedback {
-                                crc: vec![req.crc],
-                                from_id: Some(my_id),
-                                to_id: Some(to),
-                                status: FeedbackStatus::Sending,
-                            };
-                            let sending = serde_cbor::to_vec(&sending).unwrap();
-                            cb_t.on_message(req.crc, my_id, to, event_time, sending);
-                        }
+                        // if req.nonce.is_some() {
+                        //     let sending = Message::Feedback {
+                        //         crc: vec![req.crc],
+                        //         from_id: Some(my_id),
+                        //         to_id: Some(to),
+                        //         status: FeedbackStatus::Sending,
+                        //     };
+                        //     let sending = serde_cbor::to_vec(&sending).unwrap();
+                        //     cb_t.on_message(req.crc, my_id, to, event_time, sending);
+                        // }
                         let db_t2 = db_t.clone();
                         tokio::spawn(async move {
                             let data = req.encode().unwrap();
@@ -3500,7 +3500,6 @@ impl Client {
                                             status: FeedbackStatus::Send,
                                         };
                                         let feed = serde_cbor::to_vec(&feed).unwrap();
-                                        cb_t.on_message(req.crc, my_id, to, event_time, feed);
                                         let table = format!("message_{to}");
                                         Self::save_to_tree_status(
                                             db_t2.clone(),
@@ -3508,6 +3507,7 @@ impl Client {
                                             &table,
                                             1,
                                         );
+                                        cb_t.on_message(req.crc, my_id, to, event_time, feed);
                                     }
                                     tracing::debug!("{res:?}");
                                 }
@@ -3631,7 +3631,8 @@ impl Client {
             let did = if to == my_id { from_id } else { to };
             
             if nonce.is_none() {
-                tracing::warn!("nonce is none>> {crc}");
+                let msg_t = message_from(msg.clone());
+                tracing::warn!("nonce is none>> {crc} msg:{msg_t:?}");
                 tokio::spawn(async move {
                     cb.on_message(crc, from_id, to, event_time, msg);
                 });
@@ -3995,7 +3996,6 @@ impl Client {
                                             secret_key,
                                             did,
                                             my_id,
-                                            offer_crc,
                                         )
                                         .await;
                                     }
@@ -4004,16 +4004,17 @@ impl Client {
                                     }
 
                                     ContactsEvent::Sync {
-                                        offer_crc,
+                                        u_id,
+                                        g_id,
                                         group_nickname,
                                     } => {
-                                        error!("ContactsEvent::Sync1: {offer_crc} {group_nickname} {did} {from_id}");
-                                        Self::group_member_insert(db_t.clone(), did, vec![from_id])
+                                        error!("ContactsEvent::Sync1: {group_nickname} {g_id} {u_id}");
+                                        Self::group_member_insert(db_t.clone(), g_id, vec![u_id])
                                             .unwrap();
                                         Self::set_group_member_nickname(
                                             db_t.clone(),
-                                            did,
-                                            from_id,
+                                            g_id,
+                                            u_id,
                                             &group_nickname,
                                         )
                                         .unwrap();
@@ -4254,7 +4255,6 @@ impl Client {
                                                 secret_key,
                                                 did,
                                                 my_id,
-                                                offer_crc,
                                             )
                                                 .await;
 
@@ -4263,23 +4263,20 @@ impl Client {
                                             Self::group_member_remove(db_t.clone(), did, id).expect("remove group member failed");
                                         }
                                         ContactsEvent::Sync {
-                                            offer_crc,
+                                            u_id,
+                                            g_id,
                                             group_nickname,
                                         } => {
-                                            error!("ContactsEvent::Sync2: {offer_crc} {group_nickname} {did} {from_id}");
-                                            Self::group_member_insert(
-                                                db_t.clone(),
-                                                did,
-                                                vec![from_id],
-                                            )
-                                            .unwrap();
+                                            error!("ContactsEvent::Sync2: {group_nickname} {g_id} {u_id}");
+                                            Self::group_member_insert(db_t.clone(), g_id, vec![u_id])
+                                                .unwrap();
                                             Self::set_group_member_nickname(
                                                 db_t.clone(),
-                                                did,
-                                                from_id,
+                                                g_id,
+                                                u_id,
                                                 &group_nickname,
                                             )
-                                            .unwrap();
+                                                .unwrap();
                                         }
                                     };
                                 }
@@ -4416,8 +4413,8 @@ pub async fn start_node(
 )> {
     config.libp2p.dial_concurrency_factor = 3;
     config.libp2p.max_conns_per_peer = 1;
-    config.libp2p.max_conns_in = 2;
-    config.libp2p.max_conns_out = 2;
+    config.libp2p.max_conns_in = 1;
+    config.libp2p.max_conns_out = 1;
     tracing::info!("node>>>{config:?}");
     let (mut p2p, sender) =
         Node::new(config, keychain, db, Some("Luffa".to_string()), filter).await?;
