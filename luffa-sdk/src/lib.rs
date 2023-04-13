@@ -1097,7 +1097,7 @@ impl Client {
         let res = match message_from(msg) {
             Some(msg) => {
                 match self.send_to(to, msg, 0, None).map_err(|e| {
-                    tracing::warn!("{e:?}");
+                    tracing::error!("{e:?}");
                     ClientError::SendFailed
                 }) {
                     Ok(crc) => crc,
