@@ -3271,9 +3271,10 @@ impl Client {
                         continue;
                     }
                 }
-                if let Some((req, count, time)) = {
+                if let Some((req, count, time,all_size)) = {
                     let mut p = pendings_t.write().await;
-                    tracing::warn!("pending size:{}", p.len());
+                    let all_size = p.len();
+                    tracing::info!("pending size:{}", all_size);
                     let mut req = None;
                     while let Some((r, c, t)) = p.pop_front() {
                         if r.nonce.is_none() && c >= 20 {
@@ -3283,12 +3284,13 @@ impl Client {
                             p.push_back((r, c, t));
                             continue;
                         }
-                        req = Some((r, c, t));
+                        req = Some((r, c, t,all_size));
                         break;
                     }
                     req
                 } {
                     let to = req.to;
+                    tokio::time::sleep(Duration::from_millis(300)).await;
                     let event_time = req.event_time;
                     // let nonce = &req.nonce;
                     let data = req.encode().unwrap();
@@ -3313,8 +3315,10 @@ impl Client {
                         }
                         Err(e) => {
                             tracing::error!("pending chat request failed [{}]: {e:?}", req.crc);
-
-                            tokio::time::sleep(Duration::from_millis(50)).await;
+                            if all_size > 64 && req.nonce.is_none() {
+                                continue;
+                            }
+                            tokio::time::sleep(Duration::from_millis(300)).await;
                             // let status = if count >= 20 {FeedbackStatus::Failed} else {FeedbackStatus::Sending};
                             if req.nonce.is_some() {
                                 let status = FeedbackStatus::Sending;
@@ -3555,17 +3559,18 @@ impl Client {
                         //     cb_t.on_message(req.crc, my_id, to, event_time, sending);
                         // }
                         let db_t2 = db_t.clone();
+                        if let Some(job) = save_job {
+                            if let Err(e) = job.await {
+                                tracing::error!("job>> {e:?}");
+                            }
+                        }
                         tokio::spawn(async move {
                             let data = req.encode().unwrap();
                             tracing::info!("sending: [ {} ] size:{}", req.crc, data.len());
                             match client.chat_request(bytes::Bytes::from(data.clone())).await {
                                 Ok(res) => {
                                     tracing::warn!("send: [ {} ] ", req.crc);
-                                    if let Some(job) = save_job {
-                                        if let Err(e) = job.await {
-                                            tracing::error!("job>> {e:?}");
-                                        }
-                                    }
+                                   
                                     if req.nonce.is_some() {
                                         let feed = Message::Feedback {
                                             crc: vec![req.crc],
@@ -3588,11 +3593,6 @@ impl Client {
                                 Err(e) => {
                                     tracing::error!("chat request failed [{}]: {e:?}", req.crc);
                                     // if req.nonce.is_some() {
-                                    if let Some(job) = save_job {
-                                        if let Err(e) = job.await {
-                                            tracing::error!("job>> {e:?}");
-                                        }
-                                    }
                                     // // tokio::time::sleep(Duration::from_millis(1000)).await;
                                     // if req.nonce.is_some() {
                                     //     let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };

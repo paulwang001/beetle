@@ -438,7 +438,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 tracing::error!("pub chat event is timeout!!!");
                 continue;
             }
-            if t.elapsed().as_millis() < c as u128 * 500 {
+            if t.elapsed().as_millis() < c as u128 * 200 {
                 self.pub_pending.push_back((evt, t,c));
                 continue;
             }
@@ -446,6 +446,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 if let Err(e) = go.publish(TopicHash::from_raw(TOPIC_CHAT), evt.clone()) {
                     tracing::warn!("Message can not pub chat to any relay node [{c}]>>> {e:?}");
                     self.pub_pending.push_back((evt, Instant::now(),c+1));
+                    break;
                 }
             }
         }
