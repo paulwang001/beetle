@@ -2738,6 +2738,18 @@ impl Client {
         let sync_task = tokio::spawn(async move {
             let mut count = 0_u64;
             loop {
+                match client_t.get_peers().await {
+                    Ok(peers)=> {
+                        if peers.is_empty() {
+                            tokio::time::sleep(Duration::from_millis(500)).await;
+                            continue;
+                        }
+                    }
+                    _=>{
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
+                }
                 if count % 6 == 0 {
                     tracing::info!("subscribed all as client,status sync");
                     let msg = luffa_rpc_types::Message::StatusSync {
@@ -3287,6 +3299,20 @@ impl Client {
         let cb_tt = cb_local.clone();
         let client_pending = client.clone();
         let pending_task = tokio::spawn(async move {
+            // let c = client_pending.clone();
+            let client_connected = || async {
+                match client_pending.get_peers().await {
+                    Ok(peers) => {
+                        if peers.is_empty() {
+                            false
+                        } else {
+                            true
+                        }
+                    }
+                    _ => true,
+                }
+            };
+            let mut first = true;
             loop {
                 {
                     let p = pendings_t.read().await;
@@ -3294,6 +3320,18 @@ impl Client {
                         tokio::time::sleep(Duration::from_millis(500)).await;
                         continue;
                     }
+                }
+                if !client_connected().await
+                {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    continue;
+                }
+                if first {
+                    let feed = Message::StatusSync { from_id:my_id,to:0,status:AppStatus::Connected};
+                    let feed = serde_cbor::to_vec(&feed).unwrap();
+                    let now = Utc::now().timestamp_millis() as u64;
+                    cb_tt.on_message(0, my_id, 0, now, feed);
+                    first = false;
                 }
                 if let Some((req, count, time, all_size)) = {
                     let mut p = pendings_t.write().await;
