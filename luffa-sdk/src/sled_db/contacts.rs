@@ -221,7 +221,10 @@ pub trait ContactsDb {
         }
         None
     }
-    fn get_u64_from_tree(tree: &Tree, key: &str) -> Option<u64> {
+    fn get_u64_from_tree<K>(tree: &Tree, key: K) -> Option<u64>
+    where
+        K: AsRef<[u8]>,
+    {
         if let Ok(Some(v)) = tree.get(key) {
             let mut val = [0u8;8];
             val.copy_from_slice(&v);

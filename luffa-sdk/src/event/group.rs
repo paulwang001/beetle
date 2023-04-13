@@ -22,7 +22,7 @@ pub trait EventGroup: GroupMembersDb {
                 group_nickname,
             },
         };
-        let event = luffa_rpc_types::Event::new(did, &join, Some(secret_key), my_id);
+        let event = luffa_rpc_types::Event::new(did, &join, Some(secret_key), my_id,None);
         let event = event.encode().unwrap();
         tracing::error!("send sync to group {did}");
         if let Err(e) = client_t.chat_request(bytes::Bytes::from(event)).await {
@@ -51,7 +51,7 @@ pub trait EventGroup: GroupMembersDb {
                 group_nickname: group_nickname.to_owned(),
             },
         };
-        let event = luffa_rpc_types::Event::new(group_id, &join, Some(secret_key), u_id);
+        let event = luffa_rpc_types::Event::new(group_id, &join, Some(secret_key), u_id,None);
         let event = event.encode().unwrap();
         tracing::error!("send join to group {group_id}");
         if let Err(e) = client_t.chat_request(bytes::Bytes::from(event)).await {

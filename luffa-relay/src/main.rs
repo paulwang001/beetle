@@ -131,7 +131,7 @@ async fn main() -> Result<()> {
                 if let Ok(_) = tokio::time::timeout(Duration::from_secs(10), async {
                     tracing::info!("client publicsh relay.");
                     let msg = luffa_rpc_types::Message::RelayNode { did: my_id };
-                    let event = luffa_rpc_types::Event::new(0, &msg, None, my_id);
+                    let event = luffa_rpc_types::Event::new(0, &msg, None, my_id,None);
                     let event = event.encode().unwrap();
                     if let Err(e) = client_t
                         .gossipsub_publish(TopicHash::from_raw(TOPIC_RELAY), bytes::Bytes::from(event))
@@ -194,16 +194,26 @@ async fn main() -> Result<()> {
                                     let Event {
                                         to,
                                         from_id,
+                                        nonce,
                                         ..
                                     } = im;
+                                    match nonce {
+                                        Some(nc)=>{
+                                            if (nc.len() > 13 &&  nc[31] == u8::MAX) || nc.len() < 32 {
+                                                tracing::info!("request msg:{from_id} -> {to}");
+                                                let notice = notice_queue.clone();
+                                                let mut queue = notice.write().await;
+                                                let (time,count,_) = queue.entry(to).or_insert((get_now(),from_id,0));
+                                                *time = get_now();
+                                                *count += 1;
+                                                tracing::info!("TODO: offline notify");
+                                            }
+                                            
+                                        }
+                                        None=>{
 
-                                    tracing::info!("request msg:{from_id} -> {to}");
-                                    let notice = notice_queue.clone();
-                                    let mut queue = notice.write().await;
-                                    let (time,count,_) = queue.entry(to).or_insert((get_now(),from_id,0));
-                                    *time = get_now();
-                                    *count += 1;
-                                    tracing::info!("TODO: offline notify");
+                                        }
+                                    } 
 
                                 }
                                 _=>{
@@ -327,7 +337,7 @@ async fn main() -> Result<()> {
                         from_id: my_id,
                         status: AppStatus::Connected,
                     };
-                    let event = luffa_rpc_types::Event::new(0, &msg, None, my_id);
+                    let event = luffa_rpc_types::Event::new(0, &msg, None, my_id,None);
                     let event = event.encode().unwrap();
                     let client = client.clone();
                     tokio::spawn(async move{
@@ -354,7 +364,7 @@ async fn main() -> Result<()> {
                         from_id: my_id,
                         status: AppStatus::Disconnected,
                     };
-                    let event = luffa_rpc_types::Event::new(0, &msg, None, my_id);
+                    let event = luffa_rpc_types::Event::new(0, &msg, None, my_id,None);
                     let event = event.encode().unwrap();
                     let client = client.clone();
                     tokio::spawn(async move{

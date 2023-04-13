@@ -290,7 +290,7 @@ fn main() -> Result<()> {
                     code,
                     info,
                 } => {}
-                RtcAction::Push { audio_id, video_id } => {
+                RtcAction::Push { audio_id, video_id,.. } => {
                     tracing::info!("{}-----push-----{}", stream_id, audio_id);
                 }
                 _ => {}

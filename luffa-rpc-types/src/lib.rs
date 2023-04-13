@@ -77,17 +77,33 @@ pub struct Event {
 }
 
 impl Event {
-    pub fn new(to: u64, msg: &Message, key: Option<Vec<u8>>, from_id: u64) -> Self {
+    pub fn new(
+        to: u64,
+        msg: &Message,
+        key: Option<Vec<u8>>,
+        from_id: u64,
+        last_crc: Option<u64>,
+    ) -> Self {
         let event_time = Utc::now().timestamp_millis() as u64;
-        let (msg, nonce) = msg.encrypt(key).unwrap();
-
+        let is_important = msg.is_important();
+        let (msg, mut nonce) = msg.encrypt(key).unwrap();
         let mut digest = crc64fast::Digest::new();
         digest.write(&msg);
         digest.write(&to.to_be_bytes());
         digest.write(&event_time.to_be_bytes());
         digest.write(&from_id.to_be_bytes());
         let crc = digest.sum64();
-        // let msg = Bytes::from(msg);
+        if is_important {
+            nonce.as_mut().map(|nc| {
+                let last = last_crc.unwrap_or(crc).to_be_bytes();
+                nc[12..20].clone_from_slice(&last);
+                let mut digest = crc64fast::Digest::new();
+                digest.write(&last);
+                digest.write(&crc.to_be_bytes());
+                let chat_crc = digest.sum64();
+                nc[20..28].clone_from_slice(&chat_crc.to_be_bytes());
+            });
+        }
         Self {
             to,
             event_time,
@@ -284,16 +300,22 @@ impl Message {
                     tracing::info!("cipher is none");
                     return Err(anyhow::anyhow!("cipher is none"));
                 }
-                tracing::info!("00000000000000");
+
                 let cipher = cipher.unwrap();
                 let digest = Code::Sha2_256.digest(&data);
-                let nonce_data = digest.to_bytes();
+                let mut nonce_data = digest.to_bytes();
+                if self.is_important() {
+                    nonce_data[31] = u8::MAX;
+                }
+                else{
+                    nonce_data[31] = 0;
+                }
                 let nonce = Nonce::from_slice(&nonce_data[0..12]);
                 Ok((
                     cipher
                         .encrypt(nonce, &data[..])
                         .map_err(|e| anyhow::anyhow!("{e:?}"))?,
-                    Some(nonce.to_vec()),
+                    Some(nonce_data),
                 ))
             }
             _ => Ok((
@@ -345,13 +367,29 @@ impl Message {
     pub fn chat_feedback(&self) -> Option<(u64, FeedbackStatus)> {
         match self {
             Self::Chat { content } => match content {
-                ChatContent::Feedback { crc, status } => Some((*crc, *status)),
+                ChatContent::Feedback { crc, status ,..} => Some((*crc, *status)),
                 _ => None,
             },
             _ => None,
         }
     }
-
+    pub fn is_important(&self) -> bool {
+        match self {
+            Message::WebRtc { action, .. } => match action {
+                RtcAction::Push { .. } => true,
+                _ => false,
+            },
+            Message::ContactsExchange { exchange } => match exchange {
+                ContactsEvent::Offer { .. } => true,
+                _ => false,
+            },
+            Message::Chat { content } => match content {
+                ChatContent::Send { .. } => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
     pub fn exchange_key(&self) -> Option<Vec<u8>> {
         match &self {
             Message::ContactsExchange { exchange } => match exchange {
@@ -491,9 +529,18 @@ impl ContactsToken {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ChatContent {
-    Feedback { crc: u64, status: FeedbackStatus },
-    Burn { crc: u64, expires: u64 },
-    Send { data: ContentData },
+    Feedback {
+        crc: u64,
+        last_crc: u64,
+        status: FeedbackStatus,
+    },
+    Burn {
+        crc: u64,
+        expires: u64,
+    },
+    Send {
+        data: ContentData,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

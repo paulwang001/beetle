@@ -1392,12 +1392,23 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     else{
                                                         continue;
                                                     }
-                                                    let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(*to_id), status: FeedbackStatus::Notice };
-                                                    let evt = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id);
-                                                    let data = evt.encode()?;
-                                                    self.emit_network_event(NetworkEvent::RequestResponse(
-                                                        ChatEvent::Response { request_id:None, data },
-                                                    ));
+                                                    match nonce.as_ref() {
+                                                        Some(nc)=>{
+                                                            if (nc.len() > 13 &&  &nc[31] == &u8::MAX) || nc.len() < 32 {
+                                                                let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(*to_id), status: FeedbackStatus::Notice };
+                                                                let evt = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id,None);
+                                                                let data = evt.encode()?;
+                                                                self.emit_network_event(NetworkEvent::RequestResponse(
+                                                                    ChatEvent::Response { request_id:None, data },
+                                                                ));
+                                                            }
+                                                            
+                                                        }
+                                                        None=>{
+                
+                                                        }
+                                                    } 
+                                                    
                                                 }
                                                 if let Ok(Some(rx)) =
                                                     self.local_send_if_connected(t,did, data)
@@ -1655,12 +1666,23 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                             }
 
                                             // contact is private
-                                            let notice = Message::Feedback {crc:vec![crc],from_id:None, to_id: Some(to), status: FeedbackStatus::Notice };
-                                            let evt = luffa_rpc_types::Event::new(to,&notice,None,from_id);
-                                            let data = evt.encode()?;
-                                            self.emit_network_event(NetworkEvent::RequestResponse(
-                                                ChatEvent::Response { request_id:Some(request_id), data },
-                                            ));
+                                            
+                                            match nonce.as_ref() {
+                                                Some(nc)=>{
+                                                    if (nc.len() > 13 &&  &nc[31] == &u8::MAX) || nc.len() < 32 {
+                                                        let notice = Message::Feedback {crc:vec![crc],from_id:None, to_id: Some(to), status: FeedbackStatus::Notice };
+                                                        let evt = luffa_rpc_types::Event::new(to,&notice,None,from_id,None);
+                                                        let data = evt.encode()?;
+                                                        self.emit_network_event(NetworkEvent::RequestResponse(
+                                                            ChatEvent::Response { request_id:Some(request_id), data },
+                                                        ));
+                                                    }
+                                                    
+                                                }
+                                                None=>{
+        
+                                                }
+                                            } 
                                             let pending = self.pending_routing.entry(to).or_insert(Vec::new());
                                             if pending.iter().find(|(x,_)| *x == crc ).is_none() {
                                                 pending.push((crc,std::time::Instant::now()));
@@ -1737,7 +1759,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         }
                                                         let status = FeedbackStatus::Routing;
                                                         let msg_t = Message::Feedback {crc:vec![crc],from_id:Some(to),to_id:Some(to),status};
-                                                        let evt = luffa_rpc_types::Event::new(0,&msg_t,None,my_id);
+                                                        let evt = luffa_rpc_types::Event::new(0,&msg_t,None,my_id,None);
                                                         let evt = evt.encode().unwrap();
                                                         if let Err(e) = go.publish(
                                                             TopicHash::from_raw(TOPIC_CHAT),
@@ -1800,12 +1822,23 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     else{
                                                         continue;
                                                     }
-                                                    let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(*to_id), status: FeedbackStatus::Notice };
-                                                    let evt = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id);
-                                                    let data = evt.encode()?;
-                                                    self.emit_network_event(NetworkEvent::RequestResponse(
-                                                        ChatEvent::Response { request_id:Some(request_id), data },
-                                                    ));
+                                                    
+                                                    match nonce.as_ref() {
+                                                        Some(nc)=>{
+                                                            if (nc.len() > 13 &&  &nc[31] == &u8::MAX) || nc.len() < 32 {
+                                                                let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(*to_id), status: FeedbackStatus::Notice };
+                                                                let evt = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id,None);
+                                                                let data = evt.encode()?;
+                                                                self.emit_network_event(NetworkEvent::RequestResponse(
+                                                                    ChatEvent::Response { request_id:None, data },
+                                                                ));
+                                                            }
+                                                            
+                                                        }
+                                                        None=>{
+                
+                                                        }
+                                                    } 
                                                 }
                                                 if let Ok(Some(rx)) =
                                                     self.local_send_if_connected(t,did, request.data())
@@ -1942,12 +1975,21 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         else{
                                                             continue;
                                                         }
-                                                        let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(*to_id), status: FeedbackStatus::Notice };
-                                                        let evt = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id);
-                                                        let data = evt.encode()?;
-                                                        self.emit_network_event(NetworkEvent::RequestResponse(
-                                                            ChatEvent::Response { request_id:Some(request_id), data },
-                                                        ));
+                                                        match nonce.as_ref() {
+                                                            Some(nc)=>{
+                                                                if (nc.len() > 13 &&  &nc[31] == &u8::MAX) || nc.len() < 32 {
+                                                                    let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(*to_id), status: FeedbackStatus::Notice };
+                                                                    let evt = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id,None);
+                                                                    let data = evt.encode()?;
+                                                                    self.emit_network_event(NetworkEvent::RequestResponse(
+                                                                        ChatEvent::Response { request_id:None, data },
+                                                                    ));
+                                                                }
+                                                            }
+                                                            None=>{
+                    
+                                                            }
+                                                        } 
                                                     }
                                                     if let Ok(Some(rx)) =
                                                         self.local_send_if_connected(t,did, request.data())
@@ -1974,7 +2016,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                 };
                                 let feed = Message::Feedback { crc:feed_crc,from_id:Some(from_id),to_id:Some(to),status:feed_status };
                                 {
-                                    let evnt = luffa_rpc_types::Event::new(0,&feed,None,my_id);
+                                    let evnt = luffa_rpc_types::Event::new(0,&feed,None,my_id,None);
                                     let res = evnt.encode().unwrap();
                                     let res = crate::behaviour::chat::Response(res);
                                     let chat = self.swarm.behaviour_mut().chat.as_mut().unwrap();
@@ -2091,7 +2133,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             
             tracing::warn!("routing to> {to_id} crc {crc:?}");
             let msg = Message::Feedback { crc, from_id: None, to_id: Some(to_id), status: luffa_rpc_types::FeedbackStatus::Fetch };
-            let data = luffa_rpc_types::Event::new(to_id, &msg, None, my_id);
+            let data = luffa_rpc_types::Event::new(to_id, &msg, None, my_id,None);
             let data = data.encode().unwrap();
             let (tx, rx) = tokio::sync::oneshot::channel();
             let req_id = chat.send_request(&peer_id, crate::behaviour::chat::Request(data));
@@ -2852,7 +2894,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
     fn local_feedback(&mut self, request_id: Option<RequestId>, msg: Message) {
         match &msg {
             Message::Feedback { from_id, to_id, .. }    =>{
-                let e = luffa_rpc_types::Event::new(to_id.unwrap_or_default(), &msg, None, from_id.unwrap_or_default());
+                let e = luffa_rpc_types::Event::new(to_id.unwrap_or_default(), &msg, None, from_id.unwrap_or_default(),None);
                 let data = e.encode().unwrap();
                 self.emit_network_event(NetworkEvent::RequestResponse(ChatEvent::Response { request_id, data }));
             }
