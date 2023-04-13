@@ -1502,7 +1502,8 @@ impl Client {
         let tree = self.db().open_tree(&table)?;
         let db_t = self.db();
 
-        let event =  tree.get(crc.to_be_bytes())?.and_then(|x| {
+        let event =  tree.get(crc.to_be_bytes())?
+            .and_then(|x| {
             let data = x.to_vec();
             serde_cbor::from_slice::<Event>(&data[..]).ok()
         });
