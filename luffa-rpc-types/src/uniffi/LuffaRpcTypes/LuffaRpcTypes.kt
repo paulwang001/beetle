@@ -40,7 +40,7 @@ open class RustBuffer : Structure() {
 
     companion object {
         internal fun alloc(size: Int = 0) = rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_3570_rustbuffer_alloc(size, status).also {
+            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_3c32_rustbuffer_alloc(size, status).also {
                 if(it.data == null) {
                    throw RuntimeException("RustBuffer.alloc() returned null data pointer (size=${size})")
                }
@@ -48,7 +48,7 @@ open class RustBuffer : Structure() {
         }
 
         internal fun free(buf: RustBuffer.ByValue) = rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_3570_rustbuffer_free(buf, status)
+            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_3c32_rustbuffer_free(buf, status)
         }
     }
 
@@ -257,27 +257,27 @@ internal interface _UniFFILib : Library {
         }
     }
 
-    fun LuffaRpcTypes_3570_message_from(`msg`: RustBuffer.ByValue,
+    fun LuffaRpcTypes_3c32_message_from(`msg`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaRpcTypes_3570_message_to(`msg`: RustBuffer.ByValue,
+    fun LuffaRpcTypes_3c32_message_to(`msg`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_3570_rustbuffer_alloc(`size`: Int,
+    fun ffi_LuffaRpcTypes_3c32_rustbuffer_alloc(`size`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_3570_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,
+    fun ffi_LuffaRpcTypes_3c32_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_3570_rustbuffer_free(`buf`: RustBuffer.ByValue,
+    fun ffi_LuffaRpcTypes_3c32_rustbuffer_free(`buf`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): Unit
 
-    fun ffi_LuffaRpcTypes_3570_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,
+    fun ffi_LuffaRpcTypes_3c32_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
@@ -1097,6 +1097,7 @@ sealed class Message {
         ) : Message()
     data class WebRtc(
         val `streamId`: UInt, 
+        val `actionType`: UByte, 
         val `action`: RtcAction
         ) : Message()
     data class Ping(
@@ -1137,6 +1138,7 @@ public object FfiConverterTypeMessage : FfiConverterRustBuffer<Message>{
                 )
             7 -> Message.WebRtc(
                 FfiConverterUInt.read(buf),
+                FfiConverterUByte.read(buf),
                 FfiConverterTypeRtcAction.read(buf),
                 )
             8 -> Message.Ping(
@@ -1201,6 +1203,7 @@ public object FfiConverterTypeMessage : FfiConverterRustBuffer<Message>{
             (
                 4
                 + FfiConverterUInt.allocationSize(value.`streamId`)
+                + FfiConverterUByte.allocationSize(value.`actionType`)
                 + FfiConverterTypeRtcAction.allocationSize(value.`action`)
             )
         }
@@ -1255,6 +1258,7 @@ public object FfiConverterTypeMessage : FfiConverterRustBuffer<Message>{
             is Message.WebRtc -> {
                 buf.putInt(7)
                 FfiConverterUInt.write(value.`streamId`, buf)
+                FfiConverterUByte.write(value.`actionType`, buf)
                 FfiConverterTypeRtcAction.write(value.`action`, buf)
                 Unit
             }
@@ -1644,7 +1648,7 @@ public object FfiConverterSequenceTypeMember: FfiConverterRustBuffer<List<Member
 fun `messageFrom`(`msg`: List<UByte>): Message? {
     return FfiConverterOptionalTypeMessage.lift(
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaRpcTypes_3570_message_from(FfiConverterSequenceUByte.lower(`msg`), _status)
+    _UniFFILib.INSTANCE.LuffaRpcTypes_3c32_message_from(FfiConverterSequenceUByte.lower(`msg`), _status)
 })
 }
 
@@ -1653,7 +1657,7 @@ fun `messageFrom`(`msg`: List<UByte>): Message? {
 fun `messageTo`(`msg`: Message): List<UByte>? {
     return FfiConverterOptionalSequenceUByte.lift(
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaRpcTypes_3570_message_to(FfiConverterTypeMessage.lower(`msg`), _status)
+    _UniFFILib.INSTANCE.LuffaRpcTypes_3c32_message_to(FfiConverterTypeMessage.lower(`msg`), _status)
 })
 }
 

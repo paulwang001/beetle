@@ -20,7 +20,7 @@ interface Message {
   ContactsSync(u64 did,sequence<Contacts> contacts);
   ContactsExchange(ContactsEvent exchange);
   Chat(ChatContent content);
-  WebRtc(u32 stream_id,RtcAction action);
+  WebRtc(u32 stream_id, u8 action_type,RtcAction action);
   Ping(u64 relay_id, u64 ttl_ms);
 };
 
