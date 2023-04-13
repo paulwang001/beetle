@@ -1,16 +1,20 @@
-use crate::ClientError::CustomError;
-use bytecheck::CheckBytes;
 use image::EncodableLayout;
+use luffa_rpc_types::Member;
 use serde::{Deserialize, Serialize};
 use sled::{Db, Tree};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-use crate::sled_db::contacts::ContactsDb;
 use crate::sled_db::nickname::Nickname;
 use crate::ClientResult;
 
 pub const KVDB_GROUP_MEMBERS_TREE: &str = "luffa_group_members";
+
+#[derive(Debug, Default)]
+pub struct GroupiInfo {
+    pub total_count: u64,
+    pub members: Vec<GroupMemberNickname>,
+}
 
 #[derive(Debug)]
 pub struct GroupMemberNickname {
@@ -110,18 +114,20 @@ pub trait GroupMembersDb: Nickname {
         group_id: u64,
         page_no: u64,
         page_size: u64,
-    ) -> ClientResult<Vec<GroupMemberNickname>> {
+    ) -> ClientResult<GroupiInfo> {
         let key = Self::group_member_key(group_id);
         let tree = Self::open_group_member_tree(db.clone())?;
         let mut list = vec![];
         let contact_tree = Self::open_contact_tree(db.clone())?;
+        let mut total_count = 0;
         if let Some(data) = tree.get(key)? {
             let members = Members::deserialize(data.as_bytes())?;
             let members: Vec<u64> = members.members.iter().map(|a| *a).collect();
+            total_count = members.len();
             let left = ((page_no - 1) * page_size) as usize;
             let mut right = (page_size * page_size) as usize;
             if left > members.len() {
-                return Ok(vec![]);
+                return Ok(GroupiInfo::default());
             }
             if right > members.len() {
                 right = members.len();
@@ -147,7 +153,10 @@ pub trait GroupMembersDb: Nickname {
                 });
             }
         };
-        Ok(list)
+        Ok(GroupiInfo {
+            total_count: total_count as u64,
+            members: list,
+        })
     }
 
     fn get_member_count(db: Arc<Db>, group_id: u64) -> ClientResult<u64> {
@@ -238,5 +247,36 @@ pub trait GroupMembersDb: Nickname {
         } else {
             Ok(0)
         }
+    }
+
+    fn get_group_members_info(
+        db: Arc<Db>,
+        group_id: u64,
+        u_ids: Option<Vec<u64>>,
+    ) -> ClientResult<Vec<Member>> {
+        let ids;
+        if let Some(u_ids) = u_ids {
+            ids = u_ids;
+        } else {
+            ids = Self::group_members_ids(db.clone(), group_id)?;
+        }
+        let tree = Self::open_contact_tree(db.clone())?;
+        let mut list = vec![];
+        for u_id in ids {
+            let tag_key = Self::get_group_member_nickname_key(group_id, u_id);
+            let group_nickname = if let Some(data) = tree.get(tag_key.as_bytes())? {
+                let data = data.as_bytes();
+                let nickname = String::from_utf8(data.to_vec())?;
+                nickname
+            } else {
+                let (nickname, _) = Self::get_contacts_nickname(db.clone(), u_id)?.unwrap();
+                nickname
+            };
+            list.push(Member {
+                u_id,
+                group_nickname,
+            })
+        }
+        Ok(list)
     }
 }

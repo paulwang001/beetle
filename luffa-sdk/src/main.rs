@@ -192,7 +192,7 @@ fn main() -> Result<()> {
                                         let msg = message_from(meta.msg).unwrap();
                                         match &msg {
                                             Message::Chat { content } => {}
-                                            Message::WebRtc { stream_id, action } => {}
+                                            Message::WebRtc { stream_id,action_type, action } => {}
                                             Message::ContactsExchange { exchange } => {}
                                             _ => {
                                                 tracing::info!("[{msg_len}] {:?}", msg);
@@ -284,7 +284,7 @@ fn main() -> Result<()> {
             Message::Ping { relay_id, ttl_ms } => {
                 tracing::info!("-----relay------{} ---ttl:{} ms", relay_id, ttl_ms);
             }
-            Message::WebRtc { stream_id, action } => match action {
+            Message::WebRtc { stream_id,action_type, action } => match action {
                 RtcAction::Status {
                     timestamp,
                     code,
