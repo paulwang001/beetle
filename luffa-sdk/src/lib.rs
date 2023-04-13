@@ -26,7 +26,7 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use simsearch::{SearchOptions, SimSearch};
 use sled::Db;
-use sled_db::group_members::Group;
+use sled_db::group_members::GroupiInfo;
 use std::fs::OpenOptions;
 use std::hash::Hash;
 use std::ops::Not;
@@ -70,7 +70,7 @@ mod sled_db;
 
 use crate::config::Config;
 use crate::sled_db::contacts::{ContactsDb, KVDB_CONTACTS_TREE};
-use crate::sled_db::group_members::{GroupMemberNickname, GroupMembersDb, Members};
+use crate::sled_db::group_members::{GroupMemberNickname, GroupMembersDb};
 use crate::sled_db::mnemonic::Mnemonic;
 use crate::sled_db::nickname::Nickname;
 use crate::sled_db::session::SessionDb;
@@ -1563,7 +1563,8 @@ impl Client {
                         let (mut from_tag, _) =
                             Self::get_contacts_tag(db_t.clone(), from_id).unwrap_or_default();
                         if session_type == 1 {
-                            from_tag = Self::get_group_member_nickname(db_t.clone(), to, from_id).unwrap_or_default();
+                            from_tag = Self::get_group_member_nickname(db_t.clone(), to, from_id)
+                                .unwrap_or_default();
                         }
                         match message_to(msg) {
                             Some(msg) => Some(EventMeta {
@@ -1588,11 +1589,14 @@ impl Client {
                                 let (to_tag, session_type) =
                                     Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
 
-                                let (mut from_tag, _) = Self::get_contacts_tag(db_t.clone(), from_id)
-                                    .unwrap_or_default();
+                                let (mut from_tag, _) =
+                                    Self::get_contacts_tag(db_t.clone(), from_id)
+                                        .unwrap_or_default();
 
                                 if session_type == 1 {
-                                    from_tag = Self::get_group_member_nickname(db_t.clone(), to, from_id).unwrap_or_default();
+                                    from_tag =
+                                        Self::get_group_member_nickname(db_t.clone(), to, from_id)
+                                            .unwrap_or_default();
                                 }
                                 match message_to(msg) {
                                     Some(msg) => Some(EventMeta {
@@ -2668,7 +2672,7 @@ impl Client {
         g_id: u64,
         page_no: u64,
         page_size: u64,
-    ) -> ClientResult<Group> {
+    ) -> ClientResult<GroupiInfo> {
         Self::group_members_get(self.db(), g_id, page_no, page_size)
     }
 
@@ -2865,7 +2869,7 @@ impl Client {
         let db_t = db.clone();
         let idx = idx_writer.clone();
         let idx_t = idx.clone();
-        
+
         let schema_t = schema.clone();
         let schema_tt = schema.clone();
         let cb_local = cb.clone();
@@ -3291,7 +3295,7 @@ impl Client {
                         continue;
                     }
                 }
-                if let Some((req, count, time,all_size)) = {
+                if let Some((req, count, time, all_size)) = {
                     let mut p = pendings_t.write().await;
                     let all_size = p.len();
                     tracing::info!("pending size:{}", all_size);
@@ -3304,7 +3308,7 @@ impl Client {
                             p.push_back((r, c, t));
                             continue;
                         }
-                        req = Some((r, c, t,all_size));
+                        req = Some((r, c, t, all_size));
                         break;
                     }
                     req
@@ -3590,7 +3594,7 @@ impl Client {
                             match client.chat_request(bytes::Bytes::from(data.clone())).await {
                                 Ok(res) => {
                                     tracing::warn!("send: [ {} ] ", req.crc);
-                                   
+
                                     if req.nonce.is_some() {
                                         let feed = Message::Feedback {
                                             crc: vec![req.crc],

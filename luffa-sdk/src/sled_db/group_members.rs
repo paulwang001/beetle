@@ -11,7 +11,7 @@ use crate::ClientResult;
 pub const KVDB_GROUP_MEMBERS_TREE: &str = "luffa_group_members";
 
 #[derive(Debug, Default)]
-pub struct Group {
+pub struct GroupiInfo {
     pub total_count: u64,
     pub members: Vec<GroupMemberNickname>,
 }
@@ -114,7 +114,7 @@ pub trait GroupMembersDb: Nickname {
         group_id: u64,
         page_no: u64,
         page_size: u64,
-    ) -> ClientResult<Group> {
+    ) -> ClientResult<GroupiInfo> {
         let key = Self::group_member_key(group_id);
         let tree = Self::open_group_member_tree(db.clone())?;
         let mut list = vec![];
@@ -127,7 +127,7 @@ pub trait GroupMembersDb: Nickname {
             let left = ((page_no - 1) * page_size) as usize;
             let mut right = (page_size * page_size) as usize;
             if left > members.len() {
-                return Ok(Group::default());
+                return Ok(GroupiInfo::default());
             }
             if right > members.len() {
                 right = members.len();
@@ -153,7 +153,7 @@ pub trait GroupMembersDb: Nickname {
                 });
             }
         };
-        Ok(Group {
+        Ok(GroupiInfo {
             total_count: total_count as u64,
             members: list,
         })
