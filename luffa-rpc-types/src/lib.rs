@@ -194,6 +194,7 @@ impl Message {
 pub enum RtcAction {
     Push {
         audio_id: u32,
+        action_type: u8,
         video_id: u32,
     },
     Pull {

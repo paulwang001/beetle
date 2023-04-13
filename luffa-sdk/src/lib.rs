@@ -26,7 +26,7 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use simsearch::{SearchOptions, SimSearch};
 use sled::Db;
-use sled_db::group_members::GroupiInfo;
+use sled_db::group_members::GroupInfo;
 use std::fs::OpenOptions;
 use std::hash::Hash;
 use std::ops::Not;
@@ -1097,7 +1097,7 @@ impl Client {
         let res = match message_from(msg) {
             Some(msg) => {
                 match self.send_to(to, msg, 0, None).map_err(|e| {
-                    tracing::warn!("{e:?}");
+                    tracing::error!("{e:?}");
                     ClientError::SendFailed
                 }) {
                     Ok(crc) => crc,
@@ -2672,7 +2672,7 @@ impl Client {
         g_id: u64,
         page_no: u64,
         page_size: u64,
-    ) -> ClientResult<GroupiInfo> {
+    ) -> ClientResult<GroupInfo> {
         Self::group_members_get(self.db(), g_id, page_no, page_size)
     }
 

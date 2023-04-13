@@ -63,9 +63,10 @@ pub struct TestArgs {
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Params {
+    pub command: String,
     pub to: Option<u64>,
     pub msg: Option<String>,
-    pub command: Option<String>,
+    pub param: Option<String>,
     pub group_id: Option<u64>,
     pub groups: Option<Vec<u64>>,
 }
@@ -96,19 +97,12 @@ fn main() -> ClientResult<()> {
     std::thread::spawn(move || {
         loop {
             let line = stdin.next().unwrap().unwrap();
-            let line: Vec<&str> = line.split("$").collect();
-            if line.len() < 1 {
-                tracing::error!("command: {:?} error", line);
-                continue;
-            }
-            let command = *line.get(0).unwrap();
-            let mut params = Params::default();
-            if line.len() > 1 {
-                params = serde_json::from_str(*line.get(1).unwrap()).unwrap();
-                // line.get(1).unwrap();
+            if line.is_empty() {
+                continue
             }
             println!("{:?}", line);
-            match command {
+            let params: Params = serde_json::from_str(&line).unwrap_or_default();
+            match params.command.as_str() {
                 // send_msg${ "to": 10871006697545602478, "msg": "test" }
                 "send_msg" => {
                     let msg = Message::Chat {
@@ -140,27 +134,27 @@ fn main() -> ClientResult<()> {
                     let relays = client1.relay_list().unwrap();
                     tracing::error!("relay_list: {relays:?}");
                 }
-                // show_code${ "command": "p" }
+                // { "command": "show_code", "param": "p" }
                 "show_code" => {
                     let show_code = client1
-                        .show_code("https://luffa.putdev.com", &params.command.unwrap())
+                        .show_code("https://luffa.putdev.com", &params.param.unwrap())
                         .unwrap()
                         .unwrap();
                     tracing::error!("show_code: {show_code:?}");
                 }
-                // contacts_offer${ "command": "https://luffa.putdev.com/p/YGz62Wdxqx8/6byPh6MAoAJYPXgZV92DeT3TvspBfLeAyqcUg6XrZ87p/Uncharted Banana pepper"}
+                // { "command": "contacts_offer", "param": "https://luffa.putdev.com/p/YGz62Wdxqx8/H1NojzUMJ3LqhcjXCT11aCpVWjkb1JdfBpZRkAyPpNML/Uncharted Banana pepper"}
                 "contacts_offer" => {
-                    let crc = client1.contacts_offer(&params.command.unwrap()).unwrap();
+                    let crc = client1.contacts_offer(&params.param.unwrap()).unwrap();
                     tracing::error!("contacts_offer: {crc}");
                 }
-                // contacts_anwser${ "to": 13803873857834870216, "command": "10166184139820202798" }
-                // contacts_anwser${ "to": 10871006697545602478, "command": "17159445561836674413" }
-                // contacts_anwser${ "to": 11837182690600253035, "command": "8616568212063218124" }
+                // { "command": "contacts_anwser",  "to": 13803873857834870216, "param": "10166184139820202798" }
+                // { "command": "contacts_anwser", "to": 10871006697545602478, "param": "5047934144353555626" }
+                // { "command": "contacts_anwser",  "to": 11837182690600253035, "param": "10531898908420903627" }
                 "contacts_anwser" => {
                     let id = client1
                         .contacts_anwser(
                             params.to.unwrap(),
-                            params.command.unwrap().parse().unwrap(),
+                            params.param.unwrap().parse().unwrap(),
                         )
                         .unwrap();
                     tracing::error!("contacts_anwser: {id}");
@@ -170,7 +164,7 @@ fn main() -> ClientResult<()> {
                     let data = client1
                         .read_msg_with_meta(
                             params.to.unwrap(),
-                            params.command.unwrap().parse().unwrap(),
+                            params.param.unwrap().parse().unwrap(),
                         )
                         .unwrap()
                         .unwrap();
@@ -179,31 +173,31 @@ fn main() -> ClientResult<()> {
                 // contacts_search1 Empathetic
                 "contacts_search1" => {
                     let contacts = client1
-                        .contacts_search(0, &params.command.unwrap())
+                        .contacts_search(0, &params.param.unwrap())
                         .unwrap();
                     tracing::error!("contacts_search: {contacts:?}");
                 }
                 // contacts_search2${ "command": "group_test" }
                 "contacts_search2" => {
                     let contacts = client1
-                        .contacts_search(2, &params.command.unwrap())
+                        .contacts_search(2, &params.param.unwrap())
                         .unwrap();
                     tracing::error!("contacts_search: {contacts:?}");
                 }
                 // 13685501506277185778 8191288328679216604
-                // group_create${ "groups": [10871006697545602478, 11837182690600253035], "command": "group_test30" }
+                // { "command": "group_create" ,"groups": [10871006697545602478, 11837182690600253035], "param": "group_test31" }
                 "group_create" => {
                     let group_id = client1
-                        .contacts_group_create(params.groups.unwrap(), params.command)
+                        .contacts_group_create(params.groups.unwrap(), params.param)
                         .unwrap();
                     tracing::error!("group_id: {group_id:?}");
                 }
-                // nickname${ "command": "11837182690600253035" }
-                // nickname${ "command": "10871006697545602478" }
-                // nickname${ "command": "13473655988076347637" }
+                // { "command": "nickname" , "param": "11837182690600253035" }
+                // { "command": "nickname" , "param": "10871006697545602478" }
+                // { "command": "nickname" , "param": "13473655988076347637" }
                 "nickname" => {
                     let nickname = client1
-                        .find_contacts_tag(params.command.unwrap().parse().unwrap())
+                        .find_contacts_tag(params.param.unwrap().parse().unwrap())
                         .unwrap();
                     tracing::error!("find_contacts_tag: {nickname:?}");
                 }
@@ -220,18 +214,21 @@ fn main() -> ClientResult<()> {
                 // group_members${ "command": "12243737405236716139" }
                 "group_members" => {
                     let members = client1
-                        .contacts_group_members(params.command.unwrap().parse().unwrap(), 1, 10)
+                        .contacts_group_members(params.param.unwrap().parse().unwrap(), 1, 10)
                         .unwrap();
                     tracing::error!("contacts_group_members: {members:?}");
                 }
-                // groups${}
+                // { "command": "groups" }
                 "groups" => {
                     let members = client1.groups().unwrap();
                     tracing::error!("groups: {members:?}");
                 }
-
-                "" => {
-                    // client1.send_msg(, )
+                // { "command": "send_group", "group_id": 242692364427292578, "msg": "ffsdfsf" }
+                "send_group" => {
+                    let crc = client1
+                        .send_msg(params.group_id.unwrap(), params.msg.unwrap().as_bytes().to_vec())
+                        .unwrap();
+                    tracing::error!("send_group: {crc}")
                 }
                 _ => {}
             }
@@ -245,13 +242,17 @@ fn main() -> ClientResult<()> {
             Message::Ping { relay_id, ttl_ms } => {
                 tracing::info!("-----relay------{} ---ttl:{} ms", relay_id, ttl_ms);
             }
-            Message::WebRtc { stream_id, action_type, action } => match action {
+            Message::WebRtc {
+                stream_id,
+                action_type,
+                action,
+            } => match action {
                 RtcAction::Status {
                     timestamp,
                     code,
                     info,
                 } => {}
-                RtcAction::Push { audio_id, video_id } => {
+                RtcAction::Push { audio_id,action_type, video_id } => {
                     tracing::info!("{}-----push-----{}", stream_id, audio_id);
                 }
                 _ => {}
