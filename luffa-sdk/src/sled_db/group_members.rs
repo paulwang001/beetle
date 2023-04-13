@@ -127,7 +127,7 @@ pub trait GroupMembersDb: Nickname {
             let left = ((page_no - 1) * page_size) as usize;
             let mut right = (page_size * page_size) as usize;
             if left > members.len() {
-                return Ok(GroupInfo::default());
+                return Ok(GroupInfo{total_count:  total_count as u64, members: vec![]});
             }
             if right > members.len() {
                 right = members.len();
