@@ -175,6 +175,18 @@ pub enum Message {
         relay_id: u64,
         ttl_ms: u64,
     },
+    InnerError {
+        /// 1 not found decrypt key
+        /// 2 decrypt message failed
+        kind: u8,
+        reason: String,
+    }
+}
+
+#[repr(u8)]
+pub enum InnerErrorKind {
+    NotFoundSecurityKey = 1,
+    DecryptFailed = 2,
 }
 
 impl Message {

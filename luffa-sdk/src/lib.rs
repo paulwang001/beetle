@@ -5,7 +5,7 @@ use aes_gcm::{
     aead::{KeyInit, OsRng},
     Aes256Gcm, // Or `Aes128Gcm`
 };
-use anyhow::{bail, Context};
+use anyhow::{anyhow, bail, Context};
 use api::P2pClient;
 use event::group::EventGroup;
 use futures::StreamExt;
@@ -15,10 +15,7 @@ use libp2p::{multihash, PeerId};
 use luffa_node::{
     DiskStorage, GossipsubEvent, KeyFilter, Keychain, NetworkEvent, Node, ENV_PREFIX,
 };
-use luffa_rpc_types::{
-    message_from, message_to, ChatContent, Contacts, ContactsTypes, ContentData, FeedbackStatus,
-    RtcAction,
-};
+use luffa_rpc_types::{message_from, message_to, ChatContent, Contacts, ContactsTypes, ContentData, FeedbackStatus, RtcAction, InnerErrorKind};
 use luffa_rpc_types::{AppStatus, ContactsEvent, ContactsToken, Event, Message};
 use luffa_store::{Config as StoreConfig, Store};
 use luffa_util::{luffa_config_path, make_config};
@@ -1504,153 +1501,200 @@ impl Client {
         let table = format!("message_{did}");
         let tree = self.db().open_tree(&table)?;
         let db_t = self.db();
-        let ok = match tree.get(crc.to_be_bytes()) {
-            Ok(v) => {
-                let vv = v.map(|v| {
-                    let data = v.to_vec();
-                    let evt: Event = serde_cbor::from_slice(&data[..]).unwrap();
-                    let Event {
-                        to,
-                        event_time,
-                        crc,
-                        from_id,
-                        nonce,
-                        msg,
-                    } = evt;
-                    let mut key = Self::get_aes_key_from_contacts(db_t.clone(), did);
-                    if key.is_none() {
-                        key = Self::get_offer_by_offer_id(db_t.clone(), from_id);
-                    }
-                    // let now = Utc::now().timestamp_millis() as u64;
-                    if let Ok(msg) =
-                        Message::decrypt(bytes::Bytes::from(msg.clone()), key, nonce.clone())
-                    {
-                        let status = Self::get_crc_tree_status(db_t.clone(), crc, &table) as u32;
-                        // match &msg {
-                        //     Message::Chat { content } => match content {
-                        //         ChatContent::Send { data } => {
-                        //             // let (_title, body) = Self::extra_content(data);
-                        //             if Self::update_session(
-                        //                 db_t.clone(),
-                        //                 did,
-                        //                 None,
-                        //                 Some(crc),
-                        //                 None,
-                        //                 None,
-                        //                 Some(status as u8),
-                        //                 now,
-                        //             ) {
-                        //                 let msg = Message::Chat {
-                        //                     content: ChatContent::Feedback {
-                        //                         crc,
-                        //                         status: luffa_rpc_types::FeedbackStatus::Read,
-                        //                     },
-                        //                 };
-                        //                 if let Some(msg) = message_to(msg) {
-                        //                     if self.send_msg(did, msg).unwrap() == 0 {
-                        //                         tracing::error!("send read feedback failed");
-                        //                     }
-                        //                 }
-                        //                 // tracing::error!("send read feedback to {did}");
-                        //             }
-                        //         }
-                        //         _ => {
-                        //             tracing::warn!(
-                        //                 "read No send message crc> {} did:{did} ,content:{:?}",
-                        //                 crc,
-                        //                 content
-                        //             );
-                        //             return None;
-                        //         }
-                        //     },
-                        //     _ => {
-                        //         tracing::warn!(
-                        //             "read No chat message crc> {} did:{did} ,msg :{:?}",
-                        //             crc,
-                        //             msg
-                        //         );
-                        //     }
-                        // }
 
-                        let (to_tag, session_type) =
-                            Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
-                        let (mut from_tag, _) =
-                            Self::get_contacts_tag(db_t.clone(), from_id).unwrap_or_default();
-                        if session_type == 1 {
-                            from_tag = Self::get_group_member_nickname(db_t.clone(), to, from_id)
-                                .unwrap_or_default();
-                        }
-                        match message_to(msg) {
-                            Some(msg) => Some(EventMeta {
-                                from_id,
-                                to_id: to,
-                                session_type,
-                                from_tag,
-                                to_tag,
-                                event_time,
-                                status,
-                                msg,
-                            }),
-                            None => None,
-                        }
-                    } else {
-                        if let Some(key) = Self::get_offer_by_offer_id(db_t.clone(), from_id) {
-                            if let Ok(msg) =
-                                Message::decrypt(bytes::Bytes::from(msg), Some(key), nonce)
-                            {
-                                let status =
-                                    Self::get_crc_tree_status(db_t.clone(), crc, &table) as u32;
-                                let (to_tag, session_type) =
-                                    Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
+        let event =  tree.get(crc.to_be_bytes())?.and_then(|x| {
+            let data = x.to_vec();
+            serde_cbor::from_slice::<Event>(&data[..]).ok()
+        });
 
-                                let (mut from_tag, _) =
-                                    Self::get_contacts_tag(db_t.clone(), from_id)
-                                        .unwrap_or_default();
+        let event = match event {
+            Some(e) => e,
+            None => return Ok(None)
+        };
 
-                                if session_type == 1 {
-                                    from_tag =
-                                        Self::get_group_member_nickname(db_t.clone(), to, from_id)
-                                            .unwrap_or_default();
-                                }
-                                match message_to(msg) {
-                                    Some(msg) => Some(EventMeta {
-                                        from_id,
-                                        to_id: to,
-                                        session_type,
-                                        from_tag,
-                                        to_tag,
-                                        event_time,
-                                        status,
-                                        msg,
-                                    }),
-                                    None => {
-                                        error!("read msg 0: decrypt failed>>>");
-                                        None
-                                    }
-                                }
-                            } else {
-                                error!("read msg 1: decrypt failed>>>");
-                                None
-                            }
-                        } else {
-                            error!("read msg 2: decrypt failed>>>");
-                            None
-                        }
-                    }
-                });
+        let Event {
+            to,
+            event_time,
+            crc,
+            from_id,
+            nonce,
+            msg,
+        } = event;
 
-                let vv = vv.unwrap_or_default();
-                if vv.is_none() {
-                    warn!("can not found crc {crc} in did {did}");
-                }
-                vv
-            }
-            Err(e) => {
-                error!("get crc from kv:{crc} in did {did} {e:?}");
-                None
+        let err_event = |kind: InnerErrorKind, reason: &str| {
+            EventMeta {
+                from_id: event.from_id,
+                to_id: to,
+                session_type: Default::default(),
+                from_tag: Default::default(),
+                to_tag : Default::default(),
+                event_time,
+                status : Default::default(),
+                msg: message_to(Message::InnerError {
+                    kind: kind as u8,
+                    reason: String::from(reason),
+                }).unwrap(),
             }
         };
-        Ok(ok)
+
+        let key = match
+        Self::get_aes_key_from_contacts(db_t.clone(), did)
+            .or_else(|| {
+                Self::get_offer_by_offer_id(db_t.clone(), from_id)
+            }) {
+            Some(x) => x,
+            None => return Ok(Some(err_event(InnerErrorKind::NotFoundSecurityKey, "not found decrypt key")))
+        };
+
+
+        let msg = match
+        Message::decrypt(bytes::Bytes::from(msg.clone()), key.into(), nonce.clone())
+            .or_else(|e| {
+                error!("decrypt message failed1 {did} {crc} {}", e);
+                let key = match
+                Self::get_offer_by_offer_id(db_t.clone(), from_id)
+                {
+                    Some(x) => x,
+                    None => bail!("key not found in offer key")
+                };
+
+                Message::decrypt(bytes::Bytes::from(msg.clone()), key.into(), nonce.clone())
+            })
+            .map(|x| {
+                message_to(x).expect("serialize message failed")
+            })
+         {
+            Ok(x) => x,
+            Err(e) => {
+                error!("decrypt message failed2 {did} {crc} {}", e);
+                return Ok(Some(err_event(InnerErrorKind::DecryptFailed, "decrypt message failed")))
+            }
+        };
+
+
+        let status = Self::get_crc_tree_status(db_t.clone(), crc, &table) as u32;
+        let (to_tag, session_type) =
+            Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
+        let (mut from_tag, _) =
+            Self::get_contacts_tag(db_t.clone(), from_id).unwrap_or_default();
+        if session_type == 1 {
+            from_tag = Self::get_group_member_nickname(db_t.clone(), to, from_id)
+                .unwrap_or_default();
+        }
+
+        Ok(Some(EventMeta {
+            from_id,
+            to_id: to,
+            session_type,
+            from_tag,
+            to_tag,
+            event_time,
+            status,
+            msg,
+        }))
+
+
+        // let ok = match tree.get(crc.to_be_bytes()) {
+        //     Ok(v) => {
+        //         let vv = v.map(|v| {
+        //             let data = v.to_vec();
+        //             let evt: Event = serde_cbor::from_slice(&data[..]).unwrap();
+        //             let Event {
+        //                 to,
+        //                 event_time,
+        //                 crc,
+        //                 from_id,
+        //                 nonce,
+        //                 msg,
+        //             } = evt;
+        //             let mut key = Self::get_aes_key_from_contacts(db_t.clone(), did);
+        //             if key.is_none() {
+        //                 key = Self::get_offer_by_offer_id(db_t.clone(), from_id);
+        //             }
+        //             // let now = Utc::now().timestamp_millis() as u64;
+        //             if let Ok(msg) =
+        //                 Message::decrypt(bytes::Bytes::from(msg.clone()), key, nonce.clone())
+        //             {
+        //                 let status = Self::get_crc_tree_status(db_t.clone(), crc, &table) as u32;
+        //                 let (to_tag, session_type) =
+        //                     Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
+        //                 let (mut from_tag, _) =
+        //                     Self::get_contacts_tag(db_t.clone(), from_id).unwrap_or_default();
+        //                 if session_type == 1 {
+        //                     from_tag = Self::get_group_member_nickname(db_t.clone(), to, from_id)
+        //                         .unwrap_or_default();
+        //                 }
+        //                 match message_to(msg) {
+        //                     Some(msg) => Some(EventMeta {
+        //                         from_id,
+        //                         to_id: to,
+        //                         session_type,
+        //                         from_tag,
+        //                         to_tag,
+        //                         event_time,
+        //                         status,
+        //                         msg,
+        //                     }),
+        //                     None => None,
+        //                 }
+        //             } else {
+        //                 if let Some(key) = Self::get_offer_by_offer_id(db_t.clone(), from_id) {
+        //                     if let Ok(msg) =
+        //                         Message::decrypt(bytes::Bytes::from(msg), Some(key), nonce)
+        //                     {
+        //                         let status =
+        //                             Self::get_crc_tree_status(db_t.clone(), crc, &table) as u32;
+        //                         let (to_tag, session_type) =
+        //                             Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
+        //
+        //                         let (mut from_tag, _) =
+        //                             Self::get_contacts_tag(db_t.clone(), from_id)
+        //                                 .unwrap_or_default();
+        //
+        //                         if session_type == 1 {
+        //                             from_tag =
+        //                                 Self::get_group_member_nickname(db_t.clone(), to, from_id)
+        //                                     .unwrap_or_default();
+        //                         }
+        //                         match message_to(msg) {
+        //                             Some(msg) => Some(EventMeta {
+        //                                 from_id,
+        //                                 to_id: to,
+        //                                 session_type,
+        //                                 from_tag,
+        //                                 to_tag,
+        //                                 event_time,
+        //                                 status,
+        //                                 msg,
+        //                             }),
+        //                             None => {
+        //                                 error!("read msg 0: decrypt failed>>>");
+        //                                 None
+        //                             }
+        //                         }
+        //                     } else {
+        //                         error!("read msg 1: decrypt failed>>>");
+        //                         None
+        //                     }
+        //                 } else {
+        //                     error!("read msg 2: decrypt failed>>>");
+        //                     None
+        //                 }
+        //             }
+        //         });
+        //
+        //         let vv = vv.unwrap_or_default();
+        //         if vv.is_none() {
+        //             warn!("can not found crc {crc} in did {did}");
+        //         }
+        //         vv
+        //     }
+        //     Err(e) => {
+        //         error!("get crc from kv:{crc} in did {did} {e:?}");
+        //         None
+        //     }
+        // };
+        // Ok(ok)
     }
 
     pub fn last_chat_msg_with_meta(&self, did: u64) -> ClientResult<Option<EventMeta>> {
