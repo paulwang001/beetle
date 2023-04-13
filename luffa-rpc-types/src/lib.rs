@@ -168,6 +168,7 @@ pub enum Message {
     },
     WebRtc {
         stream_id: u32,
+        action_type: u8,
         action: RtcAction,
     },
     Ping {
