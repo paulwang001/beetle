@@ -1,23 +1,19 @@
 use std::io::{BufReader, Cursor};
+use std::ops::Rem;
 use calamine::{Reader, Xlsx,open_workbook};
 use once_cell::sync::Lazy;
 use crate::avatar_nickname::hash::my_hash;
+use std::ops::Div;
 
-static EXCEL_BYTES: Lazy<&[u8]> = Lazy::new(||{
-    include_bytes!("../../names.xlsx")
-});
-
-pub fn generate_nickname(peer_id: &str) -> String {
-    let cursor = Cursor::new(EXCEL_BYTES.clone());
-    let peer_id = my_hash(peer_id.as_bytes());
+static ALL_NAMES: Lazy<(Vec<String>, Vec<String>)> = Lazy::new(||{
+    let data = include_bytes!("../../names.xlsx");
+    let cursor = Cursor::new(data);
     let reader = BufReader::new(cursor);
     let mut excel: Xlsx<_> =Reader::new(reader).unwrap();
 
 
     let mut adjs: Vec<String> =  Vec::new();
     let mut vegetables: Vec<String> =  Vec::new();
-
-    let mut all_names: Vec<String> =  Vec::new();
 
     let adj_sheet_name = "adj";
     let vegetable_sheet_name = "vegetable";
@@ -35,11 +31,9 @@ pub fn generate_nickname(peer_id: &str) -> String {
                     calamine::DataType::String(s) => {
                         if sheet_name.contains(adj_sheet_name){
                             adjs.push(s.to_string());
-
                         }
                         if sheet_name.contains(vegetable_sheet_name){
                             vegetables.push(s.to_string());
-
                         }
                         // print!("{} ", s)
                     },
@@ -50,15 +44,15 @@ pub fn generate_nickname(peer_id: &str) -> String {
         }
 
     }
+    (adjs, vegetables)
+});
 
-    for adj in &adjs{
-        for vetetable in &vegetables{
-            let name  = format!("{} {}",adj,vetetable);
-            // println!("name is {}",name);
-            all_names.push(name);
-        }
-    }
-
-    let res_name_index = peer_id % all_names.len() as u64;
-    all_names[res_name_index as usize].clone()
+pub fn generate_nickname(peer_id: &str) -> String {
+    let peer_id = my_hash(peer_id.as_bytes());
+    let adjs = ALL_NAMES.0.len();
+    let vegetables = ALL_NAMES.1.len();
+    let res_name_index = (peer_id as usize).rem(adjs * vegetables);
+    let left = res_name_index.div(vegetables);
+    let right = res_name_index.rem(vegetables);
+    format!("{} {}",ALL_NAMES.0.get(left).unwrap(), ALL_NAMES.1.get(right).unwrap() )
 }

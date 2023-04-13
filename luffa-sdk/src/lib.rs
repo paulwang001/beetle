@@ -134,6 +134,7 @@ pub struct OfferView {
 pub struct EventMeta {
     pub from_id: u64,
     pub to_id: u64,
+    pub session_type: u8,
     pub from_tag: String,
     pub to_tag: String,
     pub event_time: u64,
@@ -679,6 +680,7 @@ impl Client {
         Self::group_member_insert(self.db(), g_id, member_ids)?;
         Self::set_is_group_manager(self.db(), g_id, my_id)?;
         Self::set_group_members_nickname(self.db(), g_id, members)?;
+        Self::set_member_to_join_status(self.db(), g_id, my_id)?;
         Ok(g_id)
     }
 
@@ -1167,12 +1169,11 @@ impl Client {
             if let Ok(Some(tag)) = offer_tree.get(&format!("TAG_{crc}")) {
                 let tag = String::from_utf8(tag.to_vec()).unwrap();
                 let bs_did = bs58::encode(did.to_be_bytes()).into_string();
-                let role = offer_tree.get(&format!("ROLE_{crc}"))
+                let role = offer_tree
+                    .get(&format!("ROLE_{crc}"))
                     .ok()
                     .flatten()
-                    .and_then(|v| {
-                        v.get(0).map(|x| x.clone())
-                    })
+                    .and_then(|v| v.get(0).map(|x| x.clone()))
                     .unwrap_or(0_u8);
 
                 let view = OfferView {
@@ -1239,11 +1240,18 @@ impl Client {
             msg,
             ..
         } = evt;
-        let (to_tag, _) = Self::get_contacts_tag(self.db(), to).unwrap_or_default();
-        let (from_tag, _) = Self::get_contacts_tag(self.db(), from_id).unwrap_or_default();
+        let (to_tag, session_type) = Self::get_contacts_tag(self.db(), to).unwrap_or_default();
+        let from_tag;
+        if session_type == 1 {
+            from_tag = Self::get_group_member_nickname(self.db(), to, from_id).unwrap_or_default();
+        } else {
+            (from_tag, _) = Self::get_contacts_tag(self.db(), from_id).unwrap_or_default();
+        }
+
         Ok(EventMeta {
             from_id,
             to_id: to,
+            session_type,
             from_tag,
             to_tag,
             event_time,
@@ -1548,7 +1556,7 @@ impl Client {
                         //     }
                         // }
 
-                        let (to_tag, _) =
+                        let (to_tag, session_type) =
                             Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
                         let (from_tag, _) =
                             Self::get_contacts_tag(db_t.clone(), from_id).unwrap_or_default();
@@ -1556,6 +1564,7 @@ impl Client {
                             Some(msg) => Some(EventMeta {
                                 from_id,
                                 to_id: to,
+                                session_type,
                                 from_tag,
                                 to_tag,
                                 event_time,
@@ -1571,7 +1580,7 @@ impl Client {
                             {
                                 let status =
                                     Self::get_crc_tree_status(db_t.clone(), crc, &table) as u32;
-                                let (to_tag, _) =
+                                let (to_tag, session_type) =
                                     Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
                                 let (from_tag, _) = Self::get_contacts_tag(db_t.clone(), from_id)
                                     .unwrap_or_default();
@@ -1579,6 +1588,7 @@ impl Client {
                                     Some(msg) => Some(EventMeta {
                                         from_id,
                                         to_id: to,
+                                        session_type,
                                         from_tag,
                                         to_tag,
                                         event_time,
@@ -3773,7 +3783,9 @@ impl Client {
                                                         );
                                                         (t, body)
                                                     }
-                                                    luffa_rpc_types::DataSource::Text { content } => {
+                                                    luffa_rpc_types::DataSource::Text {
+                                                        content,
+                                                    } => {
                                                         let t = format!("");
 
                                                         (t, content)
@@ -3826,14 +3838,14 @@ impl Client {
                                             let fld_body = schema.get_field("body").unwrap();
                                             let fld_type = schema.get_field("msg_type").unwrap();
                                             let doc = doc!(
-                                            fld_crc => crc,
-                                            fld_from => from_id,
-                                            fld_to => to,
-                                            fld_time => event_time,
-                                            fld_type => msg_type,
-                                            fld_title => title,
-                                            fld_body => body,
-                                        );
+                                                fld_crc => crc,
+                                                fld_from => from_id,
+                                                fld_to => to,
+                                                fld_time => event_time,
+                                                fld_type => msg_type,
+                                                fld_title => title,
+                                                fld_body => body,
+                                            );
                                             let mut wr = idx.write();
                                             wr.add_document(doc).unwrap();
                                             wr.commit().unwrap();
@@ -3841,7 +3853,12 @@ impl Client {
                                         ChatContent::Feedback { crc, status } => match status {
                                             FeedbackStatus::Reach => {
                                                 let table = format!("message_{did}");
-                                                Self::save_to_tree_status(db_t.clone(), crc, &table, 4);
+                                                Self::save_to_tree_status(
+                                                    db_t.clone(),
+                                                    crc,
+                                                    &table,
+                                                    4,
+                                                );
                                                 Self::update_session(
                                                     db_t.clone(),
                                                     did,
@@ -3855,7 +3872,12 @@ impl Client {
                                             }
                                             FeedbackStatus::Read => {
                                                 let table = format!("message_{did}");
-                                                Self::save_to_tree_status(db_t.clone(), crc, &table, 5);
+                                                Self::save_to_tree_status(
+                                                    db_t.clone(),
+                                                    crc,
+                                                    &table,
+                                                    5,
+                                                );
                                                 Self::update_session(
                                                     db_t.clone(),
                                                     did,
@@ -3902,7 +3924,7 @@ impl Client {
                                                 token,
                                                 db_t.clone(),
                                             )
-                                                .await;
+                                            .await;
 
                                             if members.len() > 0 {
                                                 let member_ids: Vec<u64> =
@@ -3912,13 +3934,13 @@ impl Client {
                                                     did,
                                                     member_ids,
                                                 )
-                                                    .unwrap();
+                                                .unwrap();
                                                 Self::set_group_members_nickname(
                                                     db_t.clone(),
                                                     did,
                                                     members,
                                                 )
-                                                    .unwrap();
+                                                .unwrap();
                                             }
                                             tracing::warn!("G> Answer>>>>>{did}");
 
@@ -3932,8 +3954,12 @@ impl Client {
                                                 contacts,
                                             };
 
-                                            let event =
-                                                Event::new(did, &sync, Some(secret_key.clone()), my_id);
+                                            let event = Event::new(
+                                                did,
+                                                &sync,
+                                                Some(secret_key.clone()),
+                                                my_id,
+                                            );
                                             let data = event.encode().unwrap();
                                             let client_tt = client_t.clone();
                                             let db_tt = db_t.clone();
@@ -3952,7 +3978,7 @@ impl Client {
                                                     my_id,
                                                     offer_crc,
                                                 )
-                                                    .await;
+                                                .await;
                                             });
                                             Self::update_session(
                                                 db_t.clone(),
@@ -3976,8 +4002,8 @@ impl Client {
                                                 comment,
                                                 ..
                                             } = token;
-                                            let pk =
-                                                PublicKey::from_protobuf_encoding(&public_key).unwrap();
+                                            let pk = PublicKey::from_protobuf_encoding(&public_key)
+                                                .unwrap();
                                             let peer = PeerId::from_public_key(&pk);
                                             let mut digest = crc64fast::Digest::new();
                                             digest.write(&peer.to_bytes());
@@ -4031,7 +4057,8 @@ impl Client {
                                                 let feed = luffa_rpc_types::Message::Chat {
                                                     content: ChatContent::Feedback {
                                                         crc,
-                                                        status: luffa_rpc_types::FeedbackStatus::Reach,
+                                                        status:
+                                                            luffa_rpc_types::FeedbackStatus::Reach,
                                                     },
                                                 };
                                                 let event = luffa_rpc_types::Event::new(
@@ -4067,10 +4094,12 @@ impl Client {
                                                 from_id,
                                                 &group_nickname,
                                             )
-                                                .await;
-                                            let secret_key =
-                                                Self::get_key(db_t.clone(), &format!("SKEY-{}", did))
-                                                    .unwrap();
+                                            .await;
+                                            let secret_key = Self::get_key(
+                                                db_t.clone(),
+                                                &format!("SKEY-{}", did),
+                                            )
+                                            .unwrap();
                                             Self::group_sync(
                                                 db_t.clone(),
                                                 client_t.clone(),
@@ -4078,7 +4107,7 @@ impl Client {
                                                 did,
                                                 my_id,
                                             )
-                                                .await;
+                                            .await;
                                         }
                                         ContactsEvent::Leave { id } => {
                                             Self::group_member_remove(db_t.clone(), did, id)
@@ -4099,7 +4128,7 @@ impl Client {
                                                 u_id,
                                                 &group_nickname,
                                             )
-                                                .await;
+                                            .await;
                                         }
                                     }
                                 }
@@ -4122,7 +4151,8 @@ impl Client {
                                         status: luffa_rpc_types::FeedbackStatus::Reach,
                                     },
                                 };
-                                let event = luffa_rpc_types::Event::new(did, &feed, Some(key), my_id);
+                                let event =
+                                    luffa_rpc_types::Event::new(did, &feed, Some(key), my_id);
                                 tracing::error!("send feedback reach to {from_id}");
                                 let event = event.encode().unwrap();
                                 let client_tt = client_t.clone();
@@ -4147,7 +4177,12 @@ impl Client {
                         tracing::warn!("aes not in contacts {did}  {crc}");
                         // warn!("Gossipsub> peer_id: {from:?} nonce:{:?}", nonce);
                         if let Some(key) = Self::get_offer_by_offer_id(db_t.clone(), from_id) {
-                            tracing::info!("offer is:{}  nonce:{:?} key: {:?}", from_id, nonce, key);
+                            tracing::info!(
+                                "offer is:{}  nonce:{:?} key: {:?}",
+                                from_id,
+                                nonce,
+                                key
+                            );
                             if let Ok(msg) = luffa_rpc_types::Message::decrypt(
                                 bytes::Bytes::from(msg),
                                 Some(key.clone()),
@@ -4184,7 +4219,7 @@ impl Client {
                                                     token.clone(),
                                                     db_t.clone(),
                                                 )
-                                                    .await;
+                                                .await;
                                                 let table = format!("message_{did}");
                                                 Self::save_to_tree(
                                                     db_t.clone(),
@@ -4195,20 +4230,22 @@ impl Client {
                                                 );
                                                 if token.contacts_type == ContactsTypes::Group {
                                                     if members.len() > 0 {
-                                                        let member_ids: Vec<u64> =
-                                                            members.iter().map(|a| a.u_id).collect();
+                                                        let member_ids: Vec<u64> = members
+                                                            .iter()
+                                                            .map(|a| a.u_id)
+                                                            .collect();
                                                         Self::group_member_insert(
                                                             db_t.clone(),
                                                             did,
                                                             member_ids,
                                                         )
-                                                            .unwrap();
+                                                        .unwrap();
                                                         Self::set_group_members_nickname(
                                                             db_t.clone(),
                                                             did,
                                                             members,
                                                         )
-                                                            .unwrap();
+                                                        .unwrap();
                                                     }
                                                     Self::send_group_join(
                                                         db_t.clone(),
@@ -4218,7 +4255,7 @@ impl Client {
                                                         my_id,
                                                         offer_crc,
                                                     )
-                                                        .await;
+                                                    .await;
                                                 }
                                                 Self::update_session(
                                                     db_t.clone(),
@@ -4241,20 +4278,22 @@ impl Client {
                                                     ..
                                                 } = token;
                                                 if contacts_type == ContactsTypes::Group {
-                                                    let group_keypair = format!("GROUPKEYPAIR-{}", to);
+                                                    let group_keypair =
+                                                        format!("GROUPKEYPAIR-{}", to);
                                                     let group_keypair =
                                                         Self::get_key(db_t.clone(), &group_keypair);
                                                     if group_keypair.is_none() {
                                                         tracing::warn!(
-                                                        "group offer ---> not admin,skip"
-                                                    );
+                                                            "group offer ---> not admin,skip"
+                                                        );
 
                                                         println!("group offer ---> not admin,skip");
                                                         return;
                                                     }
                                                 }
-                                                let pk = PublicKey::from_protobuf_encoding(&public_key)
-                                                    .unwrap();
+                                                let pk =
+                                                    PublicKey::from_protobuf_encoding(&public_key)
+                                                        .unwrap();
                                                 let peer = PeerId::from_public_key(&pk);
                                                 let mut digest = crc64fast::Digest::new();
                                                 digest.write(&peer.to_bytes());
@@ -4326,12 +4365,12 @@ impl Client {
                                                     from_id,
                                                     &group_nickname,
                                                 )
-                                                    .await;
+                                                .await;
                                                 let secret_key = Self::get_key(
                                                     db_t.clone(),
                                                     &format!("SKEY-{}", did),
                                                 )
-                                                    .unwrap();
+                                                .unwrap();
                                                 Self::group_sync(
                                                     db_t.clone(),
                                                     client_t.clone(),
@@ -4339,7 +4378,7 @@ impl Client {
                                                     did,
                                                     my_id,
                                                 )
-                                                    .await;
+                                                .await;
                                             }
                                             ContactsEvent::Leave { id } => {
                                                 Self::group_member_remove(db_t.clone(), did, id)
@@ -4357,13 +4396,15 @@ impl Client {
                                                     u_id,
                                                     &group_nickname,
                                                 )
-                                                    .await;
+                                                .await;
                                             }
                                         };
                                     }
                                     Message::Chat { content } => match content {
                                         ChatContent::Feedback { crc, status } => {
-                                            tracing::warn!("from offer Feedback crc<{crc}> {status:?}");
+                                            tracing::warn!(
+                                                "from offer Feedback crc<{crc}> {status:?}"
+                                            );
                                         }
                                         _ => {
                                             tracing::error!("from offer content {crc} {content:?}");
@@ -4386,7 +4427,6 @@ impl Client {
                         }
                     }
                 }
-
             }
 
             // match Self::get_aes_key_from_contacts(db_t.clone(), did) {

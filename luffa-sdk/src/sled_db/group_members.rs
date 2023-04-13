@@ -16,6 +16,8 @@ pub const KVDB_GROUP_MEMBERS_TREE: &str = "luffa_group_members";
 pub struct GroupMemberNickname {
     pub u_id: u64,
     pub nickname: String,
+    /// 1: join 0: not join
+    pub status: u8,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -58,6 +60,10 @@ pub trait GroupMembersDb: Nickname {
 
     fn group_manager_key(group_id: u64) -> String {
         format!("manager-{}", group_id)
+    }
+
+    fn group_join_status_key(group_id: u64, u_id: u64) -> String {
+        format!("MEMBER_STATUS-{group_id}-{u_id}")
     }
 
     fn group_member_insert(db: Arc<Db>, group_id: u64, member_ids: Vec<u64>) -> ClientResult<()> {
@@ -108,7 +114,7 @@ pub trait GroupMembersDb: Nickname {
         let key = Self::group_member_key(group_id);
         let tree = Self::open_group_member_tree(db.clone())?;
         let mut list = vec![];
-        let contact_tree = Self::open_contact_tree(db)?;
+        let contact_tree = Self::open_contact_tree(db.clone())?;
         if let Some(data) = tree.get(key)? {
             let members = Members::deserialize(data.as_bytes())?;
             let members: Vec<u64> = members.members.iter().map(|a| *a).collect();
@@ -133,9 +139,11 @@ pub trait GroupMembersDb: Nickname {
                         nickname = String::from_utf8(data)?;
                     }
                 }
+                let status = Self::get_member_to_join_status(db.clone(), group_id, *member)?;
                 list.push(GroupMemberNickname {
                     u_id: *member,
                     nickname,
+                    status,
                 });
             }
         };
@@ -208,5 +216,27 @@ pub trait GroupMembersDb: Nickname {
         let _ = tree.remove(key)?;
 
         Ok(())
+    }
+
+    // 1: join
+    fn set_member_to_join_status(db: Arc<Db>, group_id: u64, u_id: u64) -> ClientResult<()> {
+        let key = Self::group_join_status_key(group_id, u_id);
+        let tree = Self::open_group_member_tree(db)?;
+        tree.insert(key, "1")?;
+        tree.flush()?;
+        Ok(())
+    }
+
+    // 1: join
+    fn get_member_to_join_status(db: Arc<Db>, group_id: u64, u_id: u64) -> ClientResult<u8> {
+        let key = Self::group_join_status_key(group_id, u_id);
+        let tree = Self::open_group_member_tree(db)?;
+        if let Some(data) = tree.get(key)? {
+            let data = String::from_utf8(data.to_vec())?;
+            let data: u8 = data.parse()?;
+            Ok(data)
+        } else {
+            Ok(0)
+        }
     }
 }

@@ -19,13 +19,13 @@ fileprivate extension RustBuffer {
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
-        try! rustCall { ffi_LuffaSDK_a691_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
+        try! rustCall { ffi_LuffaSDK_c080_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
     // Frees the buffer in place.
     // The buffer must not be used after this is called.
     func deallocate() {
-        try! rustCall { ffi_LuffaSDK_a691_rustbuffer_free(self, $0) }
+        try! rustCall { ffi_LuffaSDK_c080_rustbuffer_free(self, $0) }
     }
 }
 
@@ -446,12 +446,12 @@ public class Client: ClientProtocol {
     
     rustCall() {
     
-    LuffaSDK_a691_Client_new($0)
+    LuffaSDK_c080_Client_new($0)
 })
     }
 
     deinit {
-        try! rustCall { ffi_LuffaSDK_a691_Client_object_free(pointer, $0) }
+        try! rustCall { ffi_LuffaSDK_c080_Client_object_free(pointer, $0) }
     }
 
     
@@ -461,7 +461,7 @@ public class Client: ClientProtocol {
         return try FfiConverterOptionString.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_get_current_user(self.pointer, $0
+    LuffaSDK_c080_Client_get_current_user(self.pointer, $0
     )
 }
         )
@@ -470,7 +470,7 @@ public class Client: ClientProtocol {
         return try FfiConverterOptionString.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_share(self.pointer, 
+    LuffaSDK_c080_Client_share(self.pointer, 
         FfiConverterString.lower(`domainName`), 
         FfiConverterString.lower(`linkType`), $0
     )
@@ -481,7 +481,7 @@ public class Client: ClientProtocol {
         return try FfiConverterOptionString.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_show_code(self.pointer, 
+    LuffaSDK_c080_Client_show_code(self.pointer, 
         FfiConverterString.lower(`domainName`), 
         FfiConverterString.lower(`linkType`), $0
     )
@@ -492,7 +492,7 @@ public class Client: ClientProtocol {
         return try FfiConverterUInt64.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_contacts_offer(self.pointer, 
+    LuffaSDK_c080_Client_contacts_offer(self.pointer, 
         FfiConverterString.lower(`code`), $0
     )
 }
@@ -502,7 +502,7 @@ public class Client: ClientProtocol {
         return try FfiConverterString.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_gen_offer_code(self.pointer, 
+    LuffaSDK_c080_Client_gen_offer_code(self.pointer, 
         FfiConverterUInt64.lower(`did`), $0
     )
 }
@@ -512,7 +512,7 @@ public class Client: ClientProtocol {
         return try FfiConverterUInt64.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_contacts_group_create(self.pointer, 
+    LuffaSDK_c080_Client_contacts_group_create(self.pointer, 
         FfiConverterSequenceUInt64.lower(`invitee`), 
         FfiConverterOptionString.lower(`tag`), $0
     )
@@ -523,7 +523,7 @@ public class Client: ClientProtocol {
         return try FfiConverterBool.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_contacts_group_invite_member(self.pointer, 
+    LuffaSDK_c080_Client_contacts_group_invite_member(self.pointer, 
         FfiConverterUInt64.lower(`gId`), 
         FfiConverterSequenceUInt64.lower(`invitee`), $0
     )
@@ -534,7 +534,7 @@ public class Client: ClientProtocol {
         return try FfiConverterSequenceTypeGroupMemberNickname.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_contacts_group_members(self.pointer, 
+    LuffaSDK_c080_Client_contacts_group_members(self.pointer, 
         FfiConverterUInt64.lower(`gId`), 
         FfiConverterUInt64.lower(`pageNo`), 
         FfiConverterUInt64.lower(`pageSize`), $0
@@ -546,7 +546,7 @@ public class Client: ClientProtocol {
         return try FfiConverterUInt64.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_contacts_anwser(self.pointer, 
+    LuffaSDK_c080_Client_contacts_anwser(self.pointer, 
         FfiConverterUInt64.lower(`did`), 
         FfiConverterUInt64.lower(`crc`), $0
     )
@@ -557,7 +557,7 @@ public class Client: ClientProtocol {
         return try FfiConverterUInt64.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_contacts_reject(self.pointer, 
+    LuffaSDK_c080_Client_contacts_reject(self.pointer, 
         FfiConverterUInt64.lower(`did`), 
         FfiConverterUInt64.lower(`crc`), $0
     )
@@ -568,7 +568,7 @@ public class Client: ClientProtocol {
         return try FfiConverterUInt64.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_send_msg(self.pointer, 
+    LuffaSDK_c080_Client_send_msg(self.pointer, 
         FfiConverterUInt64.lower(`to`), 
         FfiConverterSequenceUInt8.lower(`msg`), $0
     )
@@ -579,7 +579,7 @@ public class Client: ClientProtocol {
         return try FfiConverterOptionUInt64.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_get_local_id(self.pointer, $0
+    LuffaSDK_c080_Client_get_local_id(self.pointer, $0
     )
 }
         )
@@ -588,7 +588,7 @@ public class Client: ClientProtocol {
         return try FfiConverterOptionString.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_get_peer_id(self.pointer, $0
+    LuffaSDK_c080_Client_get_peer_id(self.pointer, $0
     )
 }
         )
@@ -597,7 +597,7 @@ public class Client: ClientProtocol {
         return try FfiConverterOptionString.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_get_did(self.pointer, $0
+    LuffaSDK_c080_Client_get_did(self.pointer, $0
     )
 }
         )
@@ -606,7 +606,7 @@ public class Client: ClientProtocol {
         return try FfiConverterSequenceString.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_relay_list(self.pointer, $0
+    LuffaSDK_c080_Client_relay_list(self.pointer, $0
     )
 }
         )
@@ -615,7 +615,7 @@ public class Client: ClientProtocol {
         return try FfiConverterSequenceString.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_keys(self.pointer, $0
+    LuffaSDK_c080_Client_keys(self.pointer, $0
     )
 }
         )
@@ -624,7 +624,7 @@ public class Client: ClientProtocol {
         return try FfiConverterBool.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_connect(self.pointer, 
+    LuffaSDK_c080_Client_connect(self.pointer, 
         FfiConverterString.lower(`peerId`), $0
     )
 }
@@ -634,7 +634,7 @@ public class Client: ClientProtocol {
         return try FfiConverterBool.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_disconnect(self.pointer, $0
+    LuffaSDK_c080_Client_disconnect(self.pointer, $0
     )
 }
         )
@@ -642,7 +642,7 @@ public class Client: ClientProtocol {
     public func `init`(`cfgPath`: String?) throws {
         try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_init(self.pointer, 
+    LuffaSDK_c080_Client_init(self.pointer, 
         FfiConverterOptionString.lower(`cfgPath`), $0
     )
 }
@@ -650,7 +650,7 @@ public class Client: ClientProtocol {
     public func `initWithEnvName`(`name`: String, `timeoutMs`: UInt64, `alwaysFetchFile`: Bool, `fetchFailedRet`: Bool) throws {
         try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_init_with_env_name(self.pointer, 
+    LuffaSDK_c080_Client_init_with_env_name(self.pointer, 
         FfiConverterString.lower(`name`), 
         FfiConverterUInt64.lower(`timeoutMs`), 
         FfiConverterBool.lower(`alwaysFetchFile`), 
@@ -662,7 +662,7 @@ public class Client: ClientProtocol {
         return try FfiConverterUInt64.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_start(self.pointer, 
+    LuffaSDK_c080_Client_start(self.pointer, 
         FfiConverterOptionString.lower(`key`), 
         FfiConverterOptionString.lower(`tag`), 
         FfiConverterCallbackInterfaceCallback.lower(`cb`), $0
@@ -673,14 +673,14 @@ public class Client: ClientProtocol {
     public func `stop`() throws {
         try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_stop(self.pointer, $0
+    LuffaSDK_c080_Client_stop(self.pointer, $0
     )
 }
     }
     public func `saveSession`(`did`: UInt64, `tag`: String, `read`: UInt64?, `reach`: UInt64?, `msg`: String?) throws {
         try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_save_session(self.pointer, 
+    LuffaSDK_c080_Client_save_session(self.pointer, 
         FfiConverterUInt64.lower(`did`), 
         FfiConverterString.lower(`tag`), 
         FfiConverterOptionUInt64.lower(`read`), 
@@ -693,7 +693,7 @@ public class Client: ClientProtocol {
         return try FfiConverterSequenceTypeChatSession.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_session_list(self.pointer, 
+    LuffaSDK_c080_Client_session_list(self.pointer, 
         FfiConverterUInt32.lower(`top`), $0
     )
 }
@@ -703,7 +703,7 @@ public class Client: ClientProtocol {
         return try FfiConverterSequenceTypeChatSession.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_session_page(self.pointer, 
+    LuffaSDK_c080_Client_session_page(self.pointer, 
         FfiConverterUInt32.lower(`page`), 
         FfiConverterUInt32.lower(`size`), $0
     )
@@ -714,7 +714,7 @@ public class Client: ClientProtocol {
         return try FfiConverterSequenceTypeContactsView.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_contacts_search(self.pointer, 
+    LuffaSDK_c080_Client_contacts_search(self.pointer, 
         FfiConverterUInt8.lower(`cType`), 
         FfiConverterString.lower(`pattern`), $0
     )
@@ -725,7 +725,7 @@ public class Client: ClientProtocol {
         return try FfiConverterSequenceTypeContactsView.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_contacts_search_determinate(self.pointer, 
+    LuffaSDK_c080_Client_contacts_search_determinate(self.pointer, 
         FfiConverterUInt8.lower(`cType`), 
         FfiConverterString.lower(`pattern`), $0
     )
@@ -736,7 +736,7 @@ public class Client: ClientProtocol {
         return try FfiConverterSequenceTypeContactsGroupView.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_groups(self.pointer, $0
+    LuffaSDK_c080_Client_groups(self.pointer, $0
     )
 }
         )
@@ -745,7 +745,7 @@ public class Client: ClientProtocol {
         return try FfiConverterSequenceTypeContactsView.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_contacts_list(self.pointer, 
+    LuffaSDK_c080_Client_contacts_list(self.pointer, 
         FfiConverterUInt8.lower(`cType`), $0
     )
 }
@@ -755,7 +755,7 @@ public class Client: ClientProtocol {
         return try FfiConverterSequenceString.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_search(self.pointer, 
+    LuffaSDK_c080_Client_search(self.pointer, 
         FfiConverterString.lower(`query`), 
         FfiConverterUInt32.lower(`offet`), 
         FfiConverterUInt32.lower(`limit`), $0
@@ -767,7 +767,7 @@ public class Client: ClientProtocol {
         return try FfiConverterSequenceUInt64.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_recent_messages(self.pointer, 
+    LuffaSDK_c080_Client_recent_messages(self.pointer, 
         FfiConverterUInt64.lower(`did`), 
         FfiConverterUInt32.lower(`offset`), 
         FfiConverterUInt32.lower(`limit`), $0
@@ -779,7 +779,7 @@ public class Client: ClientProtocol {
         return try FfiConverterSequenceTypeOfferView.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_recent_offser(self.pointer, 
+    LuffaSDK_c080_Client_recent_offser(self.pointer, 
         FfiConverterUInt32.lower(`top`), $0
     )
 }
@@ -789,7 +789,7 @@ public class Client: ClientProtocol {
         return try FfiConverterOptionString.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_find_contacts_tag(self.pointer, 
+    LuffaSDK_c080_Client_find_contacts_tag(self.pointer, 
         FfiConverterUInt64.lower(`did`), $0
     )
 }
@@ -799,7 +799,7 @@ public class Client: ClientProtocol {
         return try FfiConverterTypeEventMeta.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_meta_msg(self.pointer, 
+    LuffaSDK_c080_Client_meta_msg(self.pointer, 
         FfiConverterSequenceUInt8.lower(`data`), $0
     )
 }
@@ -809,7 +809,7 @@ public class Client: ClientProtocol {
         return try FfiConverterOptionTypeEventMeta.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_read_msg_with_meta(self.pointer, 
+    LuffaSDK_c080_Client_read_msg_with_meta(self.pointer, 
         FfiConverterUInt64.lower(`did`), 
         FfiConverterUInt64.lower(`crc`), $0
     )
@@ -820,7 +820,7 @@ public class Client: ClientProtocol {
         return try FfiConverterOptionTypeEventMeta.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_read_msg_meta_without_chat_session(self.pointer, 
+    LuffaSDK_c080_Client_read_msg_meta_without_chat_session(self.pointer, 
         FfiConverterUInt64.lower(`did`), 
         FfiConverterUInt64.lower(`crc`), $0
     )
@@ -831,7 +831,7 @@ public class Client: ClientProtocol {
         return try FfiConverterOptionTypeEventMeta.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_last_chat_msg_with_meta(self.pointer, 
+    LuffaSDK_c080_Client_last_chat_msg_with_meta(self.pointer, 
         FfiConverterUInt64.lower(`did`), $0
     )
 }
@@ -841,7 +841,7 @@ public class Client: ClientProtocol {
         return try FfiConverterOptionTypeEventMeta.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_last_user_msg_with_meta(self.pointer, 
+    LuffaSDK_c080_Client_last_user_msg_with_meta(self.pointer, 
         FfiConverterUInt64.lower(`did`), $0
     )
 }
@@ -851,7 +851,7 @@ public class Client: ClientProtocol {
         return try FfiConverterOptionString.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_gen_key(self.pointer, 
+    LuffaSDK_c080_Client_gen_key(self.pointer, 
         FfiConverterString.lower(`password`), 
         FfiConverterBool.lower(`store`), $0
     )
@@ -862,7 +862,7 @@ public class Client: ClientProtocol {
         return try FfiConverterOptionString.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_import_key(self.pointer, 
+    LuffaSDK_c080_Client_import_key(self.pointer, 
         FfiConverterString.lower(`phrase`), 
         FfiConverterString.lower(`password`), $0
     )
@@ -873,7 +873,7 @@ public class Client: ClientProtocol {
         return try FfiConverterBool.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_save_key(self.pointer, 
+    LuffaSDK_c080_Client_save_key(self.pointer, 
         FfiConverterString.lower(`name`), $0
     )
 }
@@ -883,7 +883,7 @@ public class Client: ClientProtocol {
         return try FfiConverterBool.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_remove_key(self.pointer, 
+    LuffaSDK_c080_Client_remove_key(self.pointer, 
         FfiConverterString.lower(`name`), $0
     )
 }
@@ -893,7 +893,7 @@ public class Client: ClientProtocol {
         return try FfiConverterOptionString.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_read_key_phrase(self.pointer, 
+    LuffaSDK_c080_Client_read_key_phrase(self.pointer, 
         FfiConverterString.lower(`name`), $0
     )
 }
@@ -903,7 +903,7 @@ public class Client: ClientProtocol {
         return try FfiConverterString.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_generate_avatar(self.pointer, 
+    LuffaSDK_c080_Client_generate_avatar(self.pointer, 
         FfiConverterString.lower(`peerId`), $0
     )
 }
@@ -913,7 +913,7 @@ public class Client: ClientProtocol {
         return try FfiConverterString.lift(
             try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_generate_nickname(self.pointer, 
+    LuffaSDK_c080_Client_generate_nickname(self.pointer, 
         FfiConverterString.lower(`peerId`), $0
     )
 }
@@ -922,7 +922,7 @@ public class Client: ClientProtocol {
     public func `removeLocalMsg`(`did`: UInt64, `crc`: UInt64) throws {
         try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_remove_local_msg(self.pointer, 
+    LuffaSDK_c080_Client_remove_local_msg(self.pointer, 
         FfiConverterUInt64.lower(`did`), 
         FfiConverterUInt64.lower(`crc`), $0
     )
@@ -931,7 +931,7 @@ public class Client: ClientProtocol {
     public func `removeOffser`(`did`: UInt64, `crc`: UInt64) throws {
         try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_remove_offser(self.pointer, 
+    LuffaSDK_c080_Client_remove_offser(self.pointer, 
         FfiConverterUInt64.lower(`did`), 
         FfiConverterUInt64.lower(`crc`), $0
     )
@@ -940,7 +940,7 @@ public class Client: ClientProtocol {
     public func `enableSilent`(`did`: UInt64) throws {
         try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_enable_silent(self.pointer, 
+    LuffaSDK_c080_Client_enable_silent(self.pointer, 
         FfiConverterUInt64.lower(`did`), $0
     )
 }
@@ -948,7 +948,7 @@ public class Client: ClientProtocol {
     public func `disableSilent`(`did`: UInt64) throws {
         try
     rustCallWithError(FfiConverterTypeClientError.self) {
-    LuffaSDK_a691_Client_disable_silent(self.pointer, 
+    LuffaSDK_c080_Client_disable_silent(self.pointer, 
         FfiConverterUInt64.lower(`did`), $0
     )
 }
@@ -1244,6 +1244,7 @@ public func FfiConverterTypeContactsView_lower(_ value: ContactsView) -> RustBuf
 public struct EventMeta {
     public var `fromId`: UInt64
     public var `toId`: UInt64
+    public var `sessionType`: UInt8
     public var `fromTag`: String
     public var `toTag`: String
     public var `eventTime`: UInt64
@@ -1252,9 +1253,10 @@ public struct EventMeta {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(`fromId`: UInt64, `toId`: UInt64, `fromTag`: String, `toTag`: String, `eventTime`: UInt64, `status`: UInt32, `msg`: [UInt8]) {
+    public init(`fromId`: UInt64, `toId`: UInt64, `sessionType`: UInt8, `fromTag`: String, `toTag`: String, `eventTime`: UInt64, `status`: UInt32, `msg`: [UInt8]) {
         self.`fromId` = `fromId`
         self.`toId` = `toId`
+        self.`sessionType` = `sessionType`
         self.`fromTag` = `fromTag`
         self.`toTag` = `toTag`
         self.`eventTime` = `eventTime`
@@ -1270,6 +1272,9 @@ extension EventMeta: Equatable, Hashable {
             return false
         }
         if lhs.`toId` != rhs.`toId` {
+            return false
+        }
+        if lhs.`sessionType` != rhs.`sessionType` {
             return false
         }
         if lhs.`fromTag` != rhs.`fromTag` {
@@ -1293,6 +1298,7 @@ extension EventMeta: Equatable, Hashable {
     public func hash(into hasher: inout Hasher) {
         hasher.combine(`fromId`)
         hasher.combine(`toId`)
+        hasher.combine(`sessionType`)
         hasher.combine(`fromTag`)
         hasher.combine(`toTag`)
         hasher.combine(`eventTime`)
@@ -1307,6 +1313,7 @@ public struct FfiConverterTypeEventMeta: FfiConverterRustBuffer {
         return try EventMeta(
             `fromId`: FfiConverterUInt64.read(from: &buf), 
             `toId`: FfiConverterUInt64.read(from: &buf), 
+            `sessionType`: FfiConverterUInt8.read(from: &buf), 
             `fromTag`: FfiConverterString.read(from: &buf), 
             `toTag`: FfiConverterString.read(from: &buf), 
             `eventTime`: FfiConverterUInt64.read(from: &buf), 
@@ -1318,6 +1325,7 @@ public struct FfiConverterTypeEventMeta: FfiConverterRustBuffer {
     public static func write(_ value: EventMeta, into buf: inout [UInt8]) {
         FfiConverterUInt64.write(value.`fromId`, into: &buf)
         FfiConverterUInt64.write(value.`toId`, into: &buf)
+        FfiConverterUInt8.write(value.`sessionType`, into: &buf)
         FfiConverterString.write(value.`fromTag`, into: &buf)
         FfiConverterString.write(value.`toTag`, into: &buf)
         FfiConverterUInt64.write(value.`eventTime`, into: &buf)
@@ -1339,12 +1347,14 @@ public func FfiConverterTypeEventMeta_lower(_ value: EventMeta) -> RustBuffer {
 public struct GroupMemberNickname {
     public var `uId`: UInt64
     public var `nickname`: String
+    public var `status`: UInt8
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(`uId`: UInt64, `nickname`: String) {
+    public init(`uId`: UInt64, `nickname`: String, `status`: UInt8) {
         self.`uId` = `uId`
         self.`nickname` = `nickname`
+        self.`status` = `status`
     }
 }
 
@@ -1357,12 +1367,16 @@ extension GroupMemberNickname: Equatable, Hashable {
         if lhs.`nickname` != rhs.`nickname` {
             return false
         }
+        if lhs.`status` != rhs.`status` {
+            return false
+        }
         return true
     }
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(`uId`)
         hasher.combine(`nickname`)
+        hasher.combine(`status`)
     }
 }
 
@@ -1371,13 +1385,15 @@ public struct FfiConverterTypeGroupMemberNickname: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GroupMemberNickname {
         return try GroupMemberNickname(
             `uId`: FfiConverterUInt64.read(from: &buf), 
-            `nickname`: FfiConverterString.read(from: &buf)
+            `nickname`: FfiConverterString.read(from: &buf), 
+            `status`: FfiConverterUInt8.read(from: &buf)
         )
     }
 
     public static func write(_ value: GroupMemberNickname, into buf: inout [UInt8]) {
         FfiConverterUInt64.write(value.`uId`, into: &buf)
         FfiConverterString.write(value.`nickname`, into: &buf)
+        FfiConverterUInt8.write(value.`status`, into: &buf)
     }
 }
 
@@ -1943,7 +1959,7 @@ fileprivate struct FfiConverterCallbackInterfaceCallback {
     private static var callbackInitialized = false
     private static func initCallback() {
         try! rustCall { (err: UnsafeMutablePointer<RustCallStatus>) in
-                ffi_LuffaSDK_a691_Callback_init_callback(foreignCallbackCallbackInterfaceCallback, err)
+                ffi_LuffaSDK_c080_Callback_init_callback(foreignCallbackCallbackInterfaceCallback, err)
         }
     }
     private static func ensureCallbackinitialized() {
@@ -2235,7 +2251,7 @@ public func `publicKeyToId`(`publicKey`: [UInt8])  -> UInt64 {
     
     rustCall() {
     
-    LuffaSDK_a691_public_key_to_id(
+    LuffaSDK_c080_public_key_to_id(
         FfiConverterSequenceUInt8.lower(`publicKey`), $0)
 }
     )
@@ -2249,7 +2265,7 @@ public func `bs58Decode`(`data`: String) throws -> UInt64 {
     
     rustCallWithError(FfiConverterTypeClientError.self) {
     
-    LuffaSDK_a691_bs58_decode(
+    LuffaSDK_c080_bs58_decode(
         FfiConverterString.lower(`data`), $0)
 }
     )
@@ -2263,7 +2279,7 @@ public func `bs58Encode`(`data`: UInt64) throws -> String {
     
     rustCallWithError(FfiConverterTypeClientError.self) {
     
-    LuffaSDK_a691_bs58_encode(
+    LuffaSDK_c080_bs58_encode(
         FfiConverterUInt64.lower(`data`), $0)
 }
     )

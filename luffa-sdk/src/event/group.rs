@@ -33,6 +33,7 @@ pub trait EventGroup: GroupMembersDb {
     async fn group_join_member(db_t: Arc<Db>, group_id: u64, u_id: u64, group_nickname: &str) {
         Self::group_member_insert(db_t.clone(), group_id, vec![u_id]).unwrap();
         Self::set_group_member_nickname(db_t.clone(), group_id, u_id, group_nickname).unwrap();
+        Self::set_member_to_join_status(db_t, group_id, u_id).unwrap();
     }
 
     async fn send_group_join(

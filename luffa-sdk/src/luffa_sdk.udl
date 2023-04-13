@@ -35,6 +35,7 @@ dictionary ContactsGroupView {
 dictionary GroupMemberNickname {
    u64 u_id;
    string nickname;
+   u8 status;
 };
 
 enum OfferStatus {
@@ -62,6 +63,7 @@ dictionary OfferView {
 dictionary EventMeta {
     u64 from_id;
     u64 to_id;
+    u8 session_type;
     string from_tag;
     string to_tag;
     u64 event_time;
