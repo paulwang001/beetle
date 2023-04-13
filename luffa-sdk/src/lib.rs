@@ -3689,7 +3689,14 @@ impl Client {
                         let client = client.clone();
                         if msg.is_important() {
                             let last_crc = session_last_crc.write();
-                            last_crc.insert(to.to_be_bytes(), req.crc.to_be_bytes().to_vec());
+                            match last_crc.insert(to.to_be_bytes(), req.crc.to_be_bytes().to_vec()) {
+                                Ok(_v)=>{
+                                    last_crc.flush().unwrap();
+                                }
+                                Err(e)=>{
+                                    tracing::error!("{e:?}");
+                                }
+                            }
                         }
                         let event_time = req.event_time;
                         let pendings_t = pendings.clone();
@@ -3883,7 +3890,14 @@ impl Client {
                             tracing::warn!("from relay request e2e crc:[{crc}] msg>>>>{msg:?}");
                             if msg.is_important() {
                                 let last_crc = session_last_crc.write();
-                                last_crc.insert(did.to_be_bytes(), crc.to_be_bytes().to_vec());
+                                match last_crc.insert(did.to_be_bytes(), crc.to_be_bytes().to_vec()) {
+                                    Ok(_v)=>{
+                                        last_crc.flush().unwrap();
+                                    }
+                                    Err(e)=>{
+                                        tracing::error!("{e:?}");
+                                    }
+                                }
                             }
                             let mut will_save = false;
                             match msg {
