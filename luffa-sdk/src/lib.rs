@@ -1558,8 +1558,11 @@ impl Client {
 
                         let (to_tag, session_type) =
                             Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
-                        let (from_tag, _) =
+                        let (mut from_tag, _) =
                             Self::get_contacts_tag(db_t.clone(), from_id).unwrap_or_default();
+                        if session_type == 1 {
+                            from_tag = Self::get_group_member_nickname(db_t.clone(), to, from_id).unwrap_or_default();
+                        }
                         match message_to(msg) {
                             Some(msg) => Some(EventMeta {
                                 from_id,
@@ -1582,8 +1585,13 @@ impl Client {
                                     Self::get_crc_tree_status(db_t.clone(), crc, &table) as u32;
                                 let (to_tag, session_type) =
                                     Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
-                                let (from_tag, _) = Self::get_contacts_tag(db_t.clone(), from_id)
+
+                                let (mut from_tag, _) = Self::get_contacts_tag(db_t.clone(), from_id)
                                     .unwrap_or_default();
+
+                                if session_type == 1 {
+                                    from_tag = Self::get_group_member_nickname(db_t.clone(), to, from_id).unwrap_or_default();
+                                }
                                 match message_to(msg) {
                                     Some(msg) => Some(EventMeta {
                                         from_id,

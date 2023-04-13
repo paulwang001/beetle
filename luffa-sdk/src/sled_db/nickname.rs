@@ -40,7 +40,7 @@ pub trait Nickname: ContactsDb {
             let nickname = String::from_utf8(data.to_vec())?;
             Ok(nickname)
         } else {
-            let (nickname, _) = Self::get_contacts_nickname(db, u_id)?.unwrap();
+            let (nickname, _) = Self::get_contacts_nickname(db, u_id)?.unwrap_or_default();
             Ok(nickname)
         }
     }
