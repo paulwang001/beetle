@@ -1745,6 +1745,8 @@ impl Client {
                 } | Message::WebRtc {
                     action: RtcAction::Status { .. },
                     ..
+                } | Message::ContactsExchange {
+                    exchange: ContactsEvent::Join { .. }
                 }
             )
         })
