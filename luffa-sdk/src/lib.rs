@@ -1560,8 +1560,11 @@ impl Client {
 
                         let (to_tag, session_type) =
                             Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
-                        let (from_tag, _) =
+                        let (mut from_tag, _) =
                             Self::get_contacts_tag(db_t.clone(), from_id).unwrap_or_default();
+                        if session_type == 1 {
+                            from_tag = Self::get_group_member_nickname(db_t.clone(), to, from_id).unwrap_or_default();
+                        }
                         match message_to(msg) {
                             Some(msg) => Some(EventMeta {
                                 from_id,
@@ -1584,8 +1587,13 @@ impl Client {
                                     Self::get_crc_tree_status(db_t.clone(), crc, &table) as u32;
                                 let (to_tag, session_type) =
                                     Self::get_contacts_tag(db_t.clone(), to).unwrap_or_default();
-                                let (from_tag, _) = Self::get_contacts_tag(db_t.clone(), from_id)
+
+                                let (mut from_tag, _) = Self::get_contacts_tag(db_t.clone(), from_id)
                                     .unwrap_or_default();
+
+                                if session_type == 1 {
+                                    from_tag = Self::get_group_member_nickname(db_t.clone(), to, from_id).unwrap_or_default();
+                                }
                                 match message_to(msg) {
                                     Some(msg) => Some(EventMeta {
                                         from_id,
@@ -2857,7 +2865,7 @@ impl Client {
         let db_t = db.clone();
         let idx = idx_writer.clone();
         let idx_t = idx.clone();
-        let idx_tt = idx.clone();
+        
         let schema_t = schema.clone();
         let schema_tt = schema.clone();
         let cb_local = cb.clone();
@@ -2975,7 +2983,7 @@ impl Client {
                                                                                 } else {
                                                                                     tracing::error!("have in tree {crc}");
                                                                                     // client_t.chat_request(bytes::Bytes::from());
-                                                                                    let feed = luffa_rpc_types::Message::Feedback { crc: vec![crc], from_id: Some(my_id), to_id: Some(0), status: luffa_rpc_types::FeedbackStatus::Reach };
+                                                                                    let feed = luffa_rpc_types::Message::Feedback { crc: vec![crc], from_id: Some(from_id), to_id: Some(to), status: luffa_rpc_types::FeedbackStatus::Reach };
                                                                                     let event = luffa_rpc_types::Event::new(
                                                                                         0,
                                                                                         &feed,
@@ -3283,9 +3291,10 @@ impl Client {
                         continue;
                     }
                 }
-                if let Some((req, count, time)) = {
+                if let Some((req, count, time,all_size)) = {
                     let mut p = pendings_t.write().await;
-                    tracing::warn!("pending size:{}", p.len());
+                    let all_size = p.len();
+                    tracing::info!("pending size:{}", all_size);
                     let mut req = None;
                     while let Some((r, c, t)) = p.pop_front() {
                         if r.nonce.is_none() && c >= 20 {
@@ -3295,12 +3304,13 @@ impl Client {
                             p.push_back((r, c, t));
                             continue;
                         }
-                        req = Some((r, c, t));
+                        req = Some((r, c, t,all_size));
                         break;
                     }
                     req
                 } {
                     let to = req.to;
+                    tokio::time::sleep(Duration::from_millis(300)).await;
                     let event_time = req.event_time;
                     // let nonce = &req.nonce;
                     let data = req.encode().unwrap();
@@ -3325,8 +3335,10 @@ impl Client {
                         }
                         Err(e) => {
                             tracing::error!("pending chat request failed [{}]: {e:?}", req.crc);
-
-                            tokio::time::sleep(Duration::from_millis(50)).await;
+                            if all_size > 64 && req.nonce.is_none() {
+                                continue;
+                            }
+                            tokio::time::sleep(Duration::from_millis(300)).await;
                             // let status = if count >= 20 {FeedbackStatus::Failed} else {FeedbackStatus::Sending};
                             if req.nonce.is_some() {
                                 let status = FeedbackStatus::Sending;
@@ -3567,17 +3579,18 @@ impl Client {
                         //     cb_t.on_message(req.crc, my_id, to, event_time, sending);
                         // }
                         let db_t2 = db_t.clone();
+                        if let Some(job) = save_job {
+                            if let Err(e) = job.await {
+                                tracing::error!("job>> {e:?}");
+                            }
+                        }
                         tokio::spawn(async move {
                             let data = req.encode().unwrap();
                             tracing::info!("sending: [ {} ] size:{}", req.crc, data.len());
                             match client.chat_request(bytes::Bytes::from(data.clone())).await {
                                 Ok(res) => {
                                     tracing::warn!("send: [ {} ] ", req.crc);
-                                    if let Some(job) = save_job {
-                                        if let Err(e) = job.await {
-                                            tracing::error!("job>> {e:?}");
-                                        }
-                                    }
+                                   
                                     if req.nonce.is_some() {
                                         let feed = Message::Feedback {
                                             crc: vec![req.crc],
@@ -3600,11 +3613,6 @@ impl Client {
                                 Err(e) => {
                                     tracing::error!("chat request failed [{}]: {e:?}", req.crc);
                                     // if req.nonce.is_some() {
-                                    if let Some(job) = save_job {
-                                        if let Err(e) = job.await {
-                                            tracing::error!("job>> {e:?}");
-                                        }
-                                    }
                                     // // tokio::time::sleep(Duration::from_millis(1000)).await;
                                     // if req.nonce.is_some() {
                                     //     let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };

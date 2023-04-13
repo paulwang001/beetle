@@ -61,6 +61,10 @@ pub struct VersionResponse {
 }
 
 pub const KEY_SIZE: usize = 32;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Session {}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Event {
     // zero is all
@@ -291,7 +295,7 @@ impl Message {
         match (key, nonce) {
             (Some(key), Some(nonce_data)) => {
                 let cipher = Aes256Gcm::new_from_slice(key.as_ref()).unwrap();
-                let nonce = Nonce::from_slice(&nonce_data.as_ref());
+                let nonce = Nonce::from_slice(&nonce_data.as_ref()[0..12]);
                 let data = cipher
                     .decrypt(nonce, &data[..])
                     .map_err(|e| anyhow::anyhow!("{e:?}"))?;
