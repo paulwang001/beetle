@@ -682,6 +682,19 @@ impl Client {
         Self::set_is_group_manager(self.db(), g_id, my_id)?;
         Self::set_group_members_nickname(self.db(), g_id, members)?;
         Self::set_member_to_join_status(self.db(), g_id, my_id)?;
+
+        let now = Utc::now().timestamp_millis() as u64;
+        Self::update_session(
+            self.db(),
+            g_id,
+            None,
+            None,
+            None,
+            None,
+            None,
+            now,
+        );
+
         Ok(g_id)
     }
 
