@@ -114,7 +114,7 @@ pub trait GroupMembersDb: Nickname {
         group_id: u64,
         page_no: u64,
         page_size: u64,
-    ) -> ClientResult<GroupiInfo> {
+    ) -> ClientResult<GroupInfo> {
         let key = Self::group_member_key(group_id);
         let tree = Self::open_group_member_tree(db.clone())?;
         let mut list = vec![];
