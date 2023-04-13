@@ -1110,7 +1110,7 @@ impl Client {
         let res = match message_from(msg) {
             Some(msg) => {
                 match self.send_to(to, msg, 0, None).map_err(|e| {
-                    tracing::warn!("{e:?}");
+                    tracing::error!("{e:?}");
                     ClientError::SendFailed
                 }) {
                     Ok(crc) => crc,
@@ -4321,6 +4321,14 @@ impl Client {
                                                         offer_crc,
                                                     )
                                                     .await;
+                                                }
+                                                else{
+                                                    let hi = luffa_rpc_types::Message::text(format!("Hi,I'm {}",comment.clone().unwrap_or_default()));
+                                                    let event = luffa_rpc_types::Event::new(did, &hi, Some(token.secret_key.clone()), my_id);
+                                                    let event = event.encode().unwrap();
+                                                    if let Err(e) = client_t.chat_request(bytes::Bytes::from(event)).await {
+                                                        error!("Hi send failed {did}, {e:?}");
+                                                    }
                                                 }
                                                 Self::update_session(
                                                     db_t.clone(),

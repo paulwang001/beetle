@@ -177,6 +177,19 @@ pub enum Message {
     },
 }
 
+impl Message {
+    pub fn text(content: String) -> Self {
+        Message::Chat {
+            content: ChatContent::Send {
+                data: ContentData::Text {
+                    source: DataSource::Text { content },
+                    reference: None,
+                },
+            },
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum RtcAction {
     Push {
