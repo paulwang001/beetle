@@ -229,6 +229,10 @@ fn main() -> ClientResult<()> {
                     let members = client1.groups().unwrap();
                     tracing::error!("groups: {members:?}");
                 }
+
+                "" => {
+                    // client1.send_msg(, )
+                }
                 _ => {}
             }
         }

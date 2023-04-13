@@ -1241,7 +1241,13 @@ impl Client {
             ..
         } = evt;
         let (to_tag, session_type) = Self::get_contacts_tag(self.db(), to).unwrap_or_default();
-        let (from_tag, _) = Self::get_contacts_tag(self.db(), from_id).unwrap_or_default();
+        let from_tag;
+        if session_type == 1 {
+            from_tag = Self::get_group_member_nickname(self.db(), to, from_id).unwrap_or_default();
+        } else {
+            (from_tag, _) = Self::get_contacts_tag(self.db(), from_id).unwrap_or_default();
+        }
+
         Ok(EventMeta {
             from_id,
             to_id: to,
