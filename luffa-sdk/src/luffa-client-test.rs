@@ -103,7 +103,7 @@ fn main() -> ClientResult<()> {
             println!("{:?}", line);
             let params: Params = serde_json::from_str(&line).unwrap_or_default();
             match params.command.as_str() {
-                // send_msg${ "to": 10871006697545602478, "msg": "test" }
+                // { "command": "send_msg", "to": 242692364427292578, "msg": "test" }
                 "send_msg" => {
                     let msg = Message::Chat {
                         content: luffa_rpc_types::ChatContent::Send {
@@ -134,13 +134,12 @@ fn main() -> ClientResult<()> {
                     let relays = client1.relay_list().unwrap();
                     tracing::error!("relay_list: {relays:?}");
                 }
-                // { "command": "show_code", "param": "p" }
-                "show_code" => {
-                    let show_code = client1
-                        .show_code("https://luffa.putdev.com", &params.param.unwrap())
-                        .unwrap()
+                // { "command": "gen_offer_code", "to": 12243737405236716139 }
+                "gen_offer_code" => {
+                    let gen_offer_code = client1
+                        .gen_offer_code(params.to.unwrap())
                         .unwrap();
-                    tracing::error!("show_code: {show_code:?}");
+                    tracing::error!("gen_offer_code: {gen_offer_code:?}");
                 }
                 // { "command": "contacts_offer", "param": "https://luffa.putdev.com/p/YGz62Wdxqx8/H1NojzUMJ3LqhcjXCT11aCpVWjkb1JdfBpZRkAyPpNML/Uncharted Banana pepper"}
                 "contacts_offer" => {
@@ -223,12 +222,10 @@ fn main() -> ClientResult<()> {
                     let members = client1.groups().unwrap();
                     tracing::error!("groups: {members:?}");
                 }
-                // { "command": "send_group", "group_id": 242692364427292578, "msg": "ffsdfsf" }
-                "send_group" => {
-                    let crc = client1
-                        .send_msg(params.group_id.unwrap(), params.msg.unwrap().as_bytes().to_vec())
-                        .unwrap();
-                    tracing::error!("send_group: {crc}")
+                // { "command": "group_info", "group_id": 242692364427292578 }
+                "group_info" => {
+                    let group = client1.contacts_group_members(params.group_id.unwrap() , 1, 10).unwrap();
+                    tracing::error!("group_info: {group:?}");
                 }
                 _ => {}
             }

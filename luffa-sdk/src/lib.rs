@@ -61,6 +61,7 @@ use tantivy::{doc, DocAddress, Score};
 use tantivy::{schema::*, IndexWriter};
 use tantivy::{Index, TantivyError};
 use tokio::sync::oneshot::Sender as ShotSender;
+use crate::ClientError::CustomError;
 
 mod api;
 pub mod avatar_nickname;
@@ -2686,6 +2687,9 @@ impl Client {
         page_no: u64,
         page_size: u64,
     ) -> ClientResult<GroupInfo> {
+        if page_no == 0 {
+            return Err(CustomError("page_no is 0".to_string()))
+        }
         Self::group_members_get(self.db(), g_id, page_no, page_size)
     }
 

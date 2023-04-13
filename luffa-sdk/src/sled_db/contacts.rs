@@ -36,19 +36,21 @@ pub trait ContactsDb {
         let sig_key = format!("SIG-{}", to);
         let tag_key = format!("TAG-{}", to);
         let type_key = format!("TYPE-{}", to);
-        tree.insert(s_key.as_bytes(), secret_key).unwrap();
-        tree.insert(p_key.as_bytes(), public_key).unwrap();
-        tree.insert(sig_key.as_bytes(), sign).unwrap();
-        tree.insert(type_key.as_bytes(), vec![c_type as u8])
-            .unwrap();
-        tree.insert(
-            tag_key.as_bytes(),
-            comment.unwrap_or(format!("{to}")).as_bytes(),
-        )
-        .unwrap();
-        if let Some(keypair) = g_keypair {
-            let group_keypair = format!("GROUPKEYPAIR-{}", to);
-            tree.insert(group_keypair, keypair).unwrap();
+        let ok = tree.insert(p_key.as_bytes(), public_key).unwrap();
+        if ok.is_none(){
+            tree.insert(s_key.as_bytes(), secret_key).unwrap();
+            tree.insert(sig_key.as_bytes(), sign).unwrap();
+            tree.insert(type_key.as_bytes(), vec![c_type as u8])
+                .unwrap();
+            tree.insert(
+                tag_key.as_bytes(),
+                comment.unwrap_or(format!("{to}")).as_bytes(),
+            )
+                .unwrap();
+            if let Some(keypair) = g_keypair {
+                let group_keypair = format!("GROUPKEYPAIR-{}", to);
+                tree.insert(group_keypair, keypair).unwrap();
+            }
         }
         tree.flush().unwrap();
     }
