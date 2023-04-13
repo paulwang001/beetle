@@ -26,6 +26,7 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use simsearch::{SearchOptions, SimSearch};
 use sled::Db;
+use sled_db::group_members::Group;
 use std::fs::OpenOptions;
 use std::hash::Hash;
 use std::ops::Not;
@@ -621,7 +622,7 @@ impl Client {
             );
             let mut member_ids = invitee.clone();
             member_ids.push(my_id);
-            let members = Self::get_group_members_info(self.db(), g_id, member_ids.clone())?;
+            let members = Self::get_group_members_info(self.db(), g_id, Some(member_ids.clone()))?;
             (
                 g_id,
                 Message::ContactsExchange {
@@ -699,9 +700,9 @@ impl Client {
         let my_id = self.get_local_id()?.unwrap();
 
         let mut member_ids = invitee.clone();
-        let invitee_members = Self::get_group_members_info(self.db(), g_id, invitee.clone())?;
+        let invitee_members = Self::get_group_members_info(self.db(), g_id, Some(invitee.clone()))?;
         let group_members = Self::group_members_ids(self.db(), g_id)?;
-        let mut members = Self::get_group_members_info(self.db(), g_id, group_members)?;
+        let mut members = Self::get_group_members_info(self.db(), g_id, Some(group_members))?;
         for invitee_member in invitee_members.iter() {
             members.push(invitee_member.clone());
         }
@@ -807,11 +808,12 @@ impl Client {
                                             luffa_rpc_types::ContactsTypes::Group,
                                         )
                                         .unwrap();
-
+                                        let members =
+                                            Self::get_group_members_info(self.db(), g_id, None)?;
                                         Message::ContactsExchange {
                                             exchange: ContactsEvent::Answer {
                                                 token,
-                                                members: vec![],
+                                                members,
                                                 offer_crc: crc,
                                             },
                                         }
@@ -2658,7 +2660,7 @@ impl Client {
         g_id: u64,
         page_no: u64,
         page_size: u64,
-    ) -> ClientResult<Vec<GroupMemberNickname>> {
+    ) -> ClientResult<Group> {
         Self::group_members_get(self.db(), g_id, page_no, page_size)
     }
 

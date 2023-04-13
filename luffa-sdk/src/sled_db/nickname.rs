@@ -1,4 +1,4 @@
-use crate::sled_db::contacts::{ContactsDb, KVDB_CONTACTS_TREE};
+use crate::sled_db::contacts::ContactsDb;
 use crate::ClientResult;
 use image::EncodableLayout;
 use luffa_rpc_types::Member;
@@ -43,31 +43,6 @@ pub trait Nickname: ContactsDb {
             let (nickname, _) = Self::get_contacts_nickname(db, u_id)?.unwrap();
             Ok(nickname)
         }
-    }
-
-    fn get_group_members_info(
-        db: Arc<Db>,
-        group_id: u64,
-        u_ids: Vec<u64>,
-    ) -> ClientResult<Vec<Member>> {
-        let tree = Self::open_contact_tree(db.clone())?;
-        let mut list = vec![];
-        for u_id in u_ids {
-            let tag_key = Self::get_group_member_nickname_key(group_id, u_id);
-            let group_nickname = if let Some(data) = tree.get(tag_key.as_bytes())? {
-                let data = data.as_bytes();
-                let nickname = String::from_utf8(data.to_vec())?;
-                nickname
-            } else {
-                let (nickname, _) = Self::get_contacts_nickname(db.clone(), u_id)?.unwrap();
-                nickname
-            };
-            list.push(Member {
-                u_id,
-                group_nickname,
-            })
-        }
-        Ok(list)
     }
 
     fn set_group_members_nickname(

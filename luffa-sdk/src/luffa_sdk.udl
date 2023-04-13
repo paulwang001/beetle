@@ -32,6 +32,11 @@ dictionary ContactsGroupView {
 	boolean is_manager;
 };
 
+dictionary Group{
+	u64 total_count;
+    sequence<GroupMemberNickname> members;
+};
+
 dictionary GroupMemberNickname {
    u64 u_id;
    string nickname;
@@ -124,7 +129,7 @@ interface Client {
     boolean contacts_group_invite_member(u64 g_id, sequence<u64> invitee);
 
     [Throws=ClientError]
-    sequence<GroupMemberNickname> contacts_group_members(u64 g_id, u64 page_no, u64 page_size);
+    Group contacts_group_members(u64 g_id, u64 page_no, u64 page_size);
 
     [Throws=ClientError]
     u64 contacts_anwser(u64 did,u64 crc);
