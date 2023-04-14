@@ -3797,11 +3797,22 @@ impl Client {
                         tokio::spawn(async move {
                             let data = req.encode().unwrap();
                             tracing::info!("sending: [ {} ] size:{}", req.crc, data.len());
+
+                            if req.nonce.is_some() {
+                                let some_pendding = db_t2.open_tree("some_pendding").unwrap();
+                                some_pendding.insert(req.crc.to_be_bytes(), data.clone()).unwrap();
+                                some_pendding.flush().unwrap();
+                            }
+
                             match client.chat_request(bytes::Bytes::from(data.clone())).await {
                                 Ok(res) => {
                                     tracing::warn!("send: [ {} ] ", req.crc);
 
                                     if req.nonce.is_some() {
+                                        let some_pendding = db_t2.open_tree("some_pendding").unwrap();
+                                        some_pendding.remove(req.crc.to_be_bytes()).unwrap();
+                                        some_pendding.flush().unwrap();
+
                                         let feed = Message::Feedback {
                                             crc: vec![req.crc],
                                             from_id: Some(my_id),
