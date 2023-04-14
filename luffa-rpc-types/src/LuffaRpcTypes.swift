@@ -19,13 +19,13 @@ fileprivate extension RustBuffer {
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
-        try! rustCall { ffi_LuffaRpcTypes_3570_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
+        try! rustCall { ffi_LuffaRpcTypes_a98d_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
     // Frees the buffer in place.
     // The buffer must not be used after this is called.
     func deallocate() {
-        try! rustCall { ffi_LuffaRpcTypes_3570_rustbuffer_free(self, $0) }
+        try! rustCall { ffi_LuffaRpcTypes_a98d_rustbuffer_free(self, $0) }
     }
 }
 
@@ -725,7 +725,7 @@ extension AppStatus: Equatable, Hashable {}
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 public enum ChatContent {
     
-    case `feedback`(`crc`: UInt64, `status`: FeedbackStatus)
+    case `feedback`(`crc`: UInt64, `lastCrc`: UInt64, `status`: FeedbackStatus)
     case `burn`(`crc`: UInt64, `expires`: UInt64)
     case `send`(`data`: ContentData)
 }
@@ -739,6 +739,7 @@ public struct FfiConverterTypeChatContent: FfiConverterRustBuffer {
         
         case 1: return .`feedback`(
             `crc`: try FfiConverterUInt64.read(from: &buf), 
+            `lastCrc`: try FfiConverterUInt64.read(from: &buf), 
             `status`: try FfiConverterTypeFeedbackStatus.read(from: &buf)
         )
         
@@ -759,9 +760,10 @@ public struct FfiConverterTypeChatContent: FfiConverterRustBuffer {
         switch value {
         
         
-        case let .`feedback`(`crc`,`status`):
+        case let .`feedback`(`crc`,`lastCrc`,`status`):
             writeInt(&buf, Int32(1))
             FfiConverterUInt64.write(`crc`, into: &buf)
+            FfiConverterUInt64.write(`lastCrc`, into: &buf)
             FfiConverterTypeFeedbackStatus.write(`status`, into: &buf)
             
         
@@ -1292,8 +1294,9 @@ public enum Message {
     case `contactsSync`(`did`: UInt64, `contacts`: [Contacts])
     case `contactsExchange`(`exchange`: ContactsEvent)
     case `chat`(`content`: ChatContent)
-    case `webRtc`(`streamId`: UInt32, `action`: RtcAction)
+    case `webRtc`(`streamId`: UInt32, `actionType`: UInt8, `action`: RtcAction)
     case `ping`(`relayId`: UInt64, `ttlMs`: UInt64)
+    case `innerError`(`kind`: UInt8, `reason`: String)
 }
 
 public struct FfiConverterTypeMessage: FfiConverterRustBuffer {
@@ -1335,12 +1338,18 @@ public struct FfiConverterTypeMessage: FfiConverterRustBuffer {
         
         case 7: return .`webRtc`(
             `streamId`: try FfiConverterUInt32.read(from: &buf), 
+            `actionType`: try FfiConverterUInt8.read(from: &buf), 
             `action`: try FfiConverterTypeRtcAction.read(from: &buf)
         )
         
         case 8: return .`ping`(
             `relayId`: try FfiConverterUInt64.read(from: &buf), 
             `ttlMs`: try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        case 9: return .`innerError`(
+            `kind`: try FfiConverterUInt8.read(from: &buf), 
+            `reason`: try FfiConverterString.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -1387,9 +1396,10 @@ public struct FfiConverterTypeMessage: FfiConverterRustBuffer {
             FfiConverterTypeChatContent.write(`content`, into: &buf)
             
         
-        case let .`webRtc`(`streamId`,`action`):
+        case let .`webRtc`(`streamId`,`actionType`,`action`):
             writeInt(&buf, Int32(7))
             FfiConverterUInt32.write(`streamId`, into: &buf)
+            FfiConverterUInt8.write(`actionType`, into: &buf)
             FfiConverterTypeRtcAction.write(`action`, into: &buf)
             
         
@@ -1397,6 +1407,12 @@ public struct FfiConverterTypeMessage: FfiConverterRustBuffer {
             writeInt(&buf, Int32(8))
             FfiConverterUInt64.write(`relayId`, into: &buf)
             FfiConverterUInt64.write(`ttlMs`, into: &buf)
+            
+        
+        case let .`innerError`(`kind`,`reason`):
+            writeInt(&buf, Int32(9))
+            FfiConverterUInt8.write(`kind`, into: &buf)
+            FfiConverterString.write(`reason`, into: &buf)
             
         }
     }
@@ -1419,7 +1435,7 @@ extension Message: Equatable, Hashable {}
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 public enum RtcAction {
     
-    case `push`(`audioId`: UInt32, `videoId`: UInt32)
+    case `push`(`audioId`: UInt32, `actionType`: UInt8, `videoId`: UInt32)
     case `pull`(`audioId`: UInt32, `videoId`: UInt32)
     case `reject`(`audioId`: UInt32, `videoId`: UInt32)
     case `status`(`timestamp`: UInt64, `code`: UInt32, `info`: String)
@@ -1436,6 +1452,7 @@ public struct FfiConverterTypeRtcAction: FfiConverterRustBuffer {
         
         case 1: return .`push`(
             `audioId`: try FfiConverterUInt32.read(from: &buf), 
+            `actionType`: try FfiConverterUInt8.read(from: &buf), 
             `videoId`: try FfiConverterUInt32.read(from: &buf)
         )
         
@@ -1471,9 +1488,10 @@ public struct FfiConverterTypeRtcAction: FfiConverterRustBuffer {
         switch value {
         
         
-        case let .`push`(`audioId`,`videoId`):
+        case let .`push`(`audioId`,`actionType`,`videoId`):
             writeInt(&buf, Int32(1))
             FfiConverterUInt32.write(`audioId`, into: &buf)
+            FfiConverterUInt8.write(`actionType`, into: &buf)
             FfiConverterUInt32.write(`videoId`, into: &buf)
             
         
@@ -1700,7 +1718,7 @@ public func `messageFrom`(`msg`: [UInt8])  -> Message? {
     
     rustCall() {
     
-    LuffaRpcTypes_3570_message_from(
+    LuffaRpcTypes_a98d_message_from(
         FfiConverterSequenceUInt8.lower(`msg`), $0)
 }
     )
@@ -1714,7 +1732,7 @@ public func `messageTo`(`msg`: Message)  -> [UInt8]? {
     
     rustCall() {
     
-    LuffaRpcTypes_3570_message_to(
+    LuffaRpcTypes_a98d_message_to(
         FfiConverterTypeMessage.lower(`msg`), $0)
 }
     )
