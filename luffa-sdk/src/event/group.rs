@@ -1,4 +1,4 @@
-use luffa_rpc_types::ContactsEvent;
+use luffa_rpc_types::{ContactsEvent, Member};
 use sled::Db;
 use std::sync::Arc;
 use tracing::error;
@@ -17,12 +17,14 @@ pub trait EventGroup: GroupMembersDb {
         let group_nickname = Self::get_group_member_nickname(db_t.clone(), did, my_id).unwrap();
         let join = luffa_rpc_types::Message::ContactsExchange {
             exchange: ContactsEvent::Sync {
-                u_id: my_id,
+                members: vec![Member {
+                    u_id: my_id,
+                    group_nickname,
+                }],
                 g_id: did,
-                group_nickname,
             },
         };
-        let event = luffa_rpc_types::Event::new(did, &join, Some(secret_key), my_id,None);
+        let event = luffa_rpc_types::Event::new(did, &join, Some(secret_key), my_id, None);
         let event = event.encode().unwrap();
         tracing::error!("send sync to group {did}");
         if let Err(e) = client_t.chat_request(bytes::Bytes::from(event)).await {
@@ -34,6 +36,22 @@ pub trait EventGroup: GroupMembersDb {
         Self::group_member_insert(db_t.clone(), group_id, vec![u_id]).unwrap();
         Self::set_group_member_nickname(db_t.clone(), group_id, u_id, group_nickname).unwrap();
         Self::set_member_to_join_status(db_t, group_id, u_id).unwrap();
+    }
+
+    async fn group_join_members(db_t: Arc<Db>, group_id: u64, members: Vec<Member>) {
+        let mut list = vec![];
+        for member in members {
+            list.push(member.u_id);
+            Self::set_group_member_nickname(
+                db_t.clone(),
+                group_id,
+                member.u_id,
+                &member.group_nickname,
+            )
+                .unwrap();
+            Self::set_member_to_join_status(db_t.clone(), group_id, member.u_id).unwrap();
+        }
+        Self::group_member_insert(db_t.clone(), group_id, list).unwrap();
     }
 
     async fn send_group_join(
@@ -51,7 +69,7 @@ pub trait EventGroup: GroupMembersDb {
                 group_nickname: group_nickname.to_owned(),
             },
         };
-        let event = luffa_rpc_types::Event::new(group_id, &join, Some(secret_key), u_id,None);
+        let event = luffa_rpc_types::Event::new(group_id, &join, Some(secret_key), u_id, None);
         let event = event.encode().unwrap();
         tracing::error!("send join to group {group_id}");
         if let Err(e) = client_t.chat_request(bytes::Bytes::from(event)).await {

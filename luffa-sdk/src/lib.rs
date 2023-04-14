@@ -709,7 +709,7 @@ impl Client {
         for invitee_member in invitee_members.iter() {
             members.push(invitee_member.clone());
         }
-        let msg = {
+        let (msg, sync_msg) = {
             let token = ContactsToken::new(
                 &g_key,
                 tag,
@@ -717,13 +717,13 @@ impl Client {
                 luffa_rpc_types::ContactsTypes::Group,
             )
             .unwrap();
-            Message::ContactsExchange {
+           ( Message::ContactsExchange {
                 exchange: ContactsEvent::Answer {
                     token,
                     members: members.clone(),
                     offer_crc: 0,
                 },
-            }
+            }, Message::ContactsExchange { exchange: ContactsEvent::Sync { g_id, members:members.clone()  } })
         };
         let tx = self.sender.read().clone().unwrap();
         let invitee1 = invitee.to_owned();
@@ -742,6 +742,18 @@ impl Client {
                         }
                     }
                 }
+                
+                let (req, res) = tokio::sync::oneshot::channel();
+                    let msg = serde_cbor::to_vec(&sync_msg).unwrap();
+                    tx.send((g_id, msg, my_id, req, None)).await.unwrap();
+                match res.await {
+                        Ok(r) => {
+                            tracing::info!("send group offer ok :{r:?}");
+                        }
+                        Err(e) => {
+                            tracing::warn!("{e:?}");
+                        }
+                    }
             });
         });
         Self::group_member_insert(self.db(), g_id, member_ids)?;
@@ -3785,11 +3797,22 @@ impl Client {
                         tokio::spawn(async move {
                             let data = req.encode().unwrap();
                             tracing::info!("sending: [ {} ] size:{}", req.crc, data.len());
+
+                            if req.nonce.is_some() {
+                                let some_pendding = db_t2.open_tree("some_pendding").unwrap();
+                                some_pendding.insert(req.crc.to_be_bytes(), data.clone()).unwrap();
+                                some_pendding.flush().unwrap();
+                            }
+
                             match client.chat_request(bytes::Bytes::from(data.clone())).await {
                                 Ok(res) => {
                                     tracing::warn!("send: [ {} ] ", req.crc);
 
                                     if req.nonce.is_some() {
+                                        let some_pendding = db_t2.open_tree("some_pendding").unwrap();
+                                        some_pendding.remove(req.crc.to_be_bytes()).unwrap();
+                                        some_pendding.flush().unwrap();
+
                                         let feed = Message::Feedback {
                                             crc: vec![req.crc],
                                             from_id: Some(my_id),
@@ -4340,19 +4363,16 @@ impl Client {
                                         }
 
                                         ContactsEvent::Sync {
-                                            u_id,
-                                            g_id,
-                                            group_nickname,
-                                        } => {
+                                                                    g_id,
+                                            members
+                                                                                   } => {
                                             error!(
-                                            "ContactsEvent::Sync1: {group_nickname} {g_id} {u_id}"
+                                            "ContactsEvent::Sync1: {g_id}"
                                         );
-                                            Self::group_join_member(
+                                            Self::group_join_members(
                                                 db_t.clone(),
                                                 g_id,
-                                                u_id,
-                                                &group_nickname,
-                                            )
+                                              members)
                                             .await;
                                         }
                                     }
@@ -4636,16 +4656,14 @@ impl Client {
                                                     .expect("remove group member failed");
                                             }
                                             ContactsEvent::Sync {
-                                                u_id,
-                                                g_id,
-                                                group_nickname,
+                                                 g_id,
+                                                members
                                             } => {
-                                                error!("ContactsEvent::Sync2: {group_nickname} {g_id} {u_id}");
-                                                Self::group_join_member(
+                                                error!("ContactsEvent::Sync2: {g_id} {members:?}");
+                                                Self::group_join_members(
                                                     db_t.clone(),
                                                     g_id,
-                                                    u_id,
-                                                    &group_nickname,
+                                                    members
                                                 )
                                                 .await;
                                             }
