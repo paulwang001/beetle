@@ -93,7 +93,7 @@ async fn main() -> Result<()> {
     
     let client = Arc::new(luffa_node::rpc::P2p::new(sender));
     let client = Arc::new(P2pClient::new(client).unwrap());
-    let notice_queue = Arc::new(RwLock::new(std::collections::BTreeMap::<u64, (u64,u64,u8)>::new()));
+    let notice_queue = Arc::new(RwLock::new(std::collections::BTreeMap::<u64, (u64,u64,u64)>::new()));
     let post = reqwest::ClientBuilder::default()
     .connect_timeout(Duration::from_millis(5000))
     .timeout(Duration::from_millis(5000)).build().unwrap();
@@ -160,13 +160,14 @@ async fn main() -> Result<()> {
             
             for task in tasks {
                 let mut notice = notice_queue_t.write().await;
-                if let Some((t,f,c)) = notice.remove(&task) {
+                if let Some((t,f,g)) = notice.remove(&task) {
                     if let Some(api) = push_api.as_ref() {
+                        let c:u8 = if g == 0 { 0 } else { 1 };
+                        let session_id = if g == 0 { f } else { g };
                         let nb = NoticeBody {
-
                             id:format!("{task}"),
-                            title:format!("luffa://open/chat?id={f}&type={c}"),
-                            body:format!("{}",t),
+                            title:format!("luffa://open/chat?id={session_id}&type={c}"),
+                            body:format!("{f}->{session_id}->{t}"),
                             current_key:format!("AIzaSyCG7wT4KYvbSf_HYU6xAmn7g5bgKOdGb0s")
                         };
 
@@ -233,13 +234,15 @@ async fn main() -> Result<()> {
 
                                     if let Ok(msg) = Message::decrypt(bytes::Bytes::from(msg),None,nonce) {
                                         match msg  {
-                                            Message::Feedback { status,..} => {
+                                            Message::Feedback { status,to_id,..} => {
                                                 match status {
                                                     FeedbackStatus::Notice => {
                                                         let notice = notice_queue.clone();
                                                         let mut queue = notice.write().await;
-                                                        let (time,_,tp) = queue.entry(to).or_insert((get_now(),from_id,0));
+                                                        let g_id = to_id.unwrap_or_default();
+                                                        let (time,_,g) = queue.entry(to).or_insert((get_now(),from_id,g_id));
                                                         *time = get_now();
+                                                        *g = g_id;
                                                         tracing::info!("offline notification");
                                                     }
                                                     _=>{

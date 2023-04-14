@@ -1364,7 +1364,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                             });
                                         }
                                         else{
-                                           
+                                            let g_id = to;
                                             let g_idx = self.get_contacts_index(to);
                                             let members = self.contacts.edges(g_idx);
                                             let targets = members
@@ -1395,7 +1395,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     match nonce.as_ref() {
                                                         Some(nc)=>{
                                                             if (nc.len() > 13 &&  &nc[31] == &u8::MAX) || nc.len() < 32 {
-                                                                let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(*to_id), status: FeedbackStatus::Notice };
+                                                                let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(g_id), status: FeedbackStatus::Notice };
                                                                 let evt = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id,None);
                                                                 let data = evt.encode()?;
                                                                 self.emit_network_event(NetworkEvent::RequestResponse(
@@ -1670,7 +1670,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                             match nonce.as_ref() {
                                                 Some(nc)=>{
                                                     if (nc.len() > 13 &&  &nc[31] == &u8::MAX) || nc.len() < 32 {
-                                                        let notice = Message::Feedback {crc:vec![crc],from_id:None, to_id: Some(to), status: FeedbackStatus::Notice };
+                                                        let notice = Message::Feedback {crc:vec![crc],from_id:None, to_id: None, status: FeedbackStatus::Notice };
                                                         let evt = luffa_rpc_types::Event::new(to,&notice,None,from_id,None);
                                                         let data = evt.encode()?;
                                                         self.emit_network_event(NetworkEvent::RequestResponse(
@@ -1794,7 +1794,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     pending.push((crc,std::time::Instant::now()));
                                                 }
                                             }
-                                                
+                                            let g_id = to;    
                                             let g_idx = self.get_contacts_index(to);
                                             let members = self.contacts.edges(g_idx);
                                             let targets = members
@@ -1826,7 +1826,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     match nonce.as_ref() {
                                                         Some(nc)=>{
                                                             if (nc.len() > 13 &&  &nc[31] == &u8::MAX) || nc.len() < 32 {
-                                                                let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(*to_id), status: FeedbackStatus::Notice };
+                                                                let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(g_id), status: FeedbackStatus::Notice };
                                                                 let evt = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id,None);
                                                                 let data = evt.encode()?;
                                                                 self.emit_network_event(NetworkEvent::RequestResponse(
@@ -1947,7 +1947,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         pending.push((crc,std::time::Instant::now()));
                                                     }
                                                 }
-                                                    
+                                                let g_id = to;        
                                                 let g_idx = self.get_contacts_index(to);
                                                 let members = self.contacts.edges(g_idx);
                                                 let targets = members
@@ -1978,7 +1978,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         match nonce.as_ref() {
                                                             Some(nc)=>{
                                                                 if (nc.len() > 13 &&  &nc[31] == &u8::MAX) || nc.len() < 32 {
-                                                                    let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(*to_id), status: FeedbackStatus::Notice };
+                                                                    let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(g_id), status: FeedbackStatus::Notice };
                                                                     let evt = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id,None);
                                                                     let data = evt.encode()?;
                                                                     self.emit_network_event(NetworkEvent::RequestResponse(
