@@ -1772,11 +1772,16 @@ impl Client {
                         .ok()
                         .flatten()
                 })
-                .filter_map(|e| {
-                    let msg = serde_cbor::from_slice::<Message>(&e.msg).ok()?;
-                    filter(&msg).then_some(e)
-                })
-                .nth(0);
+                .find(|e| {
+                    let msg = match
+                    serde_cbor::from_slice::<Message>(&e.msg).ok()
+                    {
+                        Some(x) => x,
+                        None => return false,
+                    };
+
+                    filter(&msg)
+                });
 
             if event.is_some() {
                 return Ok(event);
