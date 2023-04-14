@@ -196,7 +196,7 @@ pub enum Message {
         /// 2 decrypt message failed
         kind: u8,
         reason: String,
-    }
+    },
 }
 
 #[repr(u8)]
@@ -220,30 +220,9 @@ impl Message {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum RtcAction {
-    Push {
-        audio_id: u32,
-        action_type: u8,
-        video_id: u32,
-    },
-    Pull {
-        audio_id: u32,
-        video_id: u32,
-    },
-    Reject {
-        audio_id: u32,
-        video_id: u32,
-    },
-    Status {
-        timestamp: u64,
-        code: u32,
-        info: String,
-    },
-    Offer {
-        dsp: String,
-    },
-    Answer {
-        dsp: String,
-    },
+    Status { code: u32, info: String },
+    Offer { audio_id: u32, video_id: u32 },
+    Answer { audio_id: u32, video_id: u32 },
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Contacts {
@@ -318,8 +297,7 @@ impl Message {
                 let mut nonce_data = digest.to_bytes();
                 if self.is_important() {
                     nonce_data[31] = u8::MAX;
-                }
-                else{
+                } else {
                     nonce_data[31] = 0;
                 }
                 let nonce = Nonce::from_slice(&nonce_data[0..12]);
@@ -379,7 +357,7 @@ impl Message {
     pub fn chat_feedback(&self) -> Option<(u64, FeedbackStatus)> {
         match self {
             Self::Chat { content } => match content {
-                ChatContent::Feedback { crc, status ,..} => Some((*crc, *status)),
+                ChatContent::Feedback { crc, status, .. } => Some((*crc, *status)),
                 _ => None,
             },
             _ => None,
@@ -388,7 +366,6 @@ impl Message {
     pub fn is_important(&self) -> bool {
         match self {
             Message::WebRtc { action, .. } => match action {
-                RtcAction::Push { .. } => true,
                 _ => false,
             },
             Message::ContactsExchange { exchange } => match exchange {
