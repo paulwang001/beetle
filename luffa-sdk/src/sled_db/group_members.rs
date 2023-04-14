@@ -78,7 +78,7 @@ pub trait GroupMembersDb: Nickname {
         );
         let key = &Self::group_member_key(group_id);
         let tree = Self::open_group_member_tree(db)?;
-        let mut res = vec![];
+        let res;
         if let Some(data) = tree.get(key)? {
             let data = data.as_bytes();
             let mut members = Members::deserialize(data)?;
@@ -127,7 +127,10 @@ pub trait GroupMembersDb: Nickname {
             let left = ((page_no - 1) * page_size) as usize;
             let mut right = (page_size * page_size) as usize;
             if left > members.len() {
-                return Ok(GroupInfo{total_count:  total_count as u64, members: vec![]});
+                return Ok(GroupInfo {
+                    total_count: total_count as u64,
+                    members: vec![],
+                });
             }
             if right > members.len() {
                 right = members.len();
