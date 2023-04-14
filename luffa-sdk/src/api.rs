@@ -390,3 +390,17 @@ pub struct Lookup {
     pub agent_version: String,
     pub protocols: Vec<String>,
 }
+
+pub fn event_nonce_to_last(nonce: &Vec<u8>) -> (u64, u64) {
+    if nonce.len() == 32 && &nonce[31] == &u8::MAX {
+        let mut buf = [0u8; 8];
+        buf.clone_from_slice(&nonce[12..20]);
+        let last = u64::from_be_bytes(buf);
+        let mut buf = [0u8; 8];
+        buf.clone_from_slice(&nonce[20..28]);
+        let crc = u64::from_be_bytes(buf);
+        (last, crc)
+    } else {
+        (0, 0)
+    }
+}

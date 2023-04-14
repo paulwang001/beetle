@@ -3172,7 +3172,7 @@ impl Client {
                                         msg,
                                         ..
                                     } = im;
-                                    error!("decode {crc}");
+
                                     let session_last_crc_t = session_last_crc_t.clone();
                                     if to == my_id && nonce.is_none() {
                                         if let Ok(m) = Message::decrypt(
@@ -3336,11 +3336,9 @@ impl Client {
                                             f_crc.remove(&crc);
                                         }
                                     });
-                                    error!("finish {crc}");
                                 } else {
                                     panic!("decode failed");
                                 }
-                                error!("finish");
                             }
                             luffa_node::ChatEvent::OutboundFailure {
                                 peer,
