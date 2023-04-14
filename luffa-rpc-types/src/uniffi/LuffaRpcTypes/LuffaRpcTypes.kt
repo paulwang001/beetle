@@ -40,7 +40,7 @@ open class RustBuffer : Structure() {
 
     companion object {
         internal fun alloc(size: Int = 0) = rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_a98d_rustbuffer_alloc(size, status).also {
+            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_361d_rustbuffer_alloc(size, status).also {
                 if(it.data == null) {
                    throw RuntimeException("RustBuffer.alloc() returned null data pointer (size=${size})")
                }
@@ -48,7 +48,7 @@ open class RustBuffer : Structure() {
         }
 
         internal fun free(buf: RustBuffer.ByValue) = rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_a98d_rustbuffer_free(buf, status)
+            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_361d_rustbuffer_free(buf, status)
         }
     }
 
@@ -257,27 +257,27 @@ internal interface _UniFFILib : Library {
         }
     }
 
-    fun LuffaRpcTypes_a98d_message_from(`msg`: RustBuffer.ByValue,
+    fun LuffaRpcTypes_361d_message_from(`msg`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaRpcTypes_a98d_message_to(`msg`: RustBuffer.ByValue,
+    fun LuffaRpcTypes_361d_message_to(`msg`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_a98d_rustbuffer_alloc(`size`: Int,
+    fun ffi_LuffaRpcTypes_361d_rustbuffer_alloc(`size`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_a98d_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,
+    fun ffi_LuffaRpcTypes_361d_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_a98d_rustbuffer_free(`buf`: RustBuffer.ByValue,
+    fun ffi_LuffaRpcTypes_361d_rustbuffer_free(`buf`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): Unit
 
-    fun ffi_LuffaRpcTypes_a98d_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,
+    fun ffi_LuffaRpcTypes_361d_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
@@ -1304,29 +1304,17 @@ public object FfiConverterTypeMessage : FfiConverterRustBuffer<Message>{
 
 
 sealed class RtcAction {
-    data class Push(
-        val `audioId`: UInt, 
-        val `actionType`: UByte, 
-        val `videoId`: UInt
-        ) : RtcAction()
-    data class Pull(
-        val `audioId`: UInt, 
-        val `videoId`: UInt
-        ) : RtcAction()
-    data class Reject(
-        val `audioId`: UInt, 
-        val `videoId`: UInt
-        ) : RtcAction()
     data class Status(
-        val `timestamp`: ULong, 
         val `code`: UInt, 
         val `info`: String
         ) : RtcAction()
     data class Offer(
-        val `dsp`: String
+        val `audioId`: UInt, 
+        val `videoId`: UInt
         ) : RtcAction()
     data class Answer(
-        val `dsp`: String
+        val `audioId`: UInt, 
+        val `videoId`: UInt
         ) : RtcAction()
     
 
@@ -1336,65 +1324,27 @@ sealed class RtcAction {
 public object FfiConverterTypeRtcAction : FfiConverterRustBuffer<RtcAction>{
     override fun read(buf: ByteBuffer): RtcAction {
         return when(buf.getInt()) {
-            1 -> RtcAction.Push(
-                FfiConverterUInt.read(buf),
-                FfiConverterUByte.read(buf),
-                FfiConverterUInt.read(buf),
-                )
-            2 -> RtcAction.Pull(
-                FfiConverterUInt.read(buf),
-                FfiConverterUInt.read(buf),
-                )
-            3 -> RtcAction.Reject(
-                FfiConverterUInt.read(buf),
-                FfiConverterUInt.read(buf),
-                )
-            4 -> RtcAction.Status(
-                FfiConverterULong.read(buf),
+            1 -> RtcAction.Status(
                 FfiConverterUInt.read(buf),
                 FfiConverterString.read(buf),
                 )
-            5 -> RtcAction.Offer(
-                FfiConverterString.read(buf),
+            2 -> RtcAction.Offer(
+                FfiConverterUInt.read(buf),
+                FfiConverterUInt.read(buf),
                 )
-            6 -> RtcAction.Answer(
-                FfiConverterString.read(buf),
+            3 -> RtcAction.Answer(
+                FfiConverterUInt.read(buf),
+                FfiConverterUInt.read(buf),
                 )
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
     }
 
     override fun allocationSize(value: RtcAction) = when(value) {
-        is RtcAction.Push -> {
-            // Add the size for the Int that specifies the variant plus the size needed for all fields
-            (
-                4
-                + FfiConverterUInt.allocationSize(value.`audioId`)
-                + FfiConverterUByte.allocationSize(value.`actionType`)
-                + FfiConverterUInt.allocationSize(value.`videoId`)
-            )
-        }
-        is RtcAction.Pull -> {
-            // Add the size for the Int that specifies the variant plus the size needed for all fields
-            (
-                4
-                + FfiConverterUInt.allocationSize(value.`audioId`)
-                + FfiConverterUInt.allocationSize(value.`videoId`)
-            )
-        }
-        is RtcAction.Reject -> {
-            // Add the size for the Int that specifies the variant plus the size needed for all fields
-            (
-                4
-                + FfiConverterUInt.allocationSize(value.`audioId`)
-                + FfiConverterUInt.allocationSize(value.`videoId`)
-            )
-        }
         is RtcAction.Status -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
                 4
-                + FfiConverterULong.allocationSize(value.`timestamp`)
                 + FfiConverterUInt.allocationSize(value.`code`)
                 + FfiConverterString.allocationSize(value.`info`)
             )
@@ -1403,54 +1353,38 @@ public object FfiConverterTypeRtcAction : FfiConverterRustBuffer<RtcAction>{
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
                 4
-                + FfiConverterString.allocationSize(value.`dsp`)
+                + FfiConverterUInt.allocationSize(value.`audioId`)
+                + FfiConverterUInt.allocationSize(value.`videoId`)
             )
         }
         is RtcAction.Answer -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
                 4
-                + FfiConverterString.allocationSize(value.`dsp`)
+                + FfiConverterUInt.allocationSize(value.`audioId`)
+                + FfiConverterUInt.allocationSize(value.`videoId`)
             )
         }
     }
 
     override fun write(value: RtcAction, buf: ByteBuffer) {
         when(value) {
-            is RtcAction.Push -> {
-                buf.putInt(1)
-                FfiConverterUInt.write(value.`audioId`, buf)
-                FfiConverterUByte.write(value.`actionType`, buf)
-                FfiConverterUInt.write(value.`videoId`, buf)
-                Unit
-            }
-            is RtcAction.Pull -> {
-                buf.putInt(2)
-                FfiConverterUInt.write(value.`audioId`, buf)
-                FfiConverterUInt.write(value.`videoId`, buf)
-                Unit
-            }
-            is RtcAction.Reject -> {
-                buf.putInt(3)
-                FfiConverterUInt.write(value.`audioId`, buf)
-                FfiConverterUInt.write(value.`videoId`, buf)
-                Unit
-            }
             is RtcAction.Status -> {
-                buf.putInt(4)
-                FfiConverterULong.write(value.`timestamp`, buf)
+                buf.putInt(1)
                 FfiConverterUInt.write(value.`code`, buf)
                 FfiConverterString.write(value.`info`, buf)
                 Unit
             }
             is RtcAction.Offer -> {
-                buf.putInt(5)
-                FfiConverterString.write(value.`dsp`, buf)
+                buf.putInt(2)
+                FfiConverterUInt.write(value.`audioId`, buf)
+                FfiConverterUInt.write(value.`videoId`, buf)
                 Unit
             }
             is RtcAction.Answer -> {
-                buf.putInt(6)
-                FfiConverterString.write(value.`dsp`, buf)
+                buf.putInt(3)
+                FfiConverterUInt.write(value.`audioId`, buf)
+                FfiConverterUInt.write(value.`videoId`, buf)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -1678,7 +1612,7 @@ public object FfiConverterSequenceTypeMember: FfiConverterRustBuffer<List<Member
 fun `messageFrom`(`msg`: List<UByte>): Message? {
     return FfiConverterOptionalTypeMessage.lift(
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaRpcTypes_a98d_message_from(FfiConverterSequenceUByte.lower(`msg`), _status)
+    _UniFFILib.INSTANCE.LuffaRpcTypes_361d_message_from(FfiConverterSequenceUByte.lower(`msg`), _status)
 })
 }
 
@@ -1687,7 +1621,7 @@ fun `messageFrom`(`msg`: List<UByte>): Message? {
 fun `messageTo`(`msg`: Message): List<UByte>? {
     return FfiConverterOptionalSequenceUByte.lift(
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaRpcTypes_a98d_message_to(FfiConverterTypeMessage.lower(`msg`), _status)
+    _UniFFILib.INSTANCE.LuffaRpcTypes_361d_message_to(FfiConverterTypeMessage.lower(`msg`), _status)
 })
 }
 

@@ -4491,8 +4491,9 @@ impl Client {
                                                     .await;
                                                 }
                                                 else{
-                                                    
-                                                    let hi = luffa_rpc_types::Message::text(format!("Hi,I'm {}",comment.clone().unwrap_or_default()));
+                                                    let nickname = Self::get_contacts_tag(db_t.clone(), my_id).map(|(name, _)| name)
+                                                        .unwrap_or(comment.clone().unwrap_or_default());
+                                                    let hi = luffa_rpc_types::Message::text(format!("Hi,I'm {}",nickname));
                                                     let hi = serde_cbor::to_vec(&hi).unwrap();
                                                     let (req, res) = tokio::sync::oneshot::channel();
                                                     sender.send((did, hi, my_id, req, Some(token.secret_key.clone()))).await.unwrap();
