@@ -414,9 +414,8 @@ pub enum ContactsEvent {
         id: u64,
     },
     Sync {
-        u_id: u64,
         g_id: u64,
-        group_nickname: String,
+        members: Vec<Member>,
     },
 }
 
