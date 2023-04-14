@@ -224,6 +224,7 @@ pub enum RtcAction {
     Offer { audio_id: u32, video_id: u32 },
     Answer { audio_id: u32, video_id: u32 },
 }
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Contacts {
     pub did: u64,

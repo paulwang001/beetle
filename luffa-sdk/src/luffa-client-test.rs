@@ -1,5 +1,4 @@
 use clap::Parser;
-use futures::select;
 use libp2p::identity::PublicKey;
 use libp2p::PeerId;
 use luffa_rpc_types::{message_to, ContactsEvent, ContactsToken, Message, RtcAction};
@@ -69,6 +68,7 @@ pub struct Params {
     pub param: Option<String>,
     pub group_id: Option<u64>,
     pub groups: Option<Vec<u64>>,
+    pub code: Option<String>,
 }
 
 fn main() -> ClientResult<()> {
@@ -219,6 +219,11 @@ fn main() -> ClientResult<()> {
                         .contacts_group_members(params.group_id.unwrap(), 1, 10)
                         .unwrap();
                     tracing::error!("group_info: {group:?}");
+                }
+                // { "command": "contacts_group_offer", "code": "" }
+                "contacts_group_offer" => {
+                    let crc = client1.contacts_offer(&params.code.unwrap()).unwrap();
+                    println!("contacts_offer: {crc}");
                 }
                 _ => {}
             }

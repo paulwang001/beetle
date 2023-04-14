@@ -19,13 +19,13 @@ fileprivate extension RustBuffer {
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
-        try! rustCall { ffi_LuffaRpcTypes_a98d_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
+        try! rustCall { ffi_LuffaRpcTypes_361d_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
     // Frees the buffer in place.
     // The buffer must not be used after this is called.
     func deallocate() {
-        try! rustCall { ffi_LuffaRpcTypes_a98d_rustbuffer_free(self, $0) }
+        try! rustCall { ffi_LuffaRpcTypes_361d_rustbuffer_free(self, $0) }
     }
 }
 
@@ -1435,12 +1435,9 @@ extension Message: Equatable, Hashable {}
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 public enum RtcAction {
     
-    case `push`(`audioId`: UInt32, `actionType`: UInt8, `videoId`: UInt32)
-    case `pull`(`audioId`: UInt32, `videoId`: UInt32)
-    case `reject`(`audioId`: UInt32, `videoId`: UInt32)
-    case `status`(`timestamp`: UInt64, `code`: UInt32, `info`: String)
-    case `offer`(`dsp`: String)
-    case `answer`(`dsp`: String)
+    case `status`(`code`: UInt32, `info`: String)
+    case `offer`(`audioId`: UInt32, `videoId`: UInt32)
+    case `answer`(`audioId`: UInt32, `videoId`: UInt32)
 }
 
 public struct FfiConverterTypeRtcAction: FfiConverterRustBuffer {
@@ -1450,34 +1447,19 @@ public struct FfiConverterTypeRtcAction: FfiConverterRustBuffer {
         let variant: Int32 = try readInt(&buf)
         switch variant {
         
-        case 1: return .`push`(
-            `audioId`: try FfiConverterUInt32.read(from: &buf), 
-            `actionType`: try FfiConverterUInt8.read(from: &buf), 
-            `videoId`: try FfiConverterUInt32.read(from: &buf)
-        )
-        
-        case 2: return .`pull`(
-            `audioId`: try FfiConverterUInt32.read(from: &buf), 
-            `videoId`: try FfiConverterUInt32.read(from: &buf)
-        )
-        
-        case 3: return .`reject`(
-            `audioId`: try FfiConverterUInt32.read(from: &buf), 
-            `videoId`: try FfiConverterUInt32.read(from: &buf)
-        )
-        
-        case 4: return .`status`(
-            `timestamp`: try FfiConverterUInt64.read(from: &buf), 
+        case 1: return .`status`(
             `code`: try FfiConverterUInt32.read(from: &buf), 
             `info`: try FfiConverterString.read(from: &buf)
         )
         
-        case 5: return .`offer`(
-            `dsp`: try FfiConverterString.read(from: &buf)
+        case 2: return .`offer`(
+            `audioId`: try FfiConverterUInt32.read(from: &buf), 
+            `videoId`: try FfiConverterUInt32.read(from: &buf)
         )
         
-        case 6: return .`answer`(
-            `dsp`: try FfiConverterString.read(from: &buf)
+        case 3: return .`answer`(
+            `audioId`: try FfiConverterUInt32.read(from: &buf), 
+            `videoId`: try FfiConverterUInt32.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -1488,40 +1470,22 @@ public struct FfiConverterTypeRtcAction: FfiConverterRustBuffer {
         switch value {
         
         
-        case let .`push`(`audioId`,`actionType`,`videoId`):
+        case let .`status`(`code`,`info`):
             writeInt(&buf, Int32(1))
-            FfiConverterUInt32.write(`audioId`, into: &buf)
-            FfiConverterUInt8.write(`actionType`, into: &buf)
-            FfiConverterUInt32.write(`videoId`, into: &buf)
+            FfiConverterUInt32.write(`code`, into: &buf)
+            FfiConverterString.write(`info`, into: &buf)
             
         
-        case let .`pull`(`audioId`,`videoId`):
+        case let .`offer`(`audioId`,`videoId`):
             writeInt(&buf, Int32(2))
             FfiConverterUInt32.write(`audioId`, into: &buf)
             FfiConverterUInt32.write(`videoId`, into: &buf)
             
         
-        case let .`reject`(`audioId`,`videoId`):
+        case let .`answer`(`audioId`,`videoId`):
             writeInt(&buf, Int32(3))
             FfiConverterUInt32.write(`audioId`, into: &buf)
             FfiConverterUInt32.write(`videoId`, into: &buf)
-            
-        
-        case let .`status`(`timestamp`,`code`,`info`):
-            writeInt(&buf, Int32(4))
-            FfiConverterUInt64.write(`timestamp`, into: &buf)
-            FfiConverterUInt32.write(`code`, into: &buf)
-            FfiConverterString.write(`info`, into: &buf)
-            
-        
-        case let .`offer`(`dsp`):
-            writeInt(&buf, Int32(5))
-            FfiConverterString.write(`dsp`, into: &buf)
-            
-        
-        case let .`answer`(`dsp`):
-            writeInt(&buf, Int32(6))
-            FfiConverterString.write(`dsp`, into: &buf)
             
         }
     }
@@ -1718,7 +1682,7 @@ public func `messageFrom`(`msg`: [UInt8])  -> Message? {
     
     rustCall() {
     
-    LuffaRpcTypes_a98d_message_from(
+    LuffaRpcTypes_361d_message_from(
         FfiConverterSequenceUInt8.lower(`msg`), $0)
 }
     )
@@ -1732,7 +1696,7 @@ public func `messageTo`(`msg`: Message)  -> [UInt8]? {
     
     rustCall() {
     
-    LuffaRpcTypes_a98d_message_to(
+    LuffaRpcTypes_361d_message_to(
         FfiConverterTypeMessage.lower(`msg`), $0)
 }
     )
