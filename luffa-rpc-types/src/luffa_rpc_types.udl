@@ -47,12 +47,9 @@ dictionary Member {
 
 [Enum]
 interface RtcAction {
-    Push(u32 audio_id, u8 action_type, u32 video_id);
-    Pull(u32 audio_id,u32 video_id);
-    Reject(u32 audio_id,u32 video_id);
-    Status(u64 timestamp,u32 code,string info);
-    Offer(string dsp);
-    Answer(string dsp);
+    Status(u32 code,string info);
+    Offer(u32 audio_id, u32 video_id);
+    Answer(u32 audio_id, u32 video_id);
 };
 
 [Enum]

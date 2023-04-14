@@ -98,7 +98,7 @@ fn main() -> ClientResult<()> {
         loop {
             let line = stdin.next().unwrap().unwrap();
             if line.is_empty() {
-                continue
+                continue;
             }
             println!("{:?}", line);
             let params: Params = serde_json::from_str(&line).unwrap_or_default();
@@ -136,9 +136,7 @@ fn main() -> ClientResult<()> {
                 }
                 // { "command": "gen_offer_code", "to": 12243737405236716139 }
                 "gen_offer_code" => {
-                    let gen_offer_code = client1
-                        .gen_offer_code(params.to.unwrap())
-                        .unwrap();
+                    let gen_offer_code = client1.gen_offer_code(params.to.unwrap()).unwrap();
                     tracing::error!("gen_offer_code: {gen_offer_code:?}");
                 }
                 // { "command": "contacts_offer", "param": "https://luffa.putdev.com/p/YGz62Wdxqx8/H1NojzUMJ3LqhcjXCT11aCpVWjkb1JdfBpZRkAyPpNML/Uncharted Banana pepper"}
@@ -151,10 +149,7 @@ fn main() -> ClientResult<()> {
                 // { "command": "contacts_anwser",  "to": 11837182690600253035, "param": "10531898908420903627" }
                 "contacts_anwser" => {
                     let id = client1
-                        .contacts_anwser(
-                            params.to.unwrap(),
-                            params.param.unwrap().parse().unwrap(),
-                        )
+                        .contacts_anwser(params.to.unwrap(), params.param.unwrap().parse().unwrap())
                         .unwrap();
                     tracing::error!("contacts_anwser: {id}");
                 }
@@ -171,16 +166,12 @@ fn main() -> ClientResult<()> {
                 }
                 // contacts_search1 Empathetic
                 "contacts_search1" => {
-                    let contacts = client1
-                        .contacts_search(0, &params.param.unwrap())
-                        .unwrap();
+                    let contacts = client1.contacts_search(0, &params.param.unwrap()).unwrap();
                     tracing::error!("contacts_search: {contacts:?}");
                 }
                 // contacts_search2${ "command": "group_test" }
                 "contacts_search2" => {
-                    let contacts = client1
-                        .contacts_search(2, &params.param.unwrap())
-                        .unwrap();
+                    let contacts = client1.contacts_search(2, &params.param.unwrap()).unwrap();
                     tracing::error!("contacts_search: {contacts:?}");
                 }
                 // 13685501506277185778 8191288328679216604
@@ -224,7 +215,9 @@ fn main() -> ClientResult<()> {
                 }
                 // { "command": "group_info", "group_id": 242692364427292578 }
                 "group_info" => {
-                    let group = client1.contacts_group_members(params.group_id.unwrap() , 1, 10).unwrap();
+                    let group = client1
+                        .contacts_group_members(params.group_id.unwrap(), 1, 10)
+                        .unwrap();
                     tracing::error!("group_info: {group:?}");
                 }
                 _ => {}
@@ -244,14 +237,7 @@ fn main() -> ClientResult<()> {
                 action_type,
                 action,
             } => match action {
-                RtcAction::Status {
-                    timestamp,
-                    code,
-                    info,
-                } => {}
-                RtcAction::Push { audio_id,action_type, video_id } => {
-                    tracing::info!("{}-----push-----{}", stream_id, audio_id);
-                }
+                RtcAction::Status { code, info } => {}
                 _ => {}
             },
             Message::ContactsExchange { exchange } => match exchange {

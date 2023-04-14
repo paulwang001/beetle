@@ -203,6 +203,8 @@ interface Client {
 
     [Throws=ClientError]
     string? find_contacts_tag(u64 did);
+    [Throws=ClientError]
+    u8? find_contacts_tp(u64 did);
 
     [Throws=ClientError]
     EventMeta meta_msg([ByRef] sequence<u8> data);
