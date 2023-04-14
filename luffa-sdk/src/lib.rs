@@ -2160,6 +2160,10 @@ impl Client {
         Ok(Self::get_contacts_tag(self.db(), did).map(|(v, _)| v))
     }
 
+    pub fn find_contacts_tp(&self, did: u64) -> ClientResult<Option<u8>> {
+        Ok(Self::get_contacts_tag(self.db(), did).map(|(_, v)| v))
+    }
+
     pub fn update_contacts_tag(&self, did: u64, tag: String) {
         Self::set_contacts_tag(self.db(), did, tag)
     }
