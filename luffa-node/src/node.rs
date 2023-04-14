@@ -630,6 +630,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     let t = self.get_peer_index(to_id);
                     // let time = Utc::now().timestamp_millis() as u64;
                     tracing::info!("local connection >> {my_id} --> {to_id}");
+                    
                     self.connections
                         .update_edge(f, t, ConnectionEdge::Local(peer_id.clone()));
 
@@ -657,8 +658,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     let t = self.get_peer_index(to_id);
 
                     if let Some(e) = self.connections.find_edge(f, t) {
-                        self.connections.remove_edge(e);
-                        tracing::info!("local disconnection >> {my_id} --> {to_id}");
+                        let w = self.connections.remove_edge(e);
+                        tracing::warn!("local disconnection >> {my_id} --> {to_id} w: {w:?}");
                     }
                     else{
                         tracing::error!("local disconnection >> {my_id} --> {to_id}");
@@ -2063,6 +2064,15 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         request_id,
                         error,
                     } => {
+                        if let Some((crc,_to,channel)) = self.pending_request.remove(&request_id) {
+                            if let Err(_e) =
+                                channel.send(Err(anyhow!("InboundFailure :{error:?}")))
+                            {
+                                tracing::error!("channel response failed");
+                            }
+                            
+                            tracing::error!("status Send channel response err: [{crc}]");
+                        }
                         self.emit_network_event(NetworkEvent::RequestResponse(
                             ChatEvent::InboundFailure {
                                 peer,
@@ -2076,6 +2086,15 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         request_id,
                         error,
                     } => {
+                        if let Some((crc,_to,channel)) = self.pending_request.remove(&request_id) {
+                            if let Err(_e) =
+                                channel.send(Err(anyhow!("OutboundFailure {error:?}")))
+                            {
+                                tracing::error!("channel response failed");
+                            }
+                            
+                            tracing::error!("status Send channel OutboundFailure err: [{crc}]");
+                        }
                         self.emit_network_event(NetworkEvent::RequestResponse(
                             ChatEvent::OutboundFailure {
                                 peer,
