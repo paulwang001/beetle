@@ -2714,10 +2714,11 @@ impl Client {
                 let mut x = self.client.write();
                 *x = Some(client.clone());
             }
+            let sender = self.sender.read().clone().unwrap();
             tokio::spawn(async move {
                 debug!("runing...");
                 Self::run(
-                    db, cb, rx, idx_writer, schema, &peer, client, events, p2p_rpc,
+                    db, cb, rx,sender, idx_writer, schema, &peer, client, events, p2p_rpc,
                 )
                 .await;
                 debug!("run exit!....");
@@ -2778,6 +2779,13 @@ impl Client {
         db: Arc<Db>,
         cb: Box<dyn Callback>,
         mut receiver: tokio::sync::mpsc::Receiver<(
+            u64,
+            Vec<u8>,
+            u64,
+            ShotSender<anyhow::Result<u64>>,
+            Option<Vec<u8>>,
+        )>,
+        sender: tokio::sync::mpsc::Sender<(
             u64,
             Vec<u8>,
             u64,
@@ -3030,6 +3038,7 @@ impl Client {
                                                             let fetching_crc_t =
                                                                 fetching_crc.clone();
                                                             let session_last_crc_tt = session_last_crc_t.clone();    
+                                                            let msg_tx = sender.clone();
                                                             tokio::spawn(async move {
                                                                 let client_t = client_t.clone();
                                                                 let db_tt = db_tt.clone();
@@ -3060,7 +3069,9 @@ impl Client {
 
                                                                                 if !Self::have_in_tree(db_tt.clone(), crc, &table) {
                                                                                     Self::process_event(
-                                                                                        db_tt.clone(), cb_t.clone(), client_t.clone(), idx_t.clone(), schema_t.clone(), &data, my_id,session_last_crc_tt.clone(),
+                                                                                        db_tt.clone(), cb_t.clone(), client_t.clone(), 
+                                                                                        idx_t.clone(), schema_t.clone(), &data, my_id,session_last_crc_tt.clone(),
+                                                                                        msg_tx.clone(),
                                                                                     )
                                                                                         .await;
                                                                                 } else {
@@ -3132,12 +3143,14 @@ impl Client {
                                         let client_t = client_t.clone();
                                         let cb = cb.clone();
                                         let session_last_crc_tt = session_last_crc_t.clone();
+                                        let msg_tx = sender.clone();
                                         tokio::spawn(async move {
                                             if !Self::have_in_tree(db_t.clone(), crc, &table) {
                                                 Self::process_event(
                                                     db_t, cb, client_t, idx, schema_tt, &data,
                                                     my_id,
                                                     session_last_crc_tt.clone(),
+                                                    msg_tx,
                                                 )
                                                 .await;
                                             }
@@ -3201,6 +3214,7 @@ impl Client {
                                                             let fetching_crc_t =
                                                                 fetching_crc.clone();
                                                             let session_last_crc_t = session_last_crc_t.clone();
+                                                            let msg_tx = sender.clone();
                                                             tokio::spawn(async move {
                                                                 let client_t = client_t.clone();
                                                                 let db_tt = db_tt.clone();
@@ -3230,7 +3244,9 @@ impl Client {
 
                                                                                 if !Self::have_in_tree(db_tt.clone(), crc, &table) {
                                                                                     Self::process_event(
-                                                                                        db_tt.clone(), cb_t.clone(), client_t.clone(), idx_t.clone(), schema_t.clone(), &data, my_id,session_last_crc_t.clone(),
+                                                                                        db_tt.clone(), cb_t.clone(), client_t.clone(), idx_t.clone(), schema_t.clone(), &data, my_id,
+                                                                                        session_last_crc_t.clone(),
+                                                                                        msg_tx.clone(),
                                                                                     )
                                                                                         .await;
                                                                                 } else {
@@ -3288,6 +3304,7 @@ impl Client {
                                     let schema_tt = schema_tt.clone();
                                     let fetching_crc_t = fetching_crc.clone();
                                     let session_last_crc_t = session_last_crc_t.clone();
+                                    let msg_tx = sender.clone();
                                     tokio::spawn(async move {
                                         {
                                             let mut f_crc = fetching_crc_t.write();
@@ -3299,6 +3316,7 @@ impl Client {
                                         if !Self::have_in_tree(db_t.clone(), crc, &table) {
                                             Self::process_event(
                                                 db_t, cb, client_t, idx, schema_tt, &data, my_id,session_last_crc_t.clone(),
+                                                msg_tx.clone(),
                                             )
                                             .await;
                                         }
@@ -3368,7 +3386,15 @@ impl Client {
 
         let db_t = db.clone();
         let db_t2 = db.clone();
-        let pendings = VecDeque::<(Event, u32, Instant)>::new();
+        let mut pendings = VecDeque::<(Event, u32, Instant)>::new();
+        let some_pendding = db.open_tree("some_pendding").unwrap();
+        let mut itr = some_pendding.iter();
+        while let Some(item) = itr.next() {
+            if let Ok((_k, v)) = item {
+                let e = Event::decode_uncheck(&v.to_vec()).unwrap();
+                pendings.push_back((e, 1, Instant::now()));
+            }
+        }
         let pendings = Arc::new(tokio::sync::RwLock::new(pendings));
         let pendings_t = pendings.clone();
         let cb_tt = cb_local.clone();
@@ -3408,7 +3434,7 @@ impl Client {
                     cb_tt.on_message(0, my_id, 0, now, feed);
                     first = false;
                 }
-                if let Some((req, count, time, all_size)) = {
+                if let Some((req, count, _time, all_size)) = {
                     let mut p = pendings_t.write().await;
                     let all_size = p.len();
                     tracing::info!("pending size:{}", all_size);
@@ -3417,7 +3443,31 @@ impl Client {
                         if r.nonce.is_none() && c >= 20 {
                             continue;
                         }
-                        if t.elapsed().as_millis() < c as u128 * 300 {
+                        if t.elapsed().as_millis() < c as u128 * 300 && r.nonce.is_none() {
+                            p.push_back((r, c, t));
+                            continue;
+                        }
+                        else if t.elapsed().as_millis() < 300 && r.nonce.is_some() {
+                            if c > 32 {
+                                let now = Utc::now().timestamp_millis() as u64;
+                                let (tt,u)= {
+                                    let mut time = now - r.event_time;
+                                    let mut u = format!("ms");
+                                    if time > 1000 {
+                                        time = time / 1000;
+                                        u = format!("sec");
+                                    }
+                                    if time > 60 {
+                                        time = time / 60;
+                                        u = format!("min");
+                                    }
+                                    (time,u)
+                                };
+                                let crc = r.crc;
+                                let err = Message::InnerError { kind: 200, reason: format!("Warnning >>crc {crc} send count {c} in {tt} {u}") };
+                                let err = serde_cbor::to_vec(&err).unwrap();
+                                cb_tt.on_message(r.crc, 0, 0, now, err);
+                            }
                             p.push_back((r, c, t));
                             continue;
                         }
@@ -3431,6 +3481,8 @@ impl Client {
                     let event_time = req.event_time;
                     // let nonce = &req.nonce;
                     let data = req.encode().unwrap();
+                    some_pendding.insert(req.crc.to_be_bytes(), data.clone()).unwrap();
+                    some_pendding.flush().unwrap();
                     match client_pending
                         .chat_request(bytes::Bytes::from(data.clone()))
                         .await
@@ -3447,6 +3499,8 @@ impl Client {
                                 let table = format!("message_{to}");
                                 Self::save_to_tree_status(db_t2.clone(), req.crc, &table, 1);
                                 cb_tt.on_message(req.crc, my_id, to, event_time, feed);
+                                some_pendding.remove(&req.crc.to_be_bytes()).unwrap();
+                                some_pendding.flush().unwrap();
                             }
                             tracing::debug!("{res:?}");
                         }
@@ -3455,6 +3509,7 @@ impl Client {
                             if all_size > 64 && req.nonce.is_none() {
                                 continue;
                             }
+                            
                             tokio::time::sleep(Duration::from_millis(300)).await;
                             // let status = if count >= 20 {FeedbackStatus::Failed} else {FeedbackStatus::Sending};
                             if req.nonce.is_some() {
@@ -3470,7 +3525,7 @@ impl Client {
                                 cb_tt.on_message(req.crc, my_id, to, event_time, feed);
                             }
                             let mut push = pendings_t.write().await;
-                            push.push_back((req, count + 1, time));
+                            push.push_back((req, count + 1, Instant::now()));
                         }
                     }
                 } else {
@@ -3827,6 +3882,13 @@ impl Client {
         data: &Vec<u8>,
         my_id: u64,
         session_last_crc: Arc<RwLock<sled::Tree>>,
+        sender: tokio::sync::mpsc::Sender<(
+            u64,
+            Vec<u8>,
+            u64,
+            ShotSender<anyhow::Result<u64>>,
+            Option<Vec<u8>>,
+        )>,
     ) {
         if let Ok(im) = Event::decode_uncheck(&data) {
             let Event {
@@ -4412,12 +4474,24 @@ impl Client {
                                                     .await;
                                                 }
                                                 else{
+                                                    
                                                     let hi = luffa_rpc_types::Message::text(format!("Hi,I'm {}",comment.clone().unwrap_or_default()));
-                                                    let event = luffa_rpc_types::Event::new(did, &hi, Some(token.secret_key.clone()), my_id,None);
-                                                    let event = event.encode().unwrap();
-                                                    if let Err(e) = client_t.chat_request(bytes::Bytes::from(event)).await {
-                                                        error!("Hi send failed {did}, {e:?}");
-                                                    }
+                                                    let hi = serde_cbor::to_vec(&hi).unwrap();
+                                                    let (req, res) = tokio::sync::oneshot::channel();
+                                                    sender.send((did, hi, my_id, req, Some(token.secret_key.clone()))).await.unwrap();
+                                                    tokio::spawn(async move {
+
+                                                        match res.await {
+                                                            Ok(r) => {
+                                                                tracing::info!("Hi ok:{}",r.is_ok());
+                                                            },
+                                                            Err(e) => {
+                                                                tracing::warn!("{e:?}");
+                                                            }
+                                                        }
+                                                    });
+                                                    
+                                                    
                                                 }
                                                 Self::update_session(
                                                     db_t.clone(),

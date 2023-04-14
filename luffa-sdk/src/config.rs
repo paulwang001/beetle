@@ -46,6 +46,7 @@ impl Default for Config {
         let metrics_config = MetricsConfig::default();
         let store_config = default_store_config(None).unwrap();
         let key_store_path = luffa_util::luffa_data_root().unwrap();
+        
         Self {
             metrics: metrics_config,
             store: store_config,

@@ -203,9 +203,8 @@ async fn main() -> Result<()> {
                                                 tracing::info!("request msg:{from_id} -> {to}");
                                                 let notice = notice_queue.clone();
                                                 let mut queue = notice.write().await;
-                                                let (time,count,_) = queue.entry(to).or_insert((get_now(),from_id,0));
+                                                let (time,_,_) = queue.entry(to).or_insert((get_now(),from_id,0));
                                                 *time = get_now();
-                                                *count += 1;
                                                 tracing::info!("TODO: offline notify");
                                             }
                                             
@@ -239,9 +238,8 @@ async fn main() -> Result<()> {
                                                     FeedbackStatus::Notice => {
                                                         let notice = notice_queue.clone();
                                                         let mut queue = notice.write().await;
-                                                        let (time,count,tp) = queue.entry(to).or_insert((get_now(),from_id,0));
+                                                        let (time,_,tp) = queue.entry(to).or_insert((get_now(),from_id,0));
                                                         *time = get_now();
-                                                        *count += 1;
                                                         tracing::info!("offline notification");
                                                     }
                                                     _=>{
