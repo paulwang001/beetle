@@ -13,6 +13,7 @@ use tantivy::{doc, schema::Schema, IndexWriter, Term};
 
 use crate::{api::P2pClient, Callback, Client, bs58_encode};
 use tokio::{sync::oneshot::Sender as ShotSender, task::JoinHandle};
+use chrono::offset::TimeZone;
 use tracing::error;
 
 
@@ -680,10 +681,7 @@ impl Client {
                         continue;
                     }
                 }
-                if !client_connected().await {
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                    continue;
-                }
+
                 if first {
                     let feed = Message::StatusSync {
                         from_id: my_id,
@@ -695,7 +693,8 @@ impl Client {
                     cb_tt.on_message(0, my_id, 0, now, feed);
                     first = false;
                 }
-                if let Some((req, count, _time, all_size)) = {
+                if let Some((req, count, _time, all_size)) =
+                    {
                     let mut p = pendings_t.write().await;
                     let all_size = p.len();
                     tracing::info!("pending size:{}", all_size);
@@ -736,7 +735,8 @@ impl Client {
                         break;
                     }
                     req
-                } {
+                }
+                {
                     let to = req.to;
                     tokio::time::sleep(Duration::from_millis(300)).await;
                     let event_time = req.event_time;
@@ -744,49 +744,85 @@ impl Client {
                     let data = req.encode().unwrap();
                     some_pendding.insert(req.crc.to_be_bytes(), data.clone()).unwrap();
                     some_pendding.flush().unwrap();
+                    Self::save_to_tree_status(
+                        db_t2.clone(),
+                        req.crc,
+                        &format!("message_{to}"),
+                        FeedbackStatus::Sending as u8,
+                    );
+
+                    let crc = req.crc;
+                    let nonce_is_some = req.nonce.is_some();
+                    let handle_send_failed = || async {
+                        if all_size > 64 && req.nonce.is_none() {
+                            return;
+                        }
+
+                        let is_failed =
+                            Utc::now() - Utc.timestamp_millis(req.event_time as i64) > chrono::Duration::seconds(60 * 2);
+                        // let status = if count >= 20 {FeedbackStatus::Failed} else {FeedbackStatus::Sending};
+                        if req.nonce.is_some() {
+                            let status = if is_failed {FeedbackStatus::Failed } else {FeedbackStatus::Sending};
+                            let feed = Message::Feedback {
+                                crc: vec![req.crc],
+                                from_id: Some(my_id),
+                                to_id: Some(to),
+                                status,
+                            };
+                            let feed = serde_cbor::to_vec(&feed).unwrap();
+
+                            cb_tt.on_message(req.crc, my_id, to, event_time, feed);
+
+                            if is_failed  {
+                                Self::save_to_tree_status(
+                                    db_t2.clone(),
+                                    req.crc,
+                                    &format!("message_{to}"),
+                                    FeedbackStatus::Failed as u8,
+                                );
+
+                                some_pendding.remove(&req.crc.to_be_bytes()).unwrap();
+                                some_pendding.flush().unwrap();
+                                return;
+                            }
+                        }
+
+                        let mut push = pendings_t.write().await;
+                        push.push_back((req, count + 1, Instant::now()));
+                    };
+
+                    if !client_connected().await {
+                        handle_send_failed().await;
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
+
                     match client_pending
                         .chat_request(bytes::Bytes::from(data.clone()))
                         .await
                     {
                         Ok(res) => {
-                            if req.nonce.is_some() {
+                            if nonce_is_some {
                                 let feed = Message::Feedback {
-                                    crc: vec![req.crc],
+                                    crc: vec![crc],
                                     from_id: Some(my_id),
                                     to_id: Some(to),
                                     status: FeedbackStatus::Send,
                                 };
                                 let feed = serde_cbor::to_vec(&feed).unwrap();
                                 let table = format!("message_{to}");
-                                Self::save_to_tree_status(db_t2.clone(), req.crc, &table, 1);
-                                cb_tt.on_message(req.crc, my_id, to, event_time, feed);
-                                some_pendding.remove(&req.crc.to_be_bytes()).unwrap();
+                                Self::save_to_tree_status(db_t2.clone(), crc, &table, FeedbackStatus::Send as u8);
+                                cb_tt.on_message(crc, my_id, to, event_time, feed);
+                                some_pendding.remove(&crc.to_be_bytes()).unwrap();
                                 some_pendding.flush().unwrap();
                             }
                             tracing::debug!("{res:?}");
                         }
                         Err(e) => {
-                            tracing::error!("pending chat request failed [{}]: {e:?}", req.crc);
-                            if all_size > 64 && req.nonce.is_none() {
-                                continue;
-                            }
-                            
+                            tracing::error!("pending chat request failed [{}]: {e:?}",crc);
                             tokio::time::sleep(Duration::from_millis(300)).await;
-                            // let status = if count >= 20 {FeedbackStatus::Failed} else {FeedbackStatus::Sending};
-                            if req.nonce.is_some() {
-                                let status = FeedbackStatus::Sending;
-                                let feed = Message::Feedback {
-                                    crc: vec![req.crc],
-                                    from_id: Some(my_id),
-                                    to_id: Some(to),
-                                    status,
-                                };
-                                let feed = serde_cbor::to_vec(&feed).unwrap();
 
-                                cb_tt.on_message(req.crc, my_id, to, event_time, feed);
-                            }
-                            let mut push = pendings_t.write().await;
-                            push.push_back((req, count + 1, Instant::now()));
+                            handle_send_failed().await;
                         }
                     }
                 } else {

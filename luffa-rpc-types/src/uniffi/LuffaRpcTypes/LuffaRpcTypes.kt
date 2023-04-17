@@ -40,7 +40,7 @@ open class RustBuffer : Structure() {
 
     companion object {
         internal fun alloc(size: Int = 0) = rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_361d_rustbuffer_alloc(size, status).also {
+            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_5c25_rustbuffer_alloc(size, status).also {
                 if(it.data == null) {
                    throw RuntimeException("RustBuffer.alloc() returned null data pointer (size=${size})")
                }
@@ -48,7 +48,7 @@ open class RustBuffer : Structure() {
         }
 
         internal fun free(buf: RustBuffer.ByValue) = rustCall() { status ->
-            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_361d_rustbuffer_free(buf, status)
+            _UniFFILib.INSTANCE.ffi_LuffaRpcTypes_5c25_rustbuffer_free(buf, status)
         }
     }
 
@@ -257,27 +257,27 @@ internal interface _UniFFILib : Library {
         }
     }
 
-    fun LuffaRpcTypes_361d_message_from(`msg`: RustBuffer.ByValue,
+    fun LuffaRpcTypes_5c25_message_from(`msg`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun LuffaRpcTypes_361d_message_to(`msg`: RustBuffer.ByValue,
+    fun LuffaRpcTypes_5c25_message_to(`msg`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_361d_rustbuffer_alloc(`size`: Int,
+    fun ffi_LuffaRpcTypes_5c25_rustbuffer_alloc(`size`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_361d_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,
+    fun ffi_LuffaRpcTypes_5c25_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
-    fun ffi_LuffaRpcTypes_361d_rustbuffer_free(`buf`: RustBuffer.ByValue,
+    fun ffi_LuffaRpcTypes_5c25_rustbuffer_free(`buf`: RustBuffer.ByValue,
     _uniffi_out_err: RustCallStatus
     ): Unit
 
-    fun ffi_LuffaRpcTypes_361d_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,
+    fun ffi_LuffaRpcTypes_5c25_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,
     _uniffi_out_err: RustCallStatus
     ): RustBuffer.ByValue
 
@@ -685,9 +685,8 @@ sealed class ContactsEvent {
         val `id`: ULong
         ) : ContactsEvent()
     data class Sync(
-        val `uId`: ULong, 
         val `gId`: ULong, 
-        val `groupNickname`: String
+        val `members`: List<Member>
         ) : ContactsEvent()
     
 
@@ -718,8 +717,7 @@ public object FfiConverterTypeContactsEvent : FfiConverterRustBuffer<ContactsEve
                 )
             6 -> ContactsEvent.Sync(
                 FfiConverterULong.read(buf),
-                FfiConverterULong.read(buf),
-                FfiConverterString.read(buf),
+                FfiConverterSequenceTypeMember.read(buf),
                 )
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
@@ -769,9 +767,8 @@ public object FfiConverterTypeContactsEvent : FfiConverterRustBuffer<ContactsEve
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
                 4
-                + FfiConverterULong.allocationSize(value.`uId`)
                 + FfiConverterULong.allocationSize(value.`gId`)
-                + FfiConverterString.allocationSize(value.`groupNickname`)
+                + FfiConverterSequenceTypeMember.allocationSize(value.`members`)
             )
         }
     }
@@ -809,9 +806,8 @@ public object FfiConverterTypeContactsEvent : FfiConverterRustBuffer<ContactsEve
             }
             is ContactsEvent.Sync -> {
                 buf.putInt(6)
-                FfiConverterULong.write(value.`uId`, buf)
                 FfiConverterULong.write(value.`gId`, buf)
-                FfiConverterString.write(value.`groupNickname`, buf)
+                FfiConverterSequenceTypeMember.write(value.`members`, buf)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -1612,7 +1608,7 @@ public object FfiConverterSequenceTypeMember: FfiConverterRustBuffer<List<Member
 fun `messageFrom`(`msg`: List<UByte>): Message? {
     return FfiConverterOptionalTypeMessage.lift(
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaRpcTypes_361d_message_from(FfiConverterSequenceUByte.lower(`msg`), _status)
+    _UniFFILib.INSTANCE.LuffaRpcTypes_5c25_message_from(FfiConverterSequenceUByte.lower(`msg`), _status)
 })
 }
 
@@ -1621,7 +1617,7 @@ fun `messageFrom`(`msg`: List<UByte>): Message? {
 fun `messageTo`(`msg`: Message): List<UByte>? {
     return FfiConverterOptionalSequenceUByte.lift(
     rustCall() { _status ->
-    _UniFFILib.INSTANCE.LuffaRpcTypes_361d_message_to(FfiConverterTypeMessage.lower(`msg`), _status)
+    _UniFFILib.INSTANCE.LuffaRpcTypes_5c25_message_to(FfiConverterTypeMessage.lower(`msg`), _status)
 })
 }
 
