@@ -19,13 +19,13 @@ fileprivate extension RustBuffer {
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
-        try! rustCall { ffi_LuffaRpcTypes_361d_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
+        try! rustCall { ffi_LuffaRpcTypes_4426_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
     // Frees the buffer in place.
     // The buffer must not be used after this is called.
     func deallocate() {
-        try! rustCall { ffi_LuffaRpcTypes_361d_rustbuffer_free(self, $0) }
+        try! rustCall { ffi_LuffaRpcTypes_4426_rustbuffer_free(self, $0) }
     }
 }
 
@@ -803,7 +803,7 @@ public enum ContactsEvent {
     case `reject`(`offerCrc`: UInt64, `publicKey`: [UInt8])
     case `join`(`offerCrc`: UInt64, `groupNickname`: String)
     case `leave`(`id`: UInt64)
-    case `sync`(`uId`: UInt64, `gId`: UInt64, `groupNickname`: String)
+    case `sync`(`gId`: UInt64, `members`: [Member])
 }
 
 public struct FfiConverterTypeContactsEvent: FfiConverterRustBuffer {
@@ -838,9 +838,8 @@ public struct FfiConverterTypeContactsEvent: FfiConverterRustBuffer {
         )
         
         case 6: return .`sync`(
-            `uId`: try FfiConverterUInt64.read(from: &buf), 
             `gId`: try FfiConverterUInt64.read(from: &buf), 
-            `groupNickname`: try FfiConverterString.read(from: &buf)
+            `members`: try FfiConverterSequenceTypeMember.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -880,11 +879,10 @@ public struct FfiConverterTypeContactsEvent: FfiConverterRustBuffer {
             FfiConverterUInt64.write(`id`, into: &buf)
             
         
-        case let .`sync`(`uId`,`gId`,`groupNickname`):
+        case let .`sync`(`gId`,`members`):
             writeInt(&buf, Int32(6))
-            FfiConverterUInt64.write(`uId`, into: &buf)
             FfiConverterUInt64.write(`gId`, into: &buf)
-            FfiConverterString.write(`groupNickname`, into: &buf)
+            FfiConverterSequenceTypeMember.write(`members`, into: &buf)
             
         }
     }
@@ -1294,7 +1292,7 @@ public enum Message {
     case `contactsSync`(`did`: UInt64, `contacts`: [Contacts])
     case `contactsExchange`(`exchange`: ContactsEvent)
     case `chat`(`content`: ChatContent)
-    case `webRtc`(`streamId`: UInt32, `actionType`: UInt8, `action`: RtcAction)
+    case `webRtc`(`action`: RtcAction)
     case `ping`(`relayId`: UInt64, `ttlMs`: UInt64)
     case `innerError`(`kind`: UInt8, `reason`: String)
 }
@@ -1337,8 +1335,6 @@ public struct FfiConverterTypeMessage: FfiConverterRustBuffer {
         )
         
         case 7: return .`webRtc`(
-            `streamId`: try FfiConverterUInt32.read(from: &buf), 
-            `actionType`: try FfiConverterUInt8.read(from: &buf), 
             `action`: try FfiConverterTypeRtcAction.read(from: &buf)
         )
         
@@ -1396,10 +1392,8 @@ public struct FfiConverterTypeMessage: FfiConverterRustBuffer {
             FfiConverterTypeChatContent.write(`content`, into: &buf)
             
         
-        case let .`webRtc`(`streamId`,`actionType`,`action`):
+        case let .`webRtc`(`action`):
             writeInt(&buf, Int32(7))
-            FfiConverterUInt32.write(`streamId`, into: &buf)
-            FfiConverterUInt8.write(`actionType`, into: &buf)
             FfiConverterTypeRtcAction.write(`action`, into: &buf)
             
         
@@ -1682,7 +1676,7 @@ public func `messageFrom`(`msg`: [UInt8])  -> Message? {
     
     rustCall() {
     
-    LuffaRpcTypes_361d_message_from(
+    LuffaRpcTypes_4426_message_from(
         FfiConverterSequenceUInt8.lower(`msg`), $0)
 }
     )
@@ -1696,7 +1690,7 @@ public func `messageTo`(`msg`: Message)  -> [UInt8]? {
     
     rustCall() {
     
-    LuffaRpcTypes_361d_message_to(
+    LuffaRpcTypes_4426_message_to(
         FfiConverterTypeMessage.lower(`msg`), $0)
 }
     )

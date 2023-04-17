@@ -237,11 +237,7 @@ fn main() -> ClientResult<()> {
             Message::Ping { relay_id, ttl_ms } => {
                 tracing::info!("-----relay------{} ---ttl:{} ms", relay_id, ttl_ms);
             }
-            Message::WebRtc {
-                stream_id,
-                action_type,
-                action,
-            } => match action {
+            Message::WebRtc { action } => match action {
                 RtcAction::Status { code, info } => {}
                 _ => {}
             },
