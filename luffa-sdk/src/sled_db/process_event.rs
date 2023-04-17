@@ -10,12 +10,10 @@ use sled::Db;
 use tantivy::{doc, schema::Schema, IndexWriter, Term};
 
 use crate::event::group::EventGroup;
-use crate::sled_db::contacts::{ContactsDb, KVDB_CONTACTS_TREE};
-use crate::sled_db::group_members::{GroupMemberNickname, GroupMembersDb};
-use crate::sled_db::mnemonic::Mnemonic;
+use crate::sled_db::contacts::ContactsDb;
+use crate::sled_db::group_members::GroupMembersDb;
 use crate::sled_db::nickname::Nickname;
 use crate::sled_db::session::SessionDb;
-use crate::sled_db::SledDbAll;
 use crate::{api::P2pClient, Callback, Client, OfferStatus};
 use tokio::sync::oneshot::Sender as ShotSender;
 use tracing::error;

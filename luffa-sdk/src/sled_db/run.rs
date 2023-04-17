@@ -1,28 +1,23 @@
 use std::{sync::Arc, time::{Duration, Instant}, collections::{VecDeque, HashSet}};
 
 use chrono::Utc;
-use libp2p::{identity::PublicKey, PeerId};
+use libp2p::PeerId;
 use luffa_node::{NetworkEvent, GossipsubEvent};
 use luffa_rpc_types::{
-    message_from, ChatContent, Contacts, ContactsEvent, ContactsToken, ContactsTypes, Event,
+    ChatContent, Contacts,ContactsTypes, Event,
     FeedbackStatus, Message, AppStatus,
 };
 use parking_lot::RwLock;
 use sled::Db;
 use tantivy::{doc, schema::Schema, IndexWriter, Term};
 
-use crate::{api::P2pClient, Callback, Client, OfferStatus, bs58_encode};
+use crate::{api::P2pClient, Callback, Client, bs58_encode};
 use tokio::{sync::oneshot::Sender as ShotSender, task::JoinHandle};
 use tracing::error;
 
 
 use crate::sled_db::contacts::{ContactsDb, KVDB_CONTACTS_TREE};
-use crate::sled_db::group_members::{GroupMemberNickname, GroupMembersDb};
-use crate::sled_db::mnemonic::Mnemonic;
-use crate::sled_db::nickname::Nickname;
 use crate::sled_db::session::SessionDb;
-use crate::sled_db::SledDbAll;
-use crate::event::group::EventGroup;
 impl Client {
     pub async fn run(
         db: Arc<Db>,
