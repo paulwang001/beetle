@@ -52,147 +52,7 @@ impl Client {
         let my_id = digest.sum64();
         let db_t = db.clone();
         let client_t = client.clone();
-        let sync_task = tokio::spawn(async move {
-            let mut count = 0_u64;
-            loop {
-                match client_t.get_peers().await {
-                    Ok(peers) => {
-                        if peers.is_empty() {
-                            tokio::time::sleep(Duration::from_millis(500)).await;
-                            continue;
-                        }
-                    }
-                    _ => {
-                        tokio::time::sleep(Duration::from_millis(500)).await;
-                        continue;
-                    }
-                }
-                if count % 6 == 0 {
-                    tracing::info!("subscribed all as client,status sync");
-                    let msg = luffa_rpc_types::Message::StatusSync {
-                        to: 0,
-                        status: AppStatus::Active,
-                        from_id: my_id,
-                    };
-                    let key: Option<Vec<u8>> = None;
-                    let event = Event::new(0, &msg, key, my_id, None);
-                    let data = event.encode().unwrap();
-                    let client_t = client_t.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
-                            tracing::error!("status sync pub>> {e:?}");
-                        }
-                    });
-                }
-
-                let page = count % 8;
-                let mut contacts = vec![];
-                for lvl in 0..8 {
-                    if page >= lvl {
-                        if let Some(lvl_0) =
-                            Self::db_session_list(db_t.clone(), lvl as u32, 4, my_id)
-                        {
-                            let lvl_contacts = lvl_0
-                                .into_iter()
-                                .map(|cs| {
-                                    let to = cs.did;
-                                    let c_type = Self::get_contacts_type(db_t.clone(), to)
-                                        .unwrap_or(ContactsTypes::Private);
-                                    let c_type: u8 = c_type as u8;
-                                    let c_type = if c_type == 0 {
-                                        ContactsTypes::Private
-                                    } else {
-                                        ContactsTypes::Group
-                                    };
-                                    // let have_time = Self::get_contacts_have_time(db_t.clone(), to);
-                                    Contacts {
-                                        did: to,
-                                        r#type: c_type,
-                                    }
-                                })
-                                .collect::<Vec<_>>();
-
-                            contacts.extend_from_slice(&lvl_contacts[..]);
-                        }
-                    }
-                }
-                // tracing::error!("recent seesion sync:{}",contacts.len());
-                if !contacts.is_empty() {
-                    let sync = Message::ContactsSync {
-                        did: my_id,
-                        contacts,
-                    };
-                    let event = Event::new(0, &sync, None, my_id, None);
-                    let data = event.encode().unwrap();
-                    let client_t = client_t.clone();
-                    tokio::spawn(async move {
-                        let d_size = data.len();
-                        if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
-                            tracing::error!("pub contacts sync status >>> {e:?}");
-                        } else {
-                            tracing::warn!("pub contacts sync status >>> {sync:?}",);
-                        }
-                    });
-                }
-                if count % 60 == 0 {
-                    let tree = db_t.open_tree(KVDB_CONTACTS_TREE).unwrap();
-
-                    let tag_prefix = format!("TAG-");
-                    let itr = tree.scan_prefix(tag_prefix);
-                    let mut contacts = itr
-                        .map(|item| {
-                            let (k, _v) = item.unwrap();
-                            // let tag = String::from_utf8(v.to_vec()).unwrap();
-                            let key = String::from_utf8(k.to_vec()).unwrap();
-                            let parts = key.split('-');
-
-                            let to = parts.last().unwrap();
-                            let to: u64 = to.parse().unwrap();
-                            let c_type = Self::get_contacts_type(db_t.clone(), to)
-                                .unwrap_or(ContactsTypes::Private);
-                            let c_type: u8 = c_type as u8;
-                            let c_type = if c_type == 0 {
-                                ContactsTypes::Private
-                            } else {
-                                ContactsTypes::Group
-                            };
-                            Contacts {
-                                did: to,
-                                r#type: c_type,
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    contacts.retain(|c| c.did != my_id);
-                    let client_t = client_t.clone();
-                    if !contacts.is_empty() {
-                        let sync = Message::ContactsSync {
-                            did: my_id,
-                            contacts,
-                        };
-                        let event = Event::new(0, &sync, None, my_id, None);
-                        let data = event.encode().unwrap();
-
-                        tokio::spawn(async move {
-                            let d_size = data.len();
-                            if let Err(e) = client_t
-                                .chat_request(bytes::Bytes::from(data.clone()))
-                                .await
-                            {
-                                tracing::error!("pub contacts sync status >>> {e:?}");
-                            } else {
-                                tracing::warn!("pub contacts sync status >>> {d_size}");
-                                if count == 0 {
-                                    tracing::warn!("pub contacts sync status >>> {sync:?}");
-                                }
-                            }
-                        });
-                    }
-                }
-
-                count += 1;
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            }
-        });
+        let sync_task = tokio::spawn(Self::status_sync(db_t, client_t, my_id));
 
         let client_t = client.clone();
         let db_t = db.clone();
@@ -238,22 +98,7 @@ impl Client {
                                                     match status {
                                                         FeedbackStatus::Send
                                                         | FeedbackStatus::Routing => {
-                                                            let to = to_id.unwrap_or_default();
-                                                            if to > 0 {
-                                                                tracing::warn!("response>>>>>on_message send {crc:?} from {from_id} to {to} msg:{msg_t:?}");
-                                                                let table = format!("message_{to}");
-                                                                for c in crc {
-                                                                    Self::save_to_tree_status(
-                                                                        db_t.clone(),
-                                                                        c,
-                                                                        &table,
-                                                                        2,
-                                                                    );
-                                                                }
-                                                            } else {
-                                                                tracing::warn!("ccc clinet>>>>>on_message send {crc:?} from {from_id} to {to} msg:{msg_t:?}");
-                                                                will_to_ui = false;
-                                                            }
+                                                            Self::send_routing(db_t.clone(), to_id, crc, from_id, msg_t, &mut will_to_ui);
                                                         }
                                                         FeedbackStatus::Fetch
                                                         | FeedbackStatus::Notice => {
@@ -1139,5 +984,169 @@ impl Client {
         p2p_rpc.abort();
         pending_task.abort();
         // metrics_handle.shutdown();
+    }
+
+    pub async fn status_sync(db_t: Arc<Db>,client_t: P2pClient, my_id: u64) {
+            let mut count = 0_u64;
+            loop {
+                match client_t.get_peers().await {
+                    Ok(peers) => {
+                        if peers.is_empty() {
+                            tokio::time::sleep(Duration::from_millis(500)).await;
+                            continue;
+                        }
+                    }
+                    _ => {
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
+                }
+                if count % 6 == 0 {
+                    tracing::info!("subscribed all as client,status sync");
+                    let msg = luffa_rpc_types::Message::StatusSync {
+                        to: 0,
+                        status: AppStatus::Active,
+                        from_id: my_id,
+                    };
+                    let key: Option<Vec<u8>> = None;
+                    let event = Event::new(0, &msg, key, my_id, None);
+                    let data = event.encode().unwrap();
+                    let client_t = client_t.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
+                            tracing::error!("status sync pub>> {e:?}");
+                        }
+                    });
+                }
+
+                let page = count % 8;
+                let mut contacts = vec![];
+                for lvl in 0..8 {
+                    if page >= lvl {
+                        if let Some(lvl_0) =
+                            Self::db_session_list(db_t.clone(), lvl as u32, 4, my_id)
+                        {
+                            let lvl_contacts = lvl_0
+                                .into_iter()
+                                .map(|cs| {
+                                    let to = cs.did;
+                                    let c_type = Self::get_contacts_type(db_t.clone(), to)
+                                        .unwrap_or(ContactsTypes::Private);
+                                    let c_type: u8 = c_type as u8;
+                                    let c_type = if c_type == 0 {
+                                        ContactsTypes::Private
+                                    } else {
+                                        ContactsTypes::Group
+                                    };
+                                    // let have_time = Self::get_contacts_have_time(db_t.clone(), to);
+                                    Contacts {
+                                        did: to,
+                                        r#type: c_type,
+                                    }
+                                })
+                                .collect::<Vec<_>>();
+
+                            contacts.extend_from_slice(&lvl_contacts[..]);
+                        }
+                    }
+                }
+                // tracing::error!("recent seesion sync:{}",contacts.len());
+                if !contacts.is_empty() {
+                    let sync = Message::ContactsSync {
+                        did: my_id,
+                        contacts,
+                    };
+                    let event = Event::new(0, &sync, None, my_id, None);
+                    let data = event.encode().unwrap();
+                    let client_t = client_t.clone();
+                    tokio::spawn(async move {
+                        let d_size = data.len();
+                        if let Err(e) = client_t.chat_request(bytes::Bytes::from(data)).await {
+                            tracing::error!("pub contacts sync status >>> {e:?}");
+                        } else {
+                            tracing::warn!("pub contacts sync status >>> {sync:?}",);
+                        }
+                    });
+                }
+                if count % 60 == 0 {
+                    let tree = db_t.open_tree(KVDB_CONTACTS_TREE).unwrap();
+
+                    let tag_prefix = format!("TAG-");
+                    let itr = tree.scan_prefix(tag_prefix);
+                    let mut contacts = itr
+                        .map(|item| {
+                            let (k, _v) = item.unwrap();
+                            // let tag = String::from_utf8(v.to_vec()).unwrap();
+                            let key = String::from_utf8(k.to_vec()).unwrap();
+                            let parts = key.split('-');
+
+                            let to = parts.last().unwrap();
+                            let to: u64 = to.parse().unwrap();
+                            let c_type = Self::get_contacts_type(db_t.clone(), to)
+                                .unwrap_or(ContactsTypes::Private);
+                            let c_type: u8 = c_type as u8;
+                            let c_type = if c_type == 0 {
+                                ContactsTypes::Private
+                            } else {
+                                ContactsTypes::Group
+                            };
+                            Contacts {
+                                did: to,
+                                r#type: c_type,
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    contacts.retain(|c| c.did != my_id);
+                    let client_t = client_t.clone();
+                    if !contacts.is_empty() {
+                        let sync = Message::ContactsSync {
+                            did: my_id,
+                            contacts,
+                        };
+                        let event = Event::new(0, &sync, None, my_id, None);
+                        let data = event.encode().unwrap();
+
+                        tokio::spawn(async move {
+                            let d_size = data.len();
+                            if let Err(e) = client_t
+                                .chat_request(bytes::Bytes::from(data.clone()))
+                                .await
+                            {
+                                tracing::error!("pub contacts sync status >>> {e:?}");
+                            } else {
+                                tracing::warn!("pub contacts sync status >>> {d_size}");
+                                if count == 0 {
+                                    tracing::warn!("pub contacts sync status >>> {sync:?}");
+                                }
+                            }
+                        });
+                    }
+                }
+
+                count += 1;
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            
+        } 
+        
+    }
+
+    fn send_routing(db_t: Arc<Db>, to_id: Option<u64>, crc: Vec<u64>, from_id: u64, msg_t: luffa_rpc_types::Message,  will_to_ui:&mut bool ) {
+        
+        let to = to_id.unwrap_or_default();
+        if to > 0 {
+            tracing::warn!("response>>>>>on_message send {crc:?} from {from_id} to {to} msg:{msg_t:?}");
+            let table = format!("message_{to}");
+            for c in crc {
+                Self::save_to_tree_status(
+                    db_t.clone(),
+                    c,
+                    &table,
+                    2,
+                );
+            }
+        } else {
+            tracing::warn!("ccc clinet>>>>>on_message send {crc:?} from {from_id} to {to} msg:{msg_t:?}");
+           *will_to_ui = false;
+        }
     }
 }
