@@ -179,6 +179,9 @@ interface Client {
 
     [Throws=ClientError]
     sequence<ChatSession> session_page(u32 page,u32 size);
+
+    [Throws=ClientError]
+    void update_contacts_tag(u64 did, string tag);
  
     [Throws=ClientError]
     sequence<ContactsView> contacts_search(u8 c_type,[ByRef] string pattern);
