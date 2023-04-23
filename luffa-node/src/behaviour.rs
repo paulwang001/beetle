@@ -133,7 +133,7 @@ impl NodeBehaviour {
             tracing::info!("init kademlia");
             // TODO: persist to store
             let mem_store_config = MemoryStoreConfig {
-                max_records: 1024 * 1024,
+                max_records: 1024 * 1024 * 1024,
                 max_provided_keys: 1024 * 1024,
                 ..Default::default()
             };
