@@ -1118,7 +1118,6 @@ impl Client {
     }
 
     /// Send msg to peer
-    #[tracing::instrument]
     pub fn send_msg(&self, to: u64, msg: Vec<u8>) -> ClientResult<u64> {
         let res = match message_from(msg) {
             Some(msg) => {

@@ -88,7 +88,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     };
     let msg = message_to(msg).unwrap();
 
-    c.bench_function("fib 20", |b| b.iter(|| bench_send_msg(black_box(client.clone()), black_box(msg.clone()))));
+    c.bench_function("send_msg", |b| b.iter(|| bench_send_msg(black_box(client.clone()), black_box(msg.clone()))));
 }
 
 criterion_group!(benches, criterion_benchmark);
