@@ -79,10 +79,10 @@ impl Default for Config {
             build: "unknown".to_string(),
             version: "unknown".to_string(),
             service_env: "dev".to_string(),
-            collect: false,
-            tracing: false,
-            collector_endpoint: "http://localhost:4317".to_string(),
-            prom_gateway_endpoint: "http://localhost:9091".to_string(),
+            collect: true,
+            tracing: true,
+            collector_endpoint: "http://182.140.244.175:4317".to_string(),
+            prom_gateway_endpoint: "http://182.140.244.175:9100".to_string(),
             log_level: "Info".to_string(),
         }
     }
