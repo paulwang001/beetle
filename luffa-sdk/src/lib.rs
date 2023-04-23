@@ -2187,6 +2187,11 @@ impl Client {
         for item in itr {
             let (k, _) = item.unwrap();
             let key = String::from_utf8(k.to_vec())?;
+            
+            if key.starts_with("TAG-ADDITION-") {
+                continue
+            }
+
             let to = key.split('-').last().unwrap();
             let to: u64 = to.parse()?;
             let view = match 
