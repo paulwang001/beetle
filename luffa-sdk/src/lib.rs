@@ -66,6 +66,7 @@ pub mod avatar_nickname;
 mod config;
 mod event;
 mod sled_db;
+mod common;
 
 use crate::config::Config;
 use crate::sled_db::contacts::{ContactsDb, KVDB_CONTACTS_TREE};
@@ -106,6 +107,7 @@ pub struct ChatSession {
 pub struct ContactsView {
     pub did: u64,
     pub tag: String,
+    pub addition_tag: String,
     pub c_type: u8,
 }
 
@@ -2160,6 +2162,10 @@ impl Client {
         Ok(())
     }
 
+    pub fn find_contacts_by_id(&self, did: u64) -> ClientResult<Option<ContactsView>> {
+        self.get_contacts_view_by_id(did)
+    }
+
     pub fn find_contacts_tag(&self, did: u64) -> ClientResult<Option<String>> {
         Ok(Self::get_contacts_tag(self.db(), did).map(|(v, _)| v))
     }
@@ -2179,27 +2185,42 @@ impl Client {
         let my_id = self.get_local_id()?;
         let mut res = vec![];
         for item in itr {
-            let (k, v) = item.unwrap();
-            let tag = String::from_utf8(v.to_vec())?;
+            let (k, _) = item.unwrap();
             let key = String::from_utf8(k.to_vec())?;
             let to = key.split('-').last().unwrap();
             let to: u64 = to.parse()?;
-            let (flag, c_type) = if let Some(t) = Self::get_contacts_type(self.db(), to) {
+            let view = match 
+            self.get_contacts_view_by_id(to)? {
+                Some(x) => x,
+                None => continue
+            };
+            
+            
+            let (flag, _) = if let Some(t) = Self::get_contacts_type(self.db(), to) {
                 (c_type == t as u8 && Some(to) != my_id, t as u8)
             } else if c_type == 0 {
                 (Some(to) != my_id, 0)
             } else {
                 (false, 3)
             };
+            
             if flag {
-                res.push(ContactsView {
-                    did: to,
-                    tag,
-                    c_type,
-                });
+                res.push(view);
             }
         }
         Ok(res)
+    }
+
+    pub fn update_contacts_addition_tag(&self, did: u64, tag: &str) -> ClientResult<()> {
+        if !self.exits_contacts_by_id(did)? {
+            return Ok(())
+        }
+        let tree = Self::open_contact_tree(self.db())?;
+
+        let _ = tree.insert(format!("TAG-ADDITION-{did}"), tag.as_bytes())?;
+        let _ = tree.flush()?;
+        
+        Ok(())
     }
 
     pub fn groups(&self) -> ClientResult<Vec<ContactsGroupView>> {
@@ -2269,10 +2290,10 @@ impl Client {
             if flag {
                 if let Some(t) = Self::get_contacts_type(self.db(), to) {
                     let c_type = t as u8;
-                    let c_to = ContactsView {
-                        did: to,
-                        tag: tag.clone(),
-                        c_type,
+                    let c_to = match 
+                    self.get_contacts_view_by_id(to)? {
+                        Some(x) => x,
+                        None => continue
                     };
 
                     data.push((c_to, format!("{to_id} {tag}")));
@@ -2321,10 +2342,10 @@ impl Client {
             if flag {
                 if let Some(t) = Self::get_contacts_type(self.db(), to) {
                     let c_type = t as u8;
-                    let c_to = ContactsView {
-                        did: to,
-                        tag: tag.clone(),
-                        c_type,
+                    let c_to = match 
+                    self.get_contacts_view_by_id(to)? {
+                        Some(x) => x,
+                        None => continue
                     };
 
                     data.push((c_to, format!("{to_id} {tag}")));

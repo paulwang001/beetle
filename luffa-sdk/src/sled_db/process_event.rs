@@ -56,11 +56,10 @@ impl Client {
             tracing::warn!("send feedback reach to relay {crc}");
             let event = event.encode().unwrap();
             let client_tt = client_t.clone();
-            tokio::spawn(async move {
-                if let Err(e) = client_tt.chat_request(bytes::Bytes::from(event)).await {
-                    error!("{e:?}");
-                }
-            });
+            if let Err(e) = client_tt.chat_request(bytes::Bytes::from(event)).await {
+                error!("send feedback failed crc: {crc} {e:?}");
+            }
+        
 
             let did = if to == my_id { from_id } else { to };
 
@@ -493,10 +492,13 @@ impl Client {
                                     evt_data.clone(),
                                     event_time,
                                 );
-                                let last_crc = session_last_crc.read();
-                                let last_crc =
+                                let last_crc = {
+                                    let last_crc = session_last_crc.read();
+                                
                                     Self::get_u64_from_tree(&last_crc, &did.to_be_bytes())
-                                        .unwrap_or_default();
+                                        .unwrap_or_default()
+                                };
+
                                 let feed = luffa_rpc_types::Message::Chat {
                                     content: ChatContent::Feedback {
                                         crc,
@@ -509,17 +511,13 @@ impl Client {
                                 tracing::error!("send feedback reach to {from_id}");
                                 let event = event.encode().unwrap();
                                 let client_tt = client_t.clone();
-                                tokio::spawn(async move {
-                                    if let Err(e) =
-                                        client_tt.chat_request(bytes::Bytes::from(event)).await
-                                    {
-                                        error!("{e:?}");
-                                    }
-                                });
+                                if let Err(e) =
+                                    client_tt.chat_request(bytes::Bytes::from(event)).await
+                                {
+                                    error!("send feedback2 failed crc: {crc} {e:?}");
+                                }
                             }
-                            tokio::spawn(async move {
-                                cb.on_message(crc, from_id, to, event_time, msg_data);
-                            });
+                            cb.on_message(crc, from_id, to, event_time, msg_data);
 
                             return;
                         } else {

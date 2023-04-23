@@ -21,6 +21,7 @@ dictionary ChatSession {
 dictionary ContactsView {
   u64 did;
   string tag;
+  string addition_tag;
   u8 c_type;
 };
 
@@ -181,6 +182,9 @@ interface Client {
     sequence<ChatSession> session_page(u32 page,u32 size);
 
     void update_contacts_tag(u64 did, string tag);
+
+    [Throws=ClientError]
+    void update_contacts_addition_tag(u64 did, [ByRef] string tag);
  
     [Throws=ClientError]
     sequence<ContactsView> contacts_search(u8 c_type,[ByRef] string pattern);
@@ -207,6 +211,8 @@ interface Client {
     string? find_contacts_tag(u64 did);
     [Throws=ClientError]
     u8? find_contacts_tp(u64 did);
+    [Throws=ClientError]
+    ContactsView? find_contacts_by_id(u64 did);
 
     [Throws=ClientError]
     EventMeta meta_msg([ByRef] sequence<u8> data);

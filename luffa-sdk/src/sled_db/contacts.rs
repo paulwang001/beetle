@@ -314,6 +314,21 @@ pub trait ContactsDb {
         }
     }
 
+    fn have_message_in_tree(db: Arc<Db>, crc: u64) -> bool {
+        db.tree_names().into_iter()
+            .filter_map(|x| {
+                String::from_utf8(x.to_vec()).ok()
+            })
+            .filter(|x| x.starts_with("message_")) // get full message_
+            .find(|name| { // find crc in message_ 
+                db.open_tree(name)
+                    .expect("open tree failed {name}")
+                    .contains_key(crc.to_be_bytes())
+                    .unwrap_or_default()
+            })
+            .is_some()        
+    }
+
     fn burn_from_tree(db: Arc<Db>, crc: u64, table: String) {
         let tree = db.open_tree(&table).unwrap();
 

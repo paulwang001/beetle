@@ -272,7 +272,7 @@ pub trait GroupMembersDb: Nickname {
                 let nickname = String::from_utf8(data.to_vec())?;
                 nickname
             } else {
-                let (nickname, _) = Self::get_contacts_nickname(db.clone(), u_id)?.unwrap();
+                let (nickname, _) = Self::get_contacts_nickname(db.clone(), u_id)?.unwrap_or_default();
                 nickname
             };
             list.push(Member {
