@@ -1706,7 +1706,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     if let Err(e) = self
                                     .put_to_dht(crc, request.data().to_vec())
                                     {
-                                        tracing::error!("put to dht {e:?}");
+                                        tracing::error!("put to dht crc{crc} {e:?}");
                                     }
 
                                     if let Some(idx) = self.contacts.find_edge(f, t) {

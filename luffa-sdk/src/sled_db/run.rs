@@ -345,22 +345,26 @@ impl Client {
                                                                         }
                                                                         Err(e) => {
                                                                             error!("record not found {crc} error: {e:?}");
-                                                                            let feed = luffa_rpc_types::Message::Feedback { crc: vec![crc], from_id: Some(my_id), to_id: Some(0), status: luffa_rpc_types::FeedbackStatus::Reach };
-                                                                            let event = luffa_rpc_types::Event::new(
-                                                                                0,
-                                                                                &feed,
-                                                                                None,
-                                                                                my_id,
-                                                                                None,
-                                                                            );
-                                                                            let event = event
-                                                                                .encode()
-                                                                                .unwrap();
-                                                                            if let Err(e) =
-                                                                                client_t.chat_request(bytes::Bytes::from(event)).await
-                                                                            {
-                                                                                error!("{e:?}");
-                                                                            }
+                                                                            // if Self::have_message_in_tree(db_tt.clone(), crc) {
+                                                                                tracing::warn!("message {crc} is reached");
+
+                                                                                let feed = luffa_rpc_types::Message::Feedback { crc: vec![crc], from_id: Some(my_id), to_id: Some(0), status: luffa_rpc_types::FeedbackStatus::Reach };
+                                                                                let event = luffa_rpc_types::Event::new(
+                                                                                    0,
+                                                                                    &feed,
+                                                                                    None,
+                                                                                    my_id,
+                                                                                    None,
+                                                                                );
+                                                                                let event = event
+                                                                                    .encode()
+                                                                                    .unwrap();
+                                                                                if let Err(e) =
+                                                                                    client_t.chat_request(bytes::Bytes::from(event)).await
+                                                                                {
+                                                                                    error!("send feedback failed in run {e:?}");
+                                                                                }
+                                                                            // }
                                                                         }
                                                                     }
                                                                     {
