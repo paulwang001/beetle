@@ -86,7 +86,7 @@ impl NodeBehaviour {
         db: Arc<luffa_store::Store>,
         agent_version: Option<String>,
     ) -> Result<Self> {
-        let mut peer_manager = PeerManager::default();
+        let peer_manager = PeerManager::default();
         let pub_key = local_key.public();
         let peer_id = pub_key.to_peer_id();
 
@@ -113,22 +113,29 @@ impl NodeBehaviour {
         }
         .into();
         let cfg = libp2p::request_response::RequestResponseConfig::default();
-        let protocols = iter::once((chat::ChatProtocol(), libp2p::request_response::ProtocolSupport::Full));
-        let mut chat = Some(libp2p::request_response::RequestResponse::new(chat::ChatCodec(), protocols, cfg)); 
-        chat.as_mut().map(|rq|{
-            for multiaddr in &config.bootstrap_peers {
-                // TODO: move parsing into config
-                let mut addr = multiaddr.to_owned();
-                if let Some(Protocol::P2p(mh)) = addr.pop() {
-                    let peer_id = PeerId::from_multihash(mh).unwrap();
-                    tracing::info!("add boot to chat>> {:?}  {:?}",peer_id,addr);
-                    rq.add_address(&peer_id, addr);
-                    peer_manager.inject_identify_info(peer_id, None);
-                } else {
-                    tracing::info!("Could not parse bootstrap addr {}", multiaddr);
-                }
-            }
-        });
+        let protocols = iter::once((
+            chat::ChatProtocol(),
+            libp2p::request_response::ProtocolSupport::Full,
+        ));
+        let chat = Some(libp2p::request_response::RequestResponse::new(
+            chat::ChatCodec(),
+            protocols,
+            cfg,
+        ));
+        // chat.as_mut().map(|rq|{
+        //     for multiaddr in &config.bootstrap_peers {
+        //         // TODO: move parsing into config
+        //         let mut addr = multiaddr.to_owned();
+        //         if let Some(Protocol::P2p(mh)) = addr.pop() {
+        //             let peer_id = PeerId::from_multihash(mh).unwrap();
+        //             tracing::info!("add boot to chat>> {:?}  {:?}",peer_id,addr);
+        //             rq.add_address(&peer_id, addr);
+        //             peer_manager.inject_identify_info(peer_id, None);
+        //         } else {
+        //             tracing::info!("Could not parse bootstrap addr {}", multiaddr);
+        //         }
+        //     }
+        // });
         let kad = if config.kademlia {
             tracing::info!("init kademlia");
             // TODO: persist to store
@@ -144,6 +151,7 @@ impl NodeBehaviour {
             kad_config.set_parallelism(16usize.try_into().unwrap());
             // TODO: potentially lower (this is per query)
             kad_config.set_query_timeout(Duration::from_secs(3));
+            
 
             let mut kademlia = Kademlia::with_config(pub_key.to_peer_id(), store, kad_config);
             for multiaddr in &config.bootstrap_peers {
@@ -209,7 +217,8 @@ impl NodeBehaviour {
         let identify = {
             let config = identify::Config::new(PROTOCOL_VERSION.into(), local_key.public())
                 .with_agent_version(format!("{}{}",agent_version.unwrap_or(String::from("luffa")),AGENT_VERSION))
-                .with_cache_size(64 * 1024);
+                .with_interval(Duration::from_secs(12))
+                .with_cache_size(64);
             identify::Behaviour::new(config)
         };
 

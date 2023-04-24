@@ -200,9 +200,8 @@ impl Default for Libp2pConfig {
     fn default() -> Self {
         let bootstrap_peers = DEFAULT_BOOTSTRAP
             .iter()
-            .map(|node| node.parse().unwrap())
-            .collect();
-
+            .map(|node| node.parse::<Multiaddr>().unwrap())
+            .collect::<Vec<_>>();
         Self {
             listening_multiaddrs: vec![
                 // "/ip4/0.0.0.0/tcp/0".parse().unwrap(),

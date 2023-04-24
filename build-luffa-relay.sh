@@ -1,1 +1,1 @@
-docker build -f luffa-relay.Dockerfile -t luffa-relay .
+docker build -f luffa-relay.Dockerfile -t relay-node .

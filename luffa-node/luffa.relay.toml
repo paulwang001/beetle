@@ -1,7 +1,0 @@
-[p2p]
-# libp2p = {listening_multiaddrs = ["/ip4/0.0.0.0/udp/8999/quic-v1"],bootstrap_peers=["/ip4/206.238.220.40/udp/8899/quic-v1/p2p/12D3KooWDyjzAiWnZ11H8SGkL11WmB4UJxcmFQirMuyZPPqnyZAD"]}
-libp2p = {listening_multiaddrs = ["/ip4/0.0.0.0/udp/0/quic-v1","/ip4/0.0.0.0/tcp/0"],bootstrap_peers=["/ip4/127.0.0.1/udp/8899/quic-v1/p2p/12D3KooWMghNf6w6mhd1YiUjo28KGKKp9zi7H78A98ntq1dNdfpW"]}
-rpc_client = {p2p_addr = "irpc://0.0.0.0:40002",store_addr = "irpc://127.0.0.1:30002"}
-[rpc_client]
-p2p_addr = "irpc://0.0.0.0:5000"
-store_addr = "irpc://127.0.0.1:6002"

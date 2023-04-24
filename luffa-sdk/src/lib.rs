@@ -3183,8 +3183,26 @@ pub async fn start_node(
 )> {
     config.libp2p.dial_concurrency_factor = 3;
     config.libp2p.max_conns_per_peer = 1;
-    config.libp2p.max_conns_in = 1;
-    config.libp2p.max_conns_out = 1;
+    config.libp2p.max_conns_in = 2;
+    config.libp2p.max_conns_out = 2;
+    // let len = config.libp2p.bootstrap_peers.len();
+    // let x: usize = rand::random();
+    // let x = x % len;
+    // let one = {
+    //     config
+    //         .libp2p
+    //         .bootstrap_peers
+    //         .iter()
+    //         .map(|x| x.to_owned())
+    //         .enumerate()
+    //         .find(|(n, _)| n == &x)
+    // };
+
+    // if let Some((_, n)) = one {
+    //     let boots = &mut config.libp2p.bootstrap_peers;
+    //     boots.retain(|a| a == &n);
+    // }
+
     tracing::info!("node>>>{config:?}");
     let (mut p2p, sender) =
         Node::new(config, keychain, db, Some("Luffa".to_string()), filter).await?;

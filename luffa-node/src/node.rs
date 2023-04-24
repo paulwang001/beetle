@@ -29,8 +29,8 @@ use libp2p::kad::{
 use libp2p::mdns;
 use libp2p::metrics::Recorder;
 use libp2p::multiaddr::Protocol;
-use libp2p::ping::Result as PingResult;
 use libp2p::ping;
+use libp2p::ping::Result as PingResult;
 use libp2p::request_response::{
     InboundFailure, OutboundFailure, RequestId, RequestResponseEvent, RequestResponseMessage,
 };
@@ -40,7 +40,7 @@ use libp2p::{PeerId, Swarm};
 use luffa_bitswap::{BitswapEvent, Block};
 use luffa_metrics::{core::MRecorder, inc, libp2p_metrics, p2p::P2PMetrics};
 use luffa_rpc_types::p2p::{ChatRequest, ChatResponse};
-use luffa_rpc_types::{AppStatus, ChatContent, ContactsTypes, Message, FeedbackStatus};
+use luffa_rpc_types::{AppStatus, ChatContent, ContactsTypes, FeedbackStatus, Message};
 use multihash::MultihashDigest;
 use petgraph::algo::astar;
 use petgraph::prelude::*;
@@ -233,17 +233,22 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             }
             _=> true
         };
-        for multiaddr in &libp2p_config.bootstrap_peers {
+        let len = libp2p_config.bootstrap_peers.len();
+        let x: usize = rand::random();
+        let x = if len == 0 { 0 } else { x % len };
+        let boots = libp2p_config.bootstrap_peers.iter().enumerate();
+        for (n,multiaddr) in  boots {
             // TODO: move parsing into config
             let mut addr = multiaddr.to_owned();
             let add_addr = addr.clone();
             if let Some(Protocol::P2p(mh)) = addr.pop() {
                 let peer_id = PeerId::from_multihash(mh).unwrap();
                 tracing::info!("add boot>> {:?}  {:?}",peer_id,addr);
-                if !libp2p_config.kademlia {
+                if !libp2p_config.kademlia && n == x {
+                    tracing::info!("dail to boot>> {:?}  {:?}",peer_id,addr);
                     swarm.dial(addr)?;
                 }
-                if is_client{
+                if is_client && n == x {
                     let l_addr = format!("{}/p2p-circuit/p2p/{}",add_addr.clone().to_string(),local_peer_id);
                     tracing::warn!("{l_addr}");
                     let on_addr = Multiaddr::from_str(&l_addr).unwrap();
@@ -385,11 +390,13 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     self.dht_nice_tick().await;
                 }
                 _ = bootstrap_interval.tick() => {
-                    if let Err(e) = self.swarm.behaviour_mut().kad_bootstrap() {
-                        tracing::warn!("kad bootstrap failed: {:?}", e);
-                    }
-                    else{
-                        tracing::debug!("kad bootstrap successfully");
+                    if self.swarm.connected_peers().count() == 0 {
+                        if let Err(e) = self.swarm.behaviour_mut().kad_bootstrap() {
+                            tracing::warn!("kad bootstrap failed: {:?}", e);
+                        }
+                        else{
+                            tracing::debug!("kad bootstrap successfully");
+                        }
                     }
                 }
                 _ = expiry_interval.tick() => {
@@ -455,7 +462,38 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
     #[tracing::instrument(skip(self))]
     async fn dht_nice_tick(&mut self) {
         let mut to_dial = None;
+        let mut dis = None;
+        let local = self.swarm.local_peer_id().clone();
+        let is_client = match self.agent.as_ref() {
+            Some(ag) => !ag.contains("Relay"),
+            None => false,
+        };
+        let local_key = crate::node::kad::kbucket::Key::from(local.clone());
         if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
+            let (s, r) = oneshot::channel();
+            match self.find_on_dht_queries.entry(local.to_bytes()) {
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    let (_, channels) = entry.get_mut();
+                    channels.push(s);
+                }
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert((local.clone(), vec![s]));
+                }
+            }
+            kad.get_closest_peers(local.clone());
+            tokio::spawn(async move {
+                if r.await.is_err() {
+                    warn!("get closest peers error!");
+                }
+            });
+        }
+
+        if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
+            let closest = kad
+                .get_closest_local_peers(&local_key)
+                .take(2)
+                .collect::<Vec<_>>();
+            warn!("local closest peers {:?}",closest);
             for kbucket in kad.kbuckets() {
                 if let Some(range) = self.kad_last_range {
                     if kbucket.range() == range {
@@ -465,9 +503,13 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
 
                 // find the first disconnected node
                 for entry in kbucket.iter() {
-                    if entry.status == NodeStatus::Disconnected {
-                        let peer_id = entry.node.key.preimage();
-
+                    let peer_id = entry.node.key.preimage();
+                    let is_closest = closest.iter().find(|x| x.preimage() == peer_id ).is_some();
+                    
+                    if entry.status == NodeStatus::Connected && !is_closest && is_client {
+                        dis = Some(peer_id.clone());
+                    }
+                    if entry.status == NodeStatus::Disconnected && is_closest {
                         let dial_opts = DialOpts::peer_id(*peer_id)
                             .condition(PeerCondition::Disconnected)
                             .addresses(entry.node.value.clone().into_vec())
@@ -479,14 +521,19 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 }
             }
         }
-
+        if let Some(d_id) = dis {
+            if self.swarm.disconnect_peer_id(d_id.clone()).is_err() {
+                tracing::warn!("disconnect peer is err");
+            } else {
+                tracing::warn!("disconnect peer {d_id:?} is ok");
+            }
+        }
         if let Some((dial_opts, range)) = to_dial {
             info!(
                 "checking node {:?} in bucket range ({:?})",
                 dial_opts.get_peer_id().unwrap(),
                 range
             );
-
             if let Err(e) = self.swarm.dial(dial_opts) {
                 info!("failed to dial: {:?}", e);
             }
@@ -752,195 +799,200 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             }
             Event::Kademlia(e) => {
                 libp2p_metrics().record(&e);
-
-                if let KademliaEvent::OutboundQueryProgressed {
-                    id, result, step, ..
-                } = e
-                {
-                    match result {
-                        QueryResult::GetProviders(Ok(p)) => {
-                            match p {
-                                GetProvidersOk::FoundProviders { key, providers } => {
-                                    let swarm = self.swarm.behaviour_mut();
-                                    if let Some(kad) = swarm.kad.as_mut() {
-                                        debug!(
-                                            "provider results for {:?} last: {}",
-                                            key, step.last
-                                        );
-
-                                        // Filter out bad providers.
-                                        let providers: HashSet<_> = providers
-                                            .into_iter()
-                                            .filter(|provider| {
-                                                let is_bad =
-                                                    swarm.peer_manager.is_bad_peer(provider);
-                                                if is_bad {
-                                                    inc!(P2PMetrics::SkippedPeerKad);
-                                                }
-                                                !is_bad
-                                            })
-                                            .collect();
-
-                                        self.providers.handle_get_providers_ok(
-                                            id, step.last, key, providers, kad,
-                                        );
+                match e {
+                    KademliaEvent::OutboundQueryProgressed {id,result,step,..}=>{
+                        match result {
+                            QueryResult::GetProviders(Ok(p)) => {
+                                match p {
+                                    GetProvidersOk::FoundProviders { key, providers } => {
+                                        let swarm = self.swarm.behaviour_mut();
+                                        if let Some(kad) = swarm.kad.as_mut() {
+                                            debug!(
+                                                "provider results for {:?} last: {}",
+                                                key, step.last
+                                            );
+    
+                                            // Filter out bad providers.
+                                            let providers: HashSet<_> = providers
+                                                .into_iter()
+                                                .filter(|provider| {
+                                                    let is_bad =
+                                                        swarm.peer_manager.is_bad_peer(provider);
+                                                    if is_bad {
+                                                        inc!(P2PMetrics::SkippedPeerKad);
+                                                    }
+                                                    !is_bad
+                                                })
+                                                .collect();
+    
+                                            self.providers.handle_get_providers_ok(
+                                                id, step.last, key, providers, kad,
+                                            );
+                                        }
+                                    }
+                                    GetProvidersOk::FinishedWithNoAdditionalRecord { .. } => {
+                                        let swarm = self.swarm.behaviour_mut();
+                                        if let Some(kad) = swarm.kad.as_mut() {
+                                            debug!(
+                                                "FinishedWithNoAdditionalRecord for query {:#?}",
+                                                id
+                                            );
+                                            self.providers.handle_no_additional_records(id, kad);
+                                        }
                                     }
                                 }
-                                GetProvidersOk::FinishedWithNoAdditionalRecord { .. } => {
-                                    let swarm = self.swarm.behaviour_mut();
-                                    if let Some(kad) = swarm.kad.as_mut() {
-                                        debug!(
-                                            "FinishedWithNoAdditionalRecord for query {:#?}",
-                                            id
-                                        );
-                                        self.providers.handle_no_additional_records(id, kad);
-                                    }
+                            }
+                            QueryResult::GetProviders(Err(error)) => {
+                                if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
+                                    self.providers.handle_get_providers_error(id, error, kad);
                                 }
                             }
-                        }
-                        QueryResult::GetProviders(Err(error)) => {
-                            if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
-                                self.providers.handle_get_providers_error(id, error, kad);
+                            QueryResult::Bootstrap(Ok(BootstrapOk {
+                                peer,
+                                num_remaining,
+                            })) => {
+                                debug!(
+                                    "kad bootstrap done {:?}, remaining: {}",
+                                    peer, num_remaining
+                                );
                             }
-                        }
-                        QueryResult::Bootstrap(Ok(BootstrapOk {
-                            peer,
-                            num_remaining,
-                        })) => {
-                            debug!(
-                                "kad bootstrap done {:?}, remaining: {}",
-                                peer, num_remaining
-                            );
-                        }
-                        QueryResult::Bootstrap(Err(e)) => {
-                            tracing::info!("kad bootstrap error: {:?}", e);
-                        }
-                        QueryResult::GetClosestPeers(Ok(GetClosestPeersOk { key, peers })) => {
-                            debug!("GetClosestPeers ok {:?}", key);
-                            if let Some((peer_id, channels)) = self.find_on_dht_queries.remove(&key)
-                            {
-                                let have_peer = peers.contains(&peer_id);
-                                // if this is not the last step we will have more chances to find
-                                // the peer
-                                if !have_peer && !step.last {
-                                    return Ok(());
+                            QueryResult::Bootstrap(Err(e)) => {
+                                tracing::info!("kad bootstrap error: {:?}", e);
+                            }
+                            QueryResult::GetClosestPeers(Ok(GetClosestPeersOk { key, peers })) => {
+                                if let Some((peer_id, channels)) = self.find_on_dht_queries.remove(&key)
+                                {
+                                    warn!("wait GetClosestPeers for me,{:?} peers:{:?}", peer_id,peers);
+                                    let have_peer = peers.contains(&peer_id);
+                                    // if this is not the last step we will have more chances to find
+                                    // the peer
+                                    if !have_peer && !step.last {
+                                        return Ok(());
+                                    }
+                                    let res = move || {
+                                        if have_peer {
+                                            Ok(())
+                                        } else {
+                                            Err(anyhow!("Failed to find peer {:?} on the DHT", peer_id))
+                                        }
+                                    };
+                                    
+                                    tokio::task::spawn(async move {
+                                        for chan in channels.into_iter() {
+                                            chan.send(res()).ok();
+                                        }
+                                    });
                                 }
-                                let res = move || {
-                                    if have_peer {
-                                        Ok(())
-                                    } else {
-                                        Err(anyhow!("Failed to find peer {:?} on the DHT", peer_id))
-                                    }
-                                };
-                                tokio::task::spawn(async move {
-                                    for chan in channels.into_iter() {
-                                        chan.send(res()).ok();
-                                    }
-                                });
+                                else{
+                                    warn!("GetClosestPeers for me,{:?}", peers);
+                                }
                             }
-                        }
-                        QueryResult::GetClosestPeers(Err(GetClosestPeersError::Timeout {
-                            key,
-                            ..
-                        })) => {
-                            debug!("GetClosestPeers Timeout: {:?}", key);
-                            if let Some((peer_id, channels)) = self.find_on_dht_queries.remove(&key)
-                            {
-                                tokio::task::spawn(async move {
-                                    for chan in channels.into_iter() {
-                                        chan.send(Err(anyhow!(
-                                            "Failed to find peer {:?} on the DHT: Timeout",
-                                            peer_id
-                                        )))
-                                        .ok();
-                                    }
-                                });
+                            QueryResult::GetClosestPeers(Err(GetClosestPeersError::Timeout {
+                                key,
+                                ..
+                            })) => {
+                                debug!("GetClosestPeers Timeout: {:?}", key);
+                                if let Some((peer_id, channels)) = self.find_on_dht_queries.remove(&key)
+                                {
+                                    tokio::task::spawn(async move {
+                                        for chan in channels.into_iter() {
+                                            chan.send(Err(anyhow!(
+                                                "Failed to find peer {:?} on the DHT: Timeout",
+                                                peer_id
+                                            )))
+                                            .ok();
+                                        }
+                                    });
+                                }
                             }
-                        }
-                        QueryResult::GetRecord(Ok(ret)) => match ret {
-                            GetRecordOk::FoundRecord(PeerRecord { peer, record }) => {
-                                let key = record.key.clone();
-                                debug!("FoundRecord: {:?} @{:?}", key, peer);
+                            QueryResult::GetRecord(Ok(ret)) => match ret {
+                                GetRecordOk::FoundRecord(PeerRecord { peer, record }) => {
+                                    let key = record.key.clone();
+                                    debug!("FoundRecord: {:?} @{:?}", key, peer);
+                                    if let Some((_query_id, channels)) =
+                                        self.record_on_dht_queries.remove(&key.to_vec())
+                                    {
+                                        tokio::task::spawn(async move {
+                                            for chan in channels.into_iter() {
+                                                chan.send(Ok(Some(record.clone()))).ok();
+                                            }
+                                        });
+                                    }
+                                    
+                                }
+                                GetRecordOk::FinishedWithNoAdditionalRecord { .. } => {
+                                    tracing::debug!("FinishedWithNoAdditionalRecord");
+                                }
+                            },
+                            QueryResult::GetRecord(Err(e)) => {
+                                let key = e.into_key();
+                                debug!("GetRecord Timeout: {:?}", key);
+                                if let Some((query_id, channels)) =
+                                    self.record_on_dht_queries.remove(&key.to_vec())
+                                {
+                                    tokio::task::spawn(async move {
+                                        for chan in channels.into_iter() {
+                                            chan.send(Err(anyhow!(
+                                                "Failed to get record {:?}[{:?}] on the DHT: Timeout",
+                                                key,
+                                                query_id
+                                            )))
+                                            .ok();
+                                        }
+                                    });
+                                }
+                            }
+                            QueryResult::PutRecord(Ok(ret)) => {
+                                let key = ret.key;
+                                debug!("PutRecord: {:?}", key);
                                 if let Some((_query_id, channels)) =
                                     self.record_on_dht_queries.remove(&key.to_vec())
                                 {
                                     tokio::task::spawn(async move {
                                         for chan in channels.into_iter() {
-                                            chan.send(Ok(Some(record.clone()))).ok();
+                                            chan.send(Ok(None)).ok();
                                         }
                                     });
                                 }
-                                
                             }
-                            GetRecordOk::FinishedWithNoAdditionalRecord { .. } => {
-                                tracing::debug!("FinishedWithNoAdditionalRecord");
+                            QueryResult::PutRecord(Err(e)) => {
+                                let key = e.into_key();
+                                debug!("GetRecord Timeout: {:?}", key);
+                                if let Some((query_id, channels)) =
+                                    self.record_on_dht_queries.remove(&key.to_vec())
+                                {
+                                    tokio::task::spawn(async move {
+                                        for chan in channels.into_iter() {
+                                            chan.send(Err(anyhow!(
+                                                "Failed to put record {:?}[{:?}] on the DHT: Timeout",
+                                                key,
+                                                query_id
+                                            )))
+                                            .ok();
+                                        }
+                                    });
+                                }
                             }
-                        },
-                        QueryResult::GetRecord(Err(e)) => {
-                            let key = e.into_key();
-                            debug!("GetRecord Timeout: {:?}", key);
-                            if let Some((query_id, channels)) =
-                                self.record_on_dht_queries.remove(&key.to_vec())
-                            {
-                                tokio::task::spawn(async move {
-                                    for chan in channels.into_iter() {
-                                        chan.send(Err(anyhow!(
-                                            "Failed to get record {:?}[{:?}] on the DHT: Timeout",
-                                            key,
-                                            query_id
-                                        )))
-                                        .ok();
-                                    }
-                                });
+                            QueryResult::StartProviding(Ok(providing)) => {
+                                let key = providing.key;
+                                debug!("StartProviding OK: {:?}", key);
+                                if let Some((query_id, channels)) =
+                                    self.provider_on_dht_queries.remove(&key.to_vec())
+                                {
+                                    tokio::task::spawn(async move {
+                                        for chan in channels.into_iter() {
+                                            chan.send(Ok(query_id)).ok();
+                                        }
+                                    });
+                                }
                             }
-                        }
-                        QueryResult::PutRecord(Ok(ret)) => {
-                            let key = ret.key;
-                            debug!("PutRecord: {:?}", key);
-                            if let Some((_query_id, channels)) =
-                                self.record_on_dht_queries.remove(&key.to_vec())
-                            {
-                                tokio::task::spawn(async move {
-                                    for chan in channels.into_iter() {
-                                        chan.send(Ok(None)).ok();
-                                    }
-                                });
-                            }
-                        }
-                        QueryResult::PutRecord(Err(e)) => {
-                            let key = e.into_key();
-                            debug!("GetRecord Timeout: {:?}", key);
-                            if let Some((query_id, channels)) =
-                                self.record_on_dht_queries.remove(&key.to_vec())
-                            {
-                                tokio::task::spawn(async move {
-                                    for chan in channels.into_iter() {
-                                        chan.send(Err(anyhow!(
-                                            "Failed to put record {:?}[{:?}] on the DHT: Timeout",
-                                            key,
-                                            query_id
-                                        )))
-                                        .ok();
-                                    }
-                                });
+                            other => {
+                                debug!("Libp2p => Unhandled Kademlia query result: {:?}", other);
                             }
                         }
-                        QueryResult::StartProviding(Ok(providing)) => {
-                            let key = providing.key;
-                            debug!("StartProviding OK: {:?}", key);
-                            if let Some((query_id, channels)) =
-                                self.provider_on_dht_queries.remove(&key.to_vec())
-                            {
-                                tokio::task::spawn(async move {
-                                    for chan in channels.into_iter() {
-                                        chan.send(Ok(query_id)).ok();
-                                    }
-                                });
-                            }
-                        }
-                        other => {
-                            debug!("Libp2p => Unhandled Kademlia query result: {:?}", other)
-                        }
+                    }
+                    ke=>{
+                        debug!("Libp2p => Unhandled Kademlia event: {:?}", ke);
                     }
                 }
             }
@@ -948,12 +1000,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 libp2p_metrics().record(&*e);
                 // tracing::info!("tick: identify {:?}", e);
                 // let local_peer_id = local_id.to_string();
-                // let is_client = match self.agent.as_ref() {
-                //     Some(ag)=>{
-                //         !ag.contains("Relay")
-                //     }
-                //     None=> false
-                // };
+                let is_client = match self.agent.as_ref() {
+                    Some(ag)=>{
+                        !ag.contains("Relay")
+                    }
+                    None=> false
+                };
 
                 if let IdentifyEvent::Received { peer_id, info } = *e {
                     // let obs_addr = &info.observed_addr;
@@ -961,12 +1013,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     //     if !is_client {
                     //     }
                     // }
-                    for addr in info.listen_addrs.iter() {
-                        if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-                            chat.add_address(&peer_id, addr.clone());
-                        }
-                    }
                     if info.agent_version.contains("Relay") {
+                        for addr in info.listen_addrs.iter() {
+                            if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+                                chat.add_address(&peer_id, addr.clone());
+                            }
+                        }
                         // TODO: only in my relay white list;
                         for protocol in &info.protocols {
                             let p = protocol.as_bytes();
@@ -975,9 +1027,13 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     if let Some(kad) = self.swarm.behaviour_mut().kad.as_mut() {
                                         kad.add_address(&peer_id, addr.clone());
                                     }
+                                    if is_client {
+                                        tracing::info!("kad add address >>> {peer_id} --> {addr:?} ");
+                                    }
                                 }
                             }
                         }
+
                           //TODO only in my contacts or my white list of relay
                         if let Some(bitswap) = self.swarm.behaviour().bitswap.as_ref() {
                             bitswap.on_identify(&peer_id, &info.protocols);
@@ -1002,7 +1058,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         }
                     }
 
-                    tracing::info!("identity>>> {peer_id} --> {info:?} ");
+                    tracing::debug!("identity>>> {peer_id} --> {info:?} ");
                     self.swarm
                         .behaviour_mut()
                         .peer_manager
