@@ -61,10 +61,10 @@ async fn main() -> Result<()> {
     .unwrap();
 
     config.metrics = luffa_node::metrics::metrics_config_with_compile_time_info(config.metrics);
-    tracing::info!("-------");
-
-
+    
+    
     let metrics_config = config.metrics.clone();
+    println!("metrics -------{metrics_config:?}");
 
     let metrics_handle = luffa_metrics::MetricsHandle::new(metrics_config)
         .await

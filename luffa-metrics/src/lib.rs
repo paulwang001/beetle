@@ -54,6 +54,9 @@ impl MetricsHandle {
     pub async fn new(cfg: Config) -> Result<Self, Box<dyn std::error::Error>> {
         init_tracer(cfg.clone())?;
         let metrics_task = init_metrics(cfg).await;
+        if metrics_task.is_none() {
+            tracing::warn!("metrics is none!");
+        }
         Ok(MetricsHandle { metrics_task })
     }
 }
@@ -74,18 +77,18 @@ async fn init_metrics(cfg: Config) -> Option<JoinHandle<()>> {
                 let res = match push_client.post(&prom_gateway_uri).body(buff).send().await {
                     Ok(res) => res,
                     Err(e) => {
-                        tracing::info!("failed to push metrics: {}", e);
+                        tracing::error!("failed to push metrics: {}", e);
                         continue;
                     }
                 };
                 match res.status() {
                     reqwest::StatusCode::OK => {
-                        debug!("pushed metrics to gateway");
+                        warn!("pushed metrics to gateway :{prom_gateway_uri}");
                     }
                     _ => {
-                        tracing::info!("failed to push metrics to gateway: {:?}", res);
+                        tracing::error!("failed to push metrics to gateway: {:?}", res);
                         let body = res.text().await.unwrap();
-                        tracing::info!("error body: {}", body);
+                        tracing::error!("error body: {}", body);
                     }
                 }
             }

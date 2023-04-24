@@ -1560,7 +1560,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         // return Ok(());
                                     }
                                 };
-                              
+                                inc!(P2PMetrics::ChatCounter); 
                                 let luffa_rpc_types::Event {
                                     crc,
                                     from_id,

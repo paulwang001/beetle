@@ -1,9 +1,8 @@
-[store]
-path = "/home/snqu/.local/share/luffa1/store"
 [p2p]
-libp2p = {listening_multiaddrs = ["/ip4/0.0.0.0/udp/0/quic-v1","/ip4/0.0.0.0/tcp/0"],bootstrap_peers=["/ip4/127.0.0.1/udp/8899/quic-v1/p2p/12D3KooWMghNf6w6mhd1YiUjo28KGKKp9zi7H78A98ntq1dNdfpW"]}
-key_store_path = "/home/snqu/.local/share/luffa1"
-rpc_client = {p2p_addr = "irpc://127.0.0.1:30001"}
-
-[rpc_client]
-p2p_addr = "irpc://127.0.0.1:30001"
+libp2p = {listening_multiaddrs = ["/ip4/0.0.0.0/udp/0/quic-v1"],bootstrap_peers=["/ip4/127.0.0.1/udp/8899/quic-v1/p2p/12D3KooWMghNf6w6mhd1YiUjo28KGKKp9zi7H78A98ntq1dNdfpW"]}
+[metrics]
+instance_id = "dev-156"
+collect = true
+collector_endpoint = "http://182.140.244.175:4317"
+prom_gateway_endpoint = "http://182.140.244.175:9100"
+log_level = "Warn"

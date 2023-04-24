@@ -17,6 +17,7 @@ pub(crate) struct Metrics {
     skipped_peer_bitswap: Counter,
     skipped_peer_kad: Counter,
     loops: Counter,
+    chat: Counter,
 }
 
 impl fmt::Debug for Metrics {
@@ -53,6 +54,8 @@ impl Metrics {
 
         let loops = Counter::default();
         sub_registry.register(P2PMetrics::LoopCounter.name(), "", Box::new(loops.clone()));
+        let chat = Counter::default();
+        sub_registry.register(P2PMetrics::ChatCounter.name(), "", Box::new(chat.clone()));
 
         Self {
             bad_peers,
@@ -60,6 +63,7 @@ impl Metrics {
             skipped_peer_bitswap,
             skipped_peer_kad,
             loops,
+            chat,
         }
     }
 }
@@ -79,6 +83,8 @@ impl MetricsRecorder for Metrics {
             self.skipped_peer_kad.inc_by(value);
         } else if m.name() == P2PMetrics::LoopCounter.name() {
             self.loops.inc_by(value);
+        } else if m.name() == P2PMetrics::ChatCounter.name() {
+            self.chat.inc_by(value);
         } else {
             error!("record (bitswap): unknown metric {}", m.name());
         }
@@ -99,6 +105,7 @@ pub enum P2PMetrics {
     SkippedPeerBitswap,
     SkippedPeerKad,
     LoopCounter,
+    ChatCounter,
 }
 
 impl MetricType for P2PMetrics {
@@ -109,6 +116,7 @@ impl MetricType for P2PMetrics {
             P2PMetrics::SkippedPeerBitswap => "skipped_peer_bitswap",
             P2PMetrics::SkippedPeerKad => "skipped_peer_kad",
             P2PMetrics::LoopCounter => "loop_counter",
+            P2PMetrics::ChatCounter => "chat_counter",
         }
     }
 }

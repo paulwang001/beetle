@@ -217,7 +217,7 @@ where
     }
 
     let cfg = builder.build()?;
-    tracing::info!("make_config:\n{:#?}\n", cfg);
+    println!("metrics make_config:\n{:#?}\n", cfg);
     let cfg: T = cfg.try_deserialize()?;
     Ok(cfg)
 }

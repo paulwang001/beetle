@@ -1,6 +1,10 @@
 [p2p]
 libp2p = {listening_multiaddrs = ["/ip4/0.0.0.0/udp/8899/quic-v1"],bootstrap_peers=[]}
-
+[metrics]
+instance_id = "boot-local"
+collector_endpoint = "http://127.0.0.1:4317"
+prom_gateway_endpoint = "http://172.17.0.5:9091"
+log_level = "Warn"
 
 
 
