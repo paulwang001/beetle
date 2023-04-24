@@ -1,0 +1,6 @@
+[p2p]
+libp2p = {listening_multiaddrs = ["/ip4/0.0.0.0/udp/8899/quic-v1"],bootstrap_peers=[]}
+
+
+
+

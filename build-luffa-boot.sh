@@ -1,0 +1,1 @@
+docker build -f luffa-boot.Dockerfile -t luffa-boot .
