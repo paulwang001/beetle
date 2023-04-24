@@ -42,7 +42,8 @@ pub struct User {
 }
 
 fn bench_send_msg(client:Client, msg: Vec<u8>) {
-    client.send_msg(10871006697545602478, msg).unwrap();
+    let crc = client.send_msg(10871006697545602478, msg).unwrap();
+    println!("{crc}");
 }
 
 #[derive(Debug)]
