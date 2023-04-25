@@ -522,11 +522,11 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             }
         }
         if let Some(d_id) = dis {
-            if self.swarm.disconnect_peer_id(d_id.clone()).is_err() {
-                tracing::warn!("disconnect peer is err");
-            } else {
-                tracing::warn!("disconnect peer {d_id:?} is ok");
-            }
+            // if self.swarm.disconnect_peer_id(d_id.clone()).is_err() {
+            //     tracing::warn!("disconnect peer is err");
+            // } else {
+            //     tracing::warn!("disconnect peer {d_id:?} is ok");
+            // }
         }
         if let Some((dial_opts, range)) = to_dial {
             info!(
