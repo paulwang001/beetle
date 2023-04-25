@@ -18,6 +18,9 @@ pub(crate) struct Metrics {
     skipped_peer_kad: Counter,
     loops: Counter,
     chat: Counter,
+    chat_pending: Counter,
+    chat_pending_request: Counter,
+    chat_online: Counter,
 }
 
 impl fmt::Debug for Metrics {
@@ -56,6 +59,15 @@ impl Metrics {
         sub_registry.register(P2PMetrics::LoopCounter.name(), "", Box::new(loops.clone()));
         let chat = Counter::default();
         sub_registry.register(P2PMetrics::ChatCounter.name(), "", Box::new(chat.clone()));
+        
+        let chat_pending = Counter::default();
+        sub_registry.register(P2PMetrics::ChatPendingCounter.name(), "", Box::new(chat_pending.clone()));
+
+        let chat_pending_request = Counter::default();
+        sub_registry.register(P2PMetrics::ChatPendingRequest.name(), "", Box::new(chat_pending_request.clone()));
+        
+        let chat_online = Counter::default();
+        sub_registry.register(P2PMetrics::ChatOnline.name(), "", Box::new(chat_online.clone()));
 
         Self {
             bad_peers,
@@ -64,6 +76,9 @@ impl Metrics {
             skipped_peer_kad,
             loops,
             chat,
+            chat_pending,
+            chat_pending_request,
+            chat_online,
         }
     }
 }
@@ -85,6 +100,12 @@ impl MetricsRecorder for Metrics {
             self.loops.inc_by(value);
         } else if m.name() == P2PMetrics::ChatCounter.name() {
             self.chat.inc_by(value);
+        } else if m.name() == P2PMetrics::ChatPendingCounter.name() {
+            self.chat_pending.inner().store(value, std::sync::atomic::Ordering::SeqCst);
+        } else if m.name() == P2PMetrics::ChatPendingRequest.name() {
+            self.chat_pending_request.inner().store(value, std::sync::atomic::Ordering::SeqCst);
+        } else if m.name() == P2PMetrics::ChatOnline.name() {
+            self.chat_online.inner().store(value, std::sync::atomic::Ordering::SeqCst);
         } else {
             error!("record (bitswap): unknown metric {}", m.name());
         }
@@ -106,6 +127,9 @@ pub enum P2PMetrics {
     SkippedPeerKad,
     LoopCounter,
     ChatCounter,
+    ChatPendingCounter,
+    ChatPendingRequest,
+    ChatOnline,
 }
 
 impl MetricType for P2PMetrics {
@@ -117,6 +141,9 @@ impl MetricType for P2PMetrics {
             P2PMetrics::SkippedPeerKad => "skipped_peer_kad",
             P2PMetrics::LoopCounter => "loop_counter",
             P2PMetrics::ChatCounter => "chat_counter",
+            P2PMetrics::ChatPendingCounter => "chat_pending_counter",
+            P2PMetrics::ChatPendingRequest => "chat_pending_request",
+            P2PMetrics::ChatOnline => "chat_online",
         }
     }
 }

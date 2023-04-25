@@ -900,9 +900,7 @@ impl Client {
                             ..
                         } = e;
                         // assert!(nonce.is_some(),"nonce is none!!");
-                        if let Err(e) = channel.send(Ok(crc)) {
-                            tracing::info!("channel send failed {e:?}");
-                        }
+                        
                         let db_t = db_t.clone();
                         let schema_t = schema_t.clone();
                         let idx_t = idx_t.clone();
@@ -1030,12 +1028,10 @@ impl Client {
                                     event_time,
                                 );
                             }
+                            crc
                         });
                         Some(job)
                     } else {
-                        if let Err(_e) = channel.send(Ok(0)) {
-                            tracing::error!("channel send failed");
-                        }
                         None
                     };
                     if to != my_id {
@@ -1067,8 +1063,20 @@ impl Client {
                         // }
                         let db_t2 = db_t.clone();
                         if let Some(job) = save_job {
-                            if let Err(e) = job.await {
-                                tracing::error!("job>> {e:?}");
+                            match job.await {
+                                Ok(crc)=>{
+                                    if let Err(e) = channel.send(Ok(crc)) {
+                                        tracing::info!("channel send failed {e:?}");
+                                    }
+                                }
+                                Err(e)=>{
+                                    tracing::error!("job>> {e:?}");
+                                }
+                            }
+                        }
+                        else{
+                            if let Err(e) = channel.send(Ok(e.crc)) {
+                                tracing::info!("channel send failed {e:?}");
                             }
                         }
                         tokio::spawn(async move {
@@ -1126,6 +1134,9 @@ impl Client {
                         });
                     } else {
                         tracing::error!("is to me---->");
+                        if let Err(e) = channel.send(Ok(0)) {
+                            tracing::info!("channel send failed {e:?}");
+                        }
                     }
                 }
                 None => {

@@ -99,8 +99,6 @@ fn main() -> Result<()> {
         let mut code = String::new();
         loop {
             std::thread::sleep(Duration::from_secs(10));
-            // let peer_id = client.get_local_id().unwrap();
-            std::thread::sleep(Duration::from_secs(1));
             let peer_id = client.get_local_id().unwrap().unwrap();
             tracing::warn!("peer id: {peer_id:?}");
             let peers = client.relay_list();
@@ -164,6 +162,16 @@ fn main() -> Result<()> {
                                 .show_code("https://luffa.putdev.com", "p")
                                 .unwrap()
                                 .unwrap();
+                            let msg = Message::InnerError {
+                                kind: 120,
+                                reason:code.clone(),
+                            };
+                            let msg = message_to(msg).unwrap();
+                            let crc = client.send_msg(0, msg).unwrap();
+                            tracing::warn!(
+                                "my qrcode msg send seccess {crc}"
+                            );
+                            std::thread::sleep(Duration::from_secs(5));
                         }
                         let relays = client.relay_list().unwrap();
                         tracing::warn!("scan me :{}  --->>{:?}", code, relays);
@@ -201,9 +209,37 @@ fn main() -> Result<()> {
                                     }
                                 }
                             }
+                            let mnemonic =
+                            Mnemonic::new(MnemonicType::Words24, Language::English);
+                            let msg = Message::Chat {
+                                content: luffa_rpc_types::ChatContent::Send {
+                                    data: luffa_rpc_types::ContentData::Text {
+                                        source: luffa_rpc_types::DataSource::Text {
+                                            content: mnemonic.into_phrase(),
+                                        },
+                                        reference: None,
+                                    },
+                                },
+                            };
+                            let msg = message_to(msg).unwrap();
+                            let crc = client.send_msg(c.did, msg).unwrap();
+                            tracing::warn!(
+                                "private msg send seccess {crc}"
+                            );
+                        }
+                        if members.len() < 8 {
+                            let msg = Message::InnerError {
+                                kind: 121,
+                                reason:code.clone(),
+                            };
+                            let msg = message_to(msg).unwrap();
+                            let crc = client.send_msg(0, msg).unwrap();
+                            tracing::warn!(
+                                "find qrcode msg send seccess {crc}"
+                            );
                         }
                         let groups = client.contacts_list(1).unwrap();
-                        if !members.is_empty() && groups.len() < 1 {
+                        if members.len() > 3 && groups.len() < 1 {
                             let created = client.contacts_group_create(members, None).is_ok();
                             tracing::warn!("group created:{created}");
                         }
@@ -371,6 +407,15 @@ fn main() -> Result<()> {
             } => {
                 if from_id.unwrap_or_default() > 0 && to_id.unwrap_or_default() > 0 {
                     tracing::warn!("crc {crc:?} status change {status:?}");
+                }
+            }
+            Message::InnerError {kind,reason} =>{
+                if kind == &120 {
+                    let list = client_t.contacts_list(0).unwrap();
+                    if list.len() < 8 {
+                        let crc = client_t.contacts_offer(reason)?;
+                        tracing::warn!("qrcode offer>> {crc}");
+                    }
                 }
             }
             _ => {

@@ -18,6 +18,8 @@ pub const ENV_PREFIX: &str = "LUFFA_";
 ///
 pub const DEFAULT_BOOTSTRAP: &[&str] = &[
     "/ip4/182.140.244.167/udp/8899/quic-v1/p2p/12D3KooWFQ6ifytHCU6EC2qFFebm6UMzLQN3NWz3XwbzSTD5V1xT",
+    "/ip4/182.140.244.156/udp/8899/quic-v1/p2p/12D3KooWAvfMdfWBxu2Td8K9Cn1nsVRjAq3zfVBmMd7rgSv4Tcn1",
+    "/ip4/182.140.244.175/udp/8899/quic-v1/p2p/12D3KooWHnu2Sr1LqRYbdaDEMmPtbNLWfkUvDqh42p4X9x89P8s6",
     // "/ip4/182.140.244.167/tcp/8866/p2p/12D3KooWFQ6ifytHCU6EC2qFFebm6UMzLQN3NWz3XwbzSTD5V1xT",
     // "/ip4/182.140.244.156/tcp/8866/p2p/12D3KooWAvfMdfWBxu2Td8K9Cn1nsVRjAq3zfVBmMd7rgSv4Tcn1"
 ];

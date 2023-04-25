@@ -12,4 +12,4 @@ WORKDIR /app
 COPY ./luffa-relay/luffa.config.toml /root/.config/luffa/
 COPY ./luffa-relay/luffa-relay .
 
-CMD ["sh", "-c", "RUST_LOG=warn /app/luffa-relay --metrics --cfg /root/.config/luffa/luffa.config.toml"]
+CMD ["sh", "-c", "RUST_LOG=warn /app/luffa-relay --cfg /root/.config/luffa/luffa.config.toml"]

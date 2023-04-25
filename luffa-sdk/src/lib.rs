@@ -1126,7 +1126,10 @@ impl Client {
                     ClientError::SendFailed
                 }) {
                     Ok(crc) => crc,
-                    Err(_e) => 0,
+                    Err(e) => {
+                        tracing::error!("{e:?}");
+                        0
+                    },
                 }
             }
             None => 0,
