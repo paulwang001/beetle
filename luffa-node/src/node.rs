@@ -531,6 +531,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         //         tracing::warn!("disconnect peer {d_id:?} is ok");
         //     }
         // }
+
         if let Some((dial_opts, range)) = to_dial {
             info!(
                 "checking node {:?} in bucket range ({:?})",
