@@ -12,4 +12,4 @@ FROM debian
 WORKDIR /app
 COPY ./luffa-sdk/luffa.config.toml /root/.config/luffa/
 COPY ./luffa-sdk/luffa-client .
-CMD ["sh", "-c", "RUST_LOG=info ./luffa-client --tag Client-One --cfg /root/.config/luffa/luffa.config.toml"]
+CMD ["sh", "-c", "RUST_LOG=warn ./luffa-client --tag Client-One --cfg /root/.config/luffa/luffa.config.toml"]

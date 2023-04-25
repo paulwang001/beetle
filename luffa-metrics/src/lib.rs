@@ -83,7 +83,7 @@ async fn init_metrics(cfg: Config) -> Option<JoinHandle<()>> {
                 };
                 match res.status() {
                     reqwest::StatusCode::OK => {
-                        warn!("pushed metrics to gateway :{prom_gateway_uri}");
+                        tracing::info!("pushed metrics to gateway :{prom_gateway_uri}");
                     }
                     _ => {
                         tracing::error!("failed to push metrics to gateway: {:?}", res);

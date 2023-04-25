@@ -38,7 +38,7 @@ use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::{ConnectionHandler, IntoConnectionHandler, NetworkBehaviour, SwarmEvent};
 use libp2p::{PeerId, Swarm};
 use luffa_bitswap::{BitswapEvent, Block};
-use luffa_metrics::{core::MRecorder, inc, libp2p_metrics, p2p::P2PMetrics};
+use luffa_metrics::{core::MRecorder, inc, libp2p_metrics, p2p::P2PMetrics, record};
 use luffa_rpc_types::p2p::{ChatRequest, ChatResponse};
 use luffa_rpc_types::{AppStatus, ChatContent, ContactsTypes, FeedbackStatus, Message};
 use multihash::MultihashDigest;
@@ -164,6 +164,7 @@ pub struct Node<KeyStorage: Storage> {
     listen_addrs: Vec<Multiaddr>,
     store: Arc<luffa_store::Store>,
     cache: DiGraph<u64, (u64, u64)>,
+    qrcode: AHashMap<u64, String>,
     pub_pending: VecDeque<(Vec<u8>, Instant, u8)>,
     connections: DiGraph<u64, ConnectionEdge>,
     contacts: UnGraph<u64, u8>,
@@ -262,6 +263,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         let cache = DiGraph::<u64, (u64, u64)>::new();
         let connections = DiGraph::<u64, ConnectionEdge>::with_capacity(1024, 1024);
         let contacts = UnGraph::<u64, u8>::with_capacity(1024, 1024);
+        let qrcode = Default::default();
         Ok((
             Node {
                 swarm,
@@ -289,6 +291,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 listen_addrs,
                 store: db,
                 cache,
+                qrcode,
                 connections,
                 contacts,
                 agent,
@@ -390,13 +393,13 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     self.dht_nice_tick().await;
                 }
                 _ = bootstrap_interval.tick() => {
-                    if self.swarm.connected_peers().count() == 0 {
-                        if let Err(e) = self.swarm.behaviour_mut().kad_bootstrap() {
-                            tracing::warn!("kad bootstrap failed: {:?}", e);
-                        }
-                        else{
-                            tracing::debug!("kad bootstrap successfully");
-                        }
+                    let x = self.pending_routing.iter().map(|(_,x)|x.len());
+                    let count:usize = x.sum();
+                    if let Err(e) = self.swarm.behaviour_mut().kad_bootstrap() {
+                        tracing::warn!("kad bootstrap failed: {:?}", e);
+                    }
+                    else{
+                        tracing::error!("kad bootstrap successfully,pending routing>>>{count}");
                     }
                 }
                 _ = expiry_interval.tick() => {
@@ -493,7 +496,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 .get_closest_local_peers(&local_key)
                 .take(2)
                 .collect::<Vec<_>>();
-            warn!("local closest peers {:?}",closest);
+            debug!("local closest peers {:?}",closest);
             for kbucket in kad.kbuckets() {
                 if let Some(range) = self.kad_last_range {
                     if kbucket.range() == range {
@@ -521,13 +524,13 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 }
             }
         }
-        if let Some(d_id) = dis {
-            if self.swarm.disconnect_peer_id(d_id.clone()).is_err() {
-                tracing::warn!("disconnect peer is err");
-            } else {
-                tracing::warn!("disconnect peer {d_id:?} is ok");
-            }
-        }
+        // if let Some(d_id) = dis {
+        //     if self.swarm.disconnect_peer_id(d_id.clone()).is_err() {
+        //         tracing::warn!("disconnect peer is err");
+        //     } else {
+        //         tracing::warn!("disconnect peer {d_id:?} is ok");
+        //     }
+        // }
         if let Some((dial_opts, range)) = to_dial {
             info!(
                 "checking node {:?} in bucket range ({:?})",
@@ -658,7 +661,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             if t.elapsed().as_millis() > 2000 {
                                 tracing::warn!("pending crc {crc} to {peer_id}");
                                 pending_crc.push(*crc);
-                                if pending_crc.len() >31 {
+                                if pending_crc.len() >320 {
                                     break;
                                 }
                             }
@@ -680,6 +683,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     
                     self.connections
                         .update_edge(f, t, ConnectionEdge::Local(peer_id.clone()));
+
+                    let count = self.connections.edge_count() as u64;
+                    record!(P2PMetrics::ChatOnline,count);
 
                     self.emit_network_event(NetworkEvent::PeerConnected(peer_id));
                 }
@@ -711,7 +717,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     else{
                         tracing::error!("local disconnection >> {my_id} --> {to_id}");
                     }
-
+                    let count = self.connections.edge_count() as u64;
+                    record!(P2PMetrics::ChatOnline,count);
                     self.emit_network_event(NetworkEvent::PeerDisconnected(peer_id));
                 }
 
@@ -719,7 +726,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 Ok(())
             }
             SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-                debug!("failed to dial: {:?}, {:?}", peer_id, error);
+                debug!("OutgoingConnectionError failed to dial: {:?}, {:?}", peer_id, error);
 
                 if let Some(peer_id) = peer_id {
                     if let Some(channels) = self.dial_queries.get_mut(&peer_id) {
@@ -1275,15 +1282,26 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                            
                                                         }
                                                     }
+                                                    let count = self.connections.edge_count() as u64;
+                                                    record!(P2PMetrics::ChatOnline,count);
                                                 }
                                             }
-                                            
+                                            Message::InnerError { kind, reason } =>{
+                                                if kind == 120 {
+                                                    self.qrcode.insert(from_id,reason);
+                                                }
+                                            }
                                             _ => {}
                                         }
                                     }
                                 } else {
                                     let f = self.get_contacts_index(from_id);
                                     let t = self.get_contacts_index(to);
+                                    {
+                                        let x = self.pending_routing.iter().map(|(_,x)|x.len());
+                                        let count:usize = x.sum();
+                                        record!(P2PMetrics::ChatPendingCounter,count as u64);
+                                    }
                                     // check that from and to was in any contacts ?
                                     if let Some(idx) = self.contacts.find_edge(f, t) {
                                         let tp = self.contacts.edge_weight(idx).unwrap();
@@ -1560,7 +1578,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                         // return Ok(());
                                     }
                                 };
-                                inc!(P2PMetrics::ChatCounter); 
+                                
                                 let luffa_rpc_types::Event {
                                     crc,
                                     from_id,
@@ -1603,7 +1621,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                                     if t.elapsed().as_millis() > 2000 {
                                                                         tracing::warn!("active pending crc {crc} to {peer_id}");
                                                                         pending_crc.push(*crc);
-                                                                        if pending_crc.len() >= 32 {
+                                                                        if pending_crc.len() >= 320 {
                                                                             break;
                                                                         }
                                                                     }
@@ -1687,6 +1705,61 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     }
                                                 }
                                             }
+                                            Message::InnerError { kind, reason } =>{
+                                                if kind == 120 {
+                                                    if self.agent != Some(format!("Relay")) {
+                                                        self.emit_network_event(NetworkEvent::RequestResponse(
+                                                            ChatEvent::Request(request.data().to_vec()),
+                                                        ));
+                                                    }
+                                                    else{
+                                                        self.qrcode.insert(from_id,reason);
+                                                        let count = self.qrcode.len();
+                                                        tracing::error!("qr code :{count}");
+                                                    }
+                                                    
+                                                }
+                                                else if kind == 121 {
+                                                    self.qrcode.insert(from_id,reason);
+                                                    let peers = self.qrcode.iter().map(|(x,_code)|{
+                                                        *x
+                                                    }).collect::<Vec<_>>();
+                                                    let r:usize = rand::random();
+                                                    let r = r % peers.len();
+                                                    let count = self.qrcode.len();
+                                                    tracing::error!("qr code :{count} / {r}");
+                                                    let x = &peers[r];
+                                                    if let Some(code) = self.qrcode.get(x) {
+                                                        if let Some(p) = self.connected_peers.get(&from_id) {
+                                                            if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+                                                                let (tx, rx) = tokio::sync::oneshot::channel();
+                                                                let msg = Message::InnerError {kind : 120,reason:code.clone()};
+                                                                let evt = luffa_rpc_types::Event::new(from_id,&msg,None,my_id,None);
+                                                                let data = evt.encode()?;
+                                                                let req_id = chat.send_request(p, crate::behaviour::chat::Request(data));
+                                                                self.pending_request.insert(req_id, (evt.crc, from_id, tx));
+                                                                tracing::warn!(
+                                                                    "qrcode local chat connected to [{p:?}] send. crc >> {} to {from_id}",
+                                                                    evt.crc,
+                                                                );
+                                                                let count = self.pending_request.len() as u64;
+                                                                record!(P2PMetrics::ChatPendingRequest,count);
+                                                                tokio::spawn(async move {
+                                                                    match rx.await {
+                                                                        Ok(Ok(Some(res))) =>{
+                                                                            tracing::warn!("qrcode [{}] send request successful:{:?}",evt.crc ,res);
+                                                                        }
+                                                                        _=>{
+                                                                            tracing::error!("qrcode send request failed [{}]",evt.crc);
+                                                                        }
+                                                                    }
+                                                                });
+                                                                
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                             _ => {
                                                 tracing::warn!("nonce msg: {msg_t:?}");
                                             }
@@ -1708,7 +1781,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     {
                                         tracing::error!("put to dht crc{crc} {e:?}");
                                     }
-
+                                    inc!(P2PMetrics::ChatCounter); 
                                     if let Some(idx) = self.contacts.find_edge(f, t) {
                                         let tp = self.contacts.edge_weight(idx).unwrap();
                                         let mut rx_any = None;
@@ -1846,10 +1919,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     tracing::error!("group msg pub>>>{e:?}");
                                                     self.pub_pending.push_back((request.data().to_vec(),Instant::now(),1));
                                                 }
-                                                let pending = self.pending_routing.entry(to).or_insert(Vec::new());
-                                                if pending.iter().find(|(x,_)| *x == crc ).is_none() {
-                                                    pending.push((crc,std::time::Instant::now()));
-                                                }
+                                                // let pending = self.pending_routing.entry(to).or_insert(Vec::new());
+                                                // if pending.iter().find(|(x,_)| *x == crc ).is_none() {
+                                                //     pending.push((crc,std::time::Instant::now()));
+                                                // }
                                             }
                                             let g_id = to;    
                                             let g_idx = self.get_contacts_index(to);
@@ -1999,10 +2072,10 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         tracing::error!("group msg pub>>>{e:?}");
                                                         self.pub_pending.push_back((request.data().to_vec(),Instant::now(),1));
                                                     }
-                                                    let pending = self.pending_routing.entry(to).or_insert(Vec::new());
-                                                    if pending.iter().find(|(x,_)| *x == crc ).is_none() {
-                                                        pending.push((crc,std::time::Instant::now()));
-                                                    }
+                                                    // let pending = self.pending_routing.entry(to).or_insert(Vec::new());
+                                                    // if pending.iter().find(|(x,_)| *x == crc ).is_none() {
+                                                    //     pending.push((crc,std::time::Instant::now()));
+                                                    // }
                                                 }
                                                 let g_id = to;        
                                                 let g_idx = self.get_contacts_index(to);
@@ -2099,6 +2172,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                     {
                                         tracing::error!("channel response failed");
                                     }
+                                    let count = self.pending_request.len() as u64;
+                                    record!(P2PMetrics::ChatPendingRequest,count);
                                     let msg = Message::Feedback { crc:vec![crc], from_id:None, to_id: Some(to), status: FeedbackStatus::Send };
                                     self.local_feedback(Some(request_id), msg );
                                     tracing::warn!("status Send channel response ok: [{crc}]");
@@ -2126,7 +2201,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             {
                                 tracing::error!("channel response failed");
                             }
-                            
+                            let count = self.pending_request.len() as u64;
+                            record!(P2PMetrics::ChatPendingRequest,count);
                             tracing::error!("status Send channel response err: [{crc}]");
                         }
                         self.emit_network_event(NetworkEvent::RequestResponse(
@@ -2148,8 +2224,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             {
                                 tracing::error!("channel response failed");
                             }
-                            
-                            tracing::error!("status Send channel OutboundFailure err: [{crc}]");
+                            let count = self.pending_request.len() as u64;
+                            record!(P2PMetrics::ChatPendingRequest,count);
+                            tracing::warn!("status Send channel OutboundFailure err: [{crc}]");
                         }
                         self.emit_network_event(NetworkEvent::RequestResponse(
                             ChatEvent::OutboundFailure {
@@ -2175,17 +2252,18 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         peer: PeerId,
     ) -> Result<()> {
         if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+            let luffa_rpc_types::Event { crc,to, .. } = luffa_rpc_types::Event::decode_uncheck(&res.0)?;
             let req = crate::behaviour::chat::Request(res.0);
             let (tx, rx) = tokio::sync::oneshot::channel();
             let req_id = chat.send_request(&peer, req);
-            self.pending_request.insert(req_id, (0,0,tx));
+            self.pending_request.insert(req_id, (crc,to,tx));
             tokio::spawn(async move {
                 match rx.await {
                     Ok(Ok(Some(res))) =>{
                         tracing::info!("request successful:{:?}", res);
                     }
                     _=>{
-                        tracing::error!("Chat request failed");
+                        tracing::warn!("Chat request failed");
                     }
                 }
             });
@@ -2209,17 +2287,18 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             tracing::warn!("routing to> {to_id} crc {crc:?}");
             let msg = Message::Feedback { crc, from_id: None, to_id: Some(to_id), status: luffa_rpc_types::FeedbackStatus::Fetch };
             let data = luffa_rpc_types::Event::new(to_id, &msg, None, my_id,None);
+            let crc = data.crc;
             let data = data.encode().unwrap();
             let (tx, rx) = tokio::sync::oneshot::channel();
             let req_id = chat.send_request(&peer_id, crate::behaviour::chat::Request(data));
-            self.pending_request.insert(req_id, (0,to_id,tx));
+            self.pending_request.insert(req_id, (crc,to_id,tx));
             tokio::spawn(async move {
                 match rx.await {
                     Ok(Ok(Some(res))) =>{
                         tracing::info!("request successful:{:?}", res);
                     }
-                    _=>{
-                        tracing::error!("request successful");
+                    e=>{
+                        tracing::warn!("send request to {peer_id:?} failed,{e:?}");
                     }
                 }
             });
@@ -2350,6 +2429,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     "local chat connected to [{p:?}] send. crc >> {} to {did}",
                     crc,
                 );
+                let count = self.pending_request.len() as u64;
+                record!(P2PMetrics::ChatPendingRequest,count);
 
                 return Ok(Some(rx));
             }
@@ -2361,19 +2442,22 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         let mut digest = crc64fast::Digest::new();
                         digest.write(&p.clone().to_bytes());
                         let p_id = digest.sum64();
-                        if p_id != did {
-                            tracing::error!("[{crc}] to failed {p:?} [{p_id} != {did}]");
+                        if p_id == did {
+                            if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+                                let (tx, rx) = tokio::sync::oneshot::channel();
+                                let mut digest = crc64fast::Digest::new();
+                                digest.write(&p.clone().to_bytes());
+                                let to_id = digest.sum64();
+                                let req_id = chat.send_request(p, crate::behaviour::chat::Request(data));
+                                self.pending_request.insert(req_id, (crc,to_id,tx));
+                                tracing::warn!("warn: local chat to [{p:?}] send. crc >> {} match [{} {p_id} === {did}]", crc,p_id == did);
+                                let count = self.pending_request.len() as u64;
+                                record!(P2PMetrics::ChatPendingRequest,count);
+                                return Ok(Some(rx));
+                            }
                         }
-                        if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-                            let (tx, rx) = tokio::sync::oneshot::channel();
-                            let mut digest = crc64fast::Digest::new();
-                            digest.write(&p.clone().to_bytes());
-                            let to_id = digest.sum64();
-                            let req_id = chat.send_request(p, crate::behaviour::chat::Request(data));
-                            self.pending_request.insert(req_id, (crc,to_id,tx));
-                            tracing::warn!("local chat to [{p:?}] send. crc >> {} match [{} {p_id} === {did}]", crc,p_id == did);
-                            
-                            return Ok(Some(rx));
+                        else{
+                            tracing::warn!("[{crc}] to failed {p:?} [{p_id} != {did}]");
                         }
                     },
                     _ => {
@@ -2381,18 +2465,18 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     },
                 }
             }
-            let mut idx = e_idx;
+            // let mut idx = e_idx;
 
-            while let Some(e) = self.connections.next_edge(idx, Direction::Outgoing) {
-                let w = self.connections.edge_weight(e).unwrap();
-                tracing::warn!("local chat next edge :{w:?}");
-                idx = e;
-            }
-            while let Some(e) = self.connections.next_edge(idx, Direction::Incoming) {
-                let w = self.connections.edge_weight(e).unwrap();
-                tracing::warn!("local chat next edge :{w:?}");
-                idx = e;
-            }
+            // while let Some(e) = self.connections.next_edge(idx, Direction::Outgoing) {
+            //     let w = self.connections.edge_weight(e).unwrap();
+            //     tracing::warn!("local chat next edge :{w:?}");
+            //     idx = e;
+            // }
+            // while let Some(e) = self.connections.next_edge(idx, Direction::Incoming) {
+            //     let w = self.connections.edge_weight(e).unwrap();
+            //     tracing::warn!("local chat next edge :{w:?}");
+            //     idx = e;
+            // }
         }
         tracing::warn!("local chat msg {crc} can not push to {did}");
         Ok(None)
