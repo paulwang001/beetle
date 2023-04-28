@@ -1250,16 +1250,16 @@ impl Client {
             let _ = self.remove_offser(did, crc);
         });
 
-        msgs.iter_mut().for_each(|x| {
-            let view = match self.get_contacts_view_by_id(x.did).ok().flatten() {
-                Some(x) => x,
-                None => return,
-            };
+        // msgs.iter_mut().for_each(|x| {
+        //     let view = match self.get_contacts_view_by_id(x.did).ok().flatten() {
+        //         Some(x) => x,
+        //         None => return,
+        //     };
 
-            if !view.addition_tag.is_empty() {
-                x.tag = view.addition_tag
-            }
-        });
+        //     if !view.addition_tag.is_empty() {
+        //         x.tag = view.addition_tag
+        //     }
+        // });
 
         Ok(msgs)
     }
@@ -2021,16 +2021,16 @@ impl Client {
 
         chats.truncate(top as usize);
 
-        chats.iter_mut().for_each(|x| {
-            let view = match self.get_contacts_view_by_id(x.did).ok().flatten() {
-                Some(x) => x,
-                None => return,
-            };
+        // chats.iter_mut().for_each(|x| {
+        //     let view = match self.get_contacts_view_by_id(x.did).ok().flatten() {
+        //         Some(x) => x,
+        //         None => return,
+        //     };
 
-            if !view.addition_tag.is_empty() {
-                x.tag = view.addition_tag
-            }
-        });
+        //     if !view.addition_tag.is_empty() {
+        //         x.tag = view.addition_tag
+        //     }
+        // });
         Ok(chats)
     }
 
