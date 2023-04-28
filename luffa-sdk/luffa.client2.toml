@@ -1,3 +1,6 @@
+[store]
+path = "/local/client42/store"
 [p2p]
 libp2p = { listening_multiaddrs = ["/ip4/0.0.0.0/udp/0/quic-v1"],bootstrap_peers=["/ip4/180.178.40.194/udp/8899/quic-v1/p2p/12D3KooWME7g9tBz3fK9r3VbAwpAQKSxVC9KoJA1xymX1VaoW2Yq"]}
+key_store_path = "/local/client42/keys"
 

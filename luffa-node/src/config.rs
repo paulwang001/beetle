@@ -218,10 +218,10 @@ impl Default for Libp2pConfig {
             gossipsub: true,
             bitswap_client: true,
             bitswap_server: false,
-            max_conns_pending_out: 1024 * 1024,
-            max_conns_pending_in: 1024 * 1024,
-            max_conns_in: 1024 * 1024,
-            max_conns_out: 1024 * 1024,
+            max_conns_pending_out: 256,
+            max_conns_pending_in: 256,
+            max_conns_in: 512,
+            max_conns_out: 512,
             max_conns_per_peer: 16,
             notify_handler_buffer_size: 256,
             connection_event_buffer_size: 256,
@@ -231,10 +231,13 @@ impl Default for Libp2pConfig {
 }
 
 impl Config {
+
     pub fn default_network() -> Self {
+
         Self {
             libp2p: Libp2pConfig::default(),
             key_store_path: luffa_data_root().unwrap(),
         }
     }
+   
 }

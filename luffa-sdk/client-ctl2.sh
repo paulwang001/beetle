@@ -23,10 +23,10 @@ esac
 
 mkdir -p "$base_dir"
 
-#if [ -n "$log_level" ]
-#then
-#    export RUST_LOG=$log_level
-#fi
+if [ -n "$log_level" ]
+then
+    export RUST_LOG=$log_level
+fi
 for n_seq in $(seq $n_start $n_end)
 do
     env_base="$base_dir/client-$n_seq"
@@ -40,7 +40,7 @@ do
 
     case $op in
     "run")
-        LUFFA_DATA_DIR="$base_dir/client-$n_seq" nohup $progarm --tag client-$n_seq --cfg ./luffa-sdk/luffa.client2.toml &> $base_dir/client-${n_seq}.log &
+        RUST_LOG=warn LUFFA_DATA_DIR="$base_dir/client-$n_seq" nohup $progarm --tag client-$n_seq --cfg ./luffa-sdk/luffa.client2.toml &> $base_dir/client-${n_seq}.log &
         ;;
     "rm")
         ps -ef | grep luffa-client | grep  " client-$n_seq " | awk '{print $2}' | xargs kill
