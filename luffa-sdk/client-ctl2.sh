@@ -12,7 +12,14 @@ n_end=$2
 
 base_dir="../.local"
 log_level="WARN"
-progarm="./target/release/luffa-client"
+case $(uname) in
+    "Darwin")
+        progarm="./target/aarch64-apple-darwin/release/luffa-client"
+        ;;
+    "Linux")
+        progarm="./target/release/luffa-client"
+        ;;
+esac
 
 mkdir -p "$base_dir"
 
