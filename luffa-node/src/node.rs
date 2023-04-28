@@ -685,7 +685,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     self.connections
                         .update_edge(f, t, ConnectionEdge::Local(peer_id.clone()));
 
-                    let count = self.connections.edge_count() as u64;
+                    let count = self.connected_peers.len() as u64;
                     record!(P2PMetrics::ChatOnline,count);
 
                     self.emit_network_event(NetworkEvent::PeerConnected(peer_id));
@@ -718,7 +718,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     else{
                         tracing::error!("local disconnection >> {my_id} --> {to_id}");
                     }
-                    let count = self.connections.edge_count() as u64;
+                    let count = self.connected_peers.len() as u64;
                     record!(P2PMetrics::ChatOnline,count);
                     self.emit_network_event(NetworkEvent::PeerDisconnected(peer_id));
                 }
@@ -1283,7 +1283,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                            
                                                         }
                                                     }
-                                                    let count = self.connections.edge_count() as u64;
+                                                    let count = self.connected_peers.len() as u64;
                                                     record!(P2PMetrics::ChatOnline,count);
                                                 }
                                             }
@@ -2508,19 +2508,29 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             },
             RpcMessage::Chat(response_channel, data) => {
                 let peer_manager = &self.swarm.behaviour().peer_manager;
-                let manager = peer_manager.all_peers().into_iter().map(|p| p.clone()).collect::<Vec<_>>();
+                let manager = peer_manager.all_peers().into_iter().filter(|p| self.swarm.is_connected(p)).map(|p| p.clone()).collect::<Vec<_>>();
 
                 let mut peers = {
                     manager.iter()
                         .map(
-                            |p| match peer_manager.info_for_peer(p) {
-                                Some(pp) => match &pp.last_info {
-                                    Some(info) => {
-                                        Some((p.clone(), Some(info.clone()), pp.last_rtt.clone()))
+                            |p| {
+                                if !self.swarm.is_connected(p) {
+                                    Some((p.clone(),None,None))
+                                }
+                                else if peer_manager.is_bad_peer(p) {
+                                    Some((p.clone(),None,None))
+                                }
+                                else{
+                                    match peer_manager.info_for_peer(p) {
+                                        Some(pp) => match &pp.last_info {
+                                            Some(info) => {
+                                                Some((p.clone(), Some(info.clone()), pp.last_rtt.clone()))
+                                            }
+                                            None => Some((p.clone(), None, pp.last_rtt.clone())),
+                                        },
+                                        None => Some((p.clone(),None,None)),
                                     }
-                                    None => Some((p.clone(), None, pp.last_rtt.clone())),
-                                },
-                                None => Some((p.clone(),None,None)),
+                                }
                             },
                         )
                         .filter(|item| item.is_some())
