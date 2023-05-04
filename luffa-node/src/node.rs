@@ -17,6 +17,7 @@ use libipld::{
     Ipld, IpldCodec,
 };
 use libp2p::core::Multiaddr;
+use libp2p::gossipsub::error::PublishError;
 use libp2p::gossipsub::{GossipsubMessage, MessageId, TopicHash};
 pub use libp2p::gossipsub::{IdentTopic, Topic};
 use libp2p::identify::{Event as IdentifyEvent, Info as IdentifyInfo};
@@ -454,8 +455,15 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             }
             if let Some(go) = self.swarm.behaviour_mut().gossipsub.as_mut() {
                 if let Err(e) = go.publish(TopicHash::from_raw(TOPIC_CHAT), evt.clone()) {
-                    tracing::warn!("Message can not pub chat to any relay node [{c}]>>> {e:?}");
-                    self.pub_pending.push_back((evt, Instant::now(),c+1));
+                    match e  {
+                        PublishError::InsufficientPeers=>{
+                            
+                        }
+                        ee=>{
+                            tracing::warn!("Message can not pub chat to any relay node [{c}]>>> {ee:?}");
+                            self.pub_pending.push_back((evt, Instant::now(),c+1));
+                        }
+                    }
                     break;
                 }
             }
@@ -1885,8 +1893,15 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             TopicHash::from_raw(TOPIC_CHAT),
                                                             request.data().to_vec(),
                                                         ) {
-                                                            tracing::error!("[{tp}]:Message can not route to any relay node>>> {e:?}");
-                                                            self.pub_pending.push_back((request.data().to_vec(),Instant::now(),1));
+                                                            match e  {
+                                                                PublishError::InsufficientPeers=>{
+                                                                    
+                                                                }
+                                                                ee=>{
+                                                                    tracing::error!("[{tp}]:Message can not route to any relay node>>> {ee:?}");
+                                                                    self.pub_pending.push_back((request.data().to_vec(),Instant::now(),1));
+                                                                }
+                                                            }
                                                         }
                                                         let status = FeedbackStatus::Routing;
                                                         let msg_t = Message::Feedback {crc:vec![crc],from_id:Some(to),to_id:Some(to),status};
@@ -1896,8 +1911,16 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             TopicHash::from_raw(TOPIC_CHAT),
                                                             evt.clone(),
                                                         ) {
-                                                            tracing::error!("[{tp}] Routing can not route to any relay node>>> {e:?}");
-                                                            self.pub_pending.push_back((evt,Instant::now(),1));
+                                                            match e  {
+                                                                PublishError::InsufficientPeers=>{
+                                                                    
+                                                                }
+                                                                ee=>{
+        
+                                                                    tracing::error!("[{tp}] Routing can not route to any relay node>>> {ee:?}");
+                                                                    self.pub_pending.push_back((evt,Instant::now(),1));
+                                                                }
+                                                            }
                                                         }
 
                                                         
@@ -1917,8 +1940,16 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     TopicHash::from_raw(TOPIC_CHAT),
                                                     request.data().to_vec(),
                                                 ) {
-                                                    tracing::error!("group msg pub>>>{e:?}");
-                                                    self.pub_pending.push_back((request.data().to_vec(),Instant::now(),1));
+                                                    match e  {
+                                                        PublishError::InsufficientPeers=>{
+
+                                                        }
+                                                        ee=>{
+
+                                                            tracing::error!("group msg pub>>>{ee:?}");
+                                                            self.pub_pending.push_back((request.data().to_vec(),Instant::now(),1));
+                                                        }
+                                                    }
                                                 }
                                                 // let pending = self.pending_routing.entry(to).or_insert(Vec::new());
                                                 // if pending.iter().find(|(x,_)| *x == crc ).is_none() {
@@ -2070,8 +2101,15 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         TopicHash::from_raw(TOPIC_CHAT),
                                                         request.data().to_vec(),
                                                     ) {
-                                                        tracing::error!("group msg pub>>>{e:?}");
-                                                        self.pub_pending.push_back((request.data().to_vec(),Instant::now(),1));
+                                                        match e  {
+                                                            PublishError::InsufficientPeers=>{
+                                                                
+                                                            }
+                                                            ee=>{
+                                                                tracing::error!("group msg pub>>>{ee:?}");
+                                                                self.pub_pending.push_back((request.data().to_vec(),Instant::now(),1));
+                                                            }
+                                                        }
                                                     }
                                                     // let pending = self.pending_routing.entry(to).or_insert(Vec::new());
                                                     // if pending.iter().find(|(x,_)| *x == crc ).is_none() {

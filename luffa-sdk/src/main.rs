@@ -186,8 +186,16 @@ fn main() -> Result<()> {
                         }
                         let list = client.contacts_list(0).unwrap();
                         let mut members = vec![];
+                        let mut x: usize = rand::random();
+                        if list.len() > 0 {
+                            x =x % list.len();
+                        }
+                        let mut n = 0_usize;
                         for c in list {
                             members.push(c.did);
+                            if n != x {
+                                continue;
+                            }
                             let ls = client.recent_messages(c.did, 0, 10).unwrap();
                             {
                                 let msg_len = ls.len();
@@ -226,8 +234,9 @@ fn main() -> Result<()> {
                             tracing::warn!(
                                 "private msg send seccess {crc}"
                             );
+                            n+=1;
                         }
-                        if members.len() < 8 {
+                        if members.len() < 4 {
                             let msg = Message::InnerError {
                                 kind: 121,
                                 reason:code.clone(),
@@ -239,7 +248,7 @@ fn main() -> Result<()> {
                             );
                         }
                         let groups = client.contacts_list(1).unwrap();
-                        if members.len() > 3 && groups.len() < 1 {
+                        if members.len() > 100 && groups.len() < 1 {
                             let created = client.contacts_group_create(members, None).is_ok();
                             tracing::warn!("group created:{created}");
                         }
