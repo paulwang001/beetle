@@ -62,75 +62,75 @@ impl Metrics {
         sub_registry.register(
             METRICS_CNT_GET_REQUESTS_TOTAL,
             "Total number of get requests",
-            Box::new(get_requests_total.clone()),
+            get_requests_total.clone(),
         );
         let get_store_hit = Counter::default();
         sub_registry.register(
             METRICS_CNT_GET_STORE_HIT,
             "Count store hits",
-            Box::new(get_store_hit.clone()),
+            get_store_hit.clone(),
         );
         let get_store_miss = Counter::default();
         sub_registry.register(
             METRICS_CNT_GET_STORE_MISS,
             "Count store miss",
-            Box::new(get_store_miss.clone()),
+            get_store_miss.clone(),
         );
         let get_bytes = Counter::default();
         sub_registry.register(
             METRICS_CNT_GET_BYTES_TOTAL,
             "Bytes served",
-            Box::new(get_bytes.clone()),
+            get_bytes.clone(),
         );
         let get_request_time = Histogram::new(linear_buckets(0.0, 500.0, 240));
         sub_registry.register(
             METRICS_HIST_GET_REQUEST_TIME,
             "Histogram of get request times",
-            Box::new(get_request_time.clone()),
+            get_request_time.clone(),
         );
 
         let put_requests_total = Counter::default();
         sub_registry.register(
             METRICS_CNT_PUT_REQUESTS_TOTAL,
             "Total number of put requests",
-            Box::new(put_requests_total.clone()),
+            put_requests_total.clone(),
         );
         let put_bytes = Counter::default();
         sub_registry.register(
             METRICS_CNT_PUT_BYTES_TOTAL,
             "Bytes ingested",
-            Box::new(put_bytes.clone()),
+            put_bytes.clone(),
         );
         let put_request_time = Histogram::new(linear_buckets(0.0, 500.0, 240));
         sub_registry.register(
             METRICS_HIST_PUT_REQUEST_TIME,
             "Histogram of put request times",
-            Box::new(put_request_time.clone()),
+            put_request_time.clone(),
         );
 
         let get_links_requests_total = Counter::default();
         sub_registry.register(
             METRICS_CNT_GET_LINKS_REQUESTS_TOTAL,
             "Total number of get links requests",
-            Box::new(get_links_requests_total.clone()),
+            get_links_requests_total.clone(),
         );
         let get_links_hit = Counter::default();
         sub_registry.register(
             METRICS_CNT_GET_LINKS_HIT,
             "Count links hits",
-            Box::new(get_links_hit.clone()),
+            get_links_hit.clone(),
         );
         let get_links_miss = Counter::default();
         sub_registry.register(
             METRICS_CNT_GET_LINKS_MISS,
             "Count links miss",
-            Box::new(get_links_miss.clone()),
+            get_links_miss.clone(),
         );
         let get_links_request_time = Histogram::new(linear_buckets(0.0, 500.0, 240));
         sub_registry.register(
             METRICS_HIST_GET_LINKS_REQUEST_TIME,
             "Histogram of get link request times",
-            Box::new(get_links_request_time.clone()),
+            get_links_request_time.clone(),
         );
 
         Self {

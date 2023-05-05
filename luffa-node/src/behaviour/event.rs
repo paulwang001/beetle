@@ -5,6 +5,7 @@ use libp2p::{
     autonat, dcutr, gossipsub::GossipsubEvent, identify::Event as IdentifyEvent,
     kad::KademliaEvent, mdns::Event as MdnsEvent, ping::Event as PingEvent, relay,
 };
+#[cfg(feature = "bitswap")]
 use luffa_bitswap::BitswapEvent;
 /// Event type which is emitted from the [`NodeBehaviour`].
 ///
@@ -16,6 +17,7 @@ pub enum Event {
     Kademlia(KademliaEvent),
     Mdns(MdnsEvent),
     Chat(RequestResponseEvent<Request, Response>),
+    #[cfg(feature = "bitswap")]
     Bitswap(BitswapEvent),
     Autonat(autonat::Event),
     Relay(relay::v2::relay::Event),
@@ -48,6 +50,7 @@ impl From<MdnsEvent> for Event {
         Event::Mdns(event)
     }
 }
+#[cfg(feature = "bitswap")]
 impl From<BitswapEvent> for Event {
     fn from(event: BitswapEvent) -> Self {
         Event::Bitswap(event)

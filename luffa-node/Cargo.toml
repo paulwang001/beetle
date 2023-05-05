@@ -25,7 +25,7 @@ luffa-store= {workspace = true,features =["node"]}
 luffa-metrics = { workspace = true, features = ["p2p"] }
 lazy_static.workspace = true
 luffa-rpc-types.workspace = true
-luffa-bitswap.workspace = true
+luffa-bitswap = {workspace = true,optional = true}
 lru.workspace = true
 libipld.workspace = true
 multihash.workspace = true
@@ -70,3 +70,7 @@ features = [
   "tokio",
   "macros",
 ] 
+
+
+[features]
+bitswap = ["luffa-bitswap"]

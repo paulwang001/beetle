@@ -1,6 +1,8 @@
 use std::{time::Duration, sync::Arc};
 
+use crate::{behaviour::NodeBehaviour, config::Libp2pConfig};
 use anyhow::Result;
+use futures_util::future::Either;
 use libp2p::{
     core::{
         self,
@@ -10,13 +12,11 @@ use libp2p::{
     dns,
     identity::Keypair,
     mplex, noise, quic,
-    swarm::{derive_prelude::EitherOutput, ConnectionLimits, Executor, SwarmBuilder},
+    swarm::{ConnectionLimits, Executor, SwarmBuilder},
     tcp,
     yamux::{self, WindowUpdateMode},
     PeerId, Swarm, Transport,
 };
-
-use crate::{behaviour::NodeBehaviour, config::Libp2pConfig};
 
 /// Builds the transport stack that LibP2P will communicate over.
 async fn build_transport(
@@ -99,8 +99,8 @@ async fn build_transport(
     // Merge in Quick
     let transport = OrTransport::new(quic_transport, tcp_ws_transport)
         .map(|o, _| match o {
-            EitherOutput::First((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
-            EitherOutput::Second((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
+            Either::Left((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
+            Either::Right((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
         })
         .boxed();
 
@@ -118,8 +118,8 @@ async fn build_transport(
 pub(crate) async fn build_swarm(
     config: &Libp2pConfig,
     keypair: &Keypair,
-    db:Arc<luffa_store::Store>,
-    agent:Option<String>,
+    db: Arc<luffa_store::Store>,
+    agent: Option<String>,
 ) -> Result<Swarm<NodeBehaviour>> {
     let peer_id = keypair.public().to_peer_id();
 
@@ -134,9 +134,8 @@ pub(crate) async fn build_swarm(
         .with_max_established_per_peer(Some(config.max_conns_per_peer));
     let swarm = SwarmBuilder::with_tokio_executor(transport, behaviour, peer_id)
         .connection_limits(limits)
-        
         .notify_handler_buffer_size(config.notify_handler_buffer_size.try_into()?)
-        .connection_event_buffer_size(config.connection_event_buffer_size)
+        .per_connection_event_buffer_size(config.connection_event_buffer_size)
         .dial_concurrency_factor(config.dial_concurrency_factor.try_into().unwrap())
         .build();
 

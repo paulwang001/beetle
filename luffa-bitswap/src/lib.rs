@@ -14,7 +14,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use cid::Cid;
 use handler::{BitswapHandler, HandlerEvent};
-use libp2p::core::connection::ConnectionId;
 use libp2p::core::ConnectedPoint;
 use libp2p::swarm::dial_opts::DialOpts;
 use libp2p::swarm::{
@@ -578,7 +577,6 @@ impl<S: Store> NetworkBehaviour for Bitswap<S> {
                                     opts: DialOpts::peer_id(peer)
                                         .condition(libp2p::swarm::dial_opts::PeerCondition::Always)
                                         .build(),
-                                    handler: self.new_handler(),
                                 });
                             }
                         }

@@ -45,6 +45,7 @@ impl P2pClient {
     }
 
     // Fetches a block directly from the network.
+    #[cfg(feature = "bitswap")]
     #[tracing::instrument(skip(self))]
     pub async fn fetch_bitswap(
         &self,
@@ -65,6 +66,7 @@ impl P2pClient {
         Ok(res.data)
     }
 
+    #[cfg(feature = "bitswap")]
     #[tracing::instrument(skip(self))]
     pub async fn stop_session_bitswap(&self, ctx: u64) -> Result<()> {
         self.client
@@ -72,7 +74,7 @@ impl P2pClient {
             .await?;
         Ok(())
     }
-
+    #[cfg(feature = "bitswap")]
     #[tracing::instrument(skip(self))]
     pub async fn notify_new_blocks_bitswap(&self, blocks: Vec<(Cid, Bytes)>) -> Result<()> {
         let req = NotifyNewBlocksBitswapRequest {
@@ -157,6 +159,7 @@ impl P2pClient {
         self.client.put_record(req).await?;
         Ok(())
     }
+    #[cfg(feature = "bitswap")]
     #[tracing::instrument(skip(self, data))]
     pub async fn push_data(&self, data: Bytes) -> Result<PushBitswapResponse> {
         let req = PushBitswapRequest { data };

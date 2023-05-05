@@ -38,6 +38,8 @@ use libp2p::request_response::{
 use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::{ConnectionHandler, IntoConnectionHandler, NetworkBehaviour, SwarmEvent};
 use libp2p::{PeerId, Swarm};
+
+#[cfg(feature = "bitswap")]
 use luffa_bitswap::{BitswapEvent, Block};
 use luffa_metrics::{core::MRecorder, inc, libp2p_metrics, p2p::P2PMetrics, record};
 use luffa_rpc_types::p2p::{ChatRequest, ChatResponse};
@@ -160,6 +162,7 @@ pub struct Node<KeyStorage: Storage> {
     #[allow(dead_code)]
     kad_last_range: Option<(Distance, Distance)>,
     use_dht: bool,
+    #[cfg(feature = "bitswap")]
     bitswap_sessions: BitswapSessions,
     providers: Providers,
     listen_addrs: Vec<Multiaddr>,
@@ -185,9 +188,8 @@ impl<T: Storage> fmt::Debug for Node<T> {
             .field("network_events", &self.network_events)
             .field("_keychain", &self._keychain)
             .field("kad_last_range", &self.kad_last_range)
-            .field("use_dht", &self.use_dht)
-            .field("bitswap_sessions", &self.bitswap_sessions)
             .field("providers", &self.providers)
+            .field("use_dht", &self.use_dht)
             .finish()
     }
 }
@@ -287,6 +289,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 _keychain: keychain,
                 kad_last_range: None,
                 use_dht: libp2p_config.kademlia,
+                #[cfg(feature = "bitswap")]
                 bitswap_sessions: Default::default(),
                 providers: Providers::new(4),
                 listen_addrs,
@@ -404,6 +407,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     }
                 }
                 _ = expiry_interval.tick() => {
+
+                    #[cfg(feature = "bitswap")]
                     if let Err(err) = self.expiry() {
                         tracing::warn!("expiry error {:?}", err);
                     }
@@ -415,6 +420,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         }
     }
 
+    #[cfg(feature = "bitswap")]
     fn expiry(&mut self) -> Result<()> {
         // Cleanup bitswap sessions
         let mut to_remove = Vec::new();
@@ -561,6 +567,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         r
     }
 
+    #[cfg(feature = "bitswap")]
     fn destroy_session(&mut self, ctx: u64, response_channel: oneshot::Sender<Result<()>>) {
         if let Some(bs) = self.swarm.behaviour().bitswap.as_ref() {
             let workers = self.bitswap_sessions.remove(&ctx);
@@ -592,6 +599,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
     }
 
     /// Send a request for data over bitswap
+    #[cfg(feature = "bitswap")]
     fn want_block(
         &mut self,
         ctx: u64,
@@ -774,6 +782,8 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         digest.write(&local_id.to_bytes());
         let my_id = digest.sum64();
         match event {
+
+            #[cfg(feature = "bitswap")]
             Event::Bitswap(e) => {
                 match e {
                     BitswapEvent::Provide { key } => {
@@ -1050,7 +1060,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             }
                         }
 
-                          //TODO only in my contacts or my white list of relay
+                        #[cfg(feature = "bitswap")]  
                         if let Some(bitswap) = self.swarm.behaviour().bitswap.as_ref() {
                             bitswap.on_identify(&peer_id, &info.protocols);
                         }
@@ -1564,7 +1574,6 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 }
                 mdns::Event::Expired(_) => {}
             },
-            Event::Bitswap(_e) => {}
             Event::Chat(chat) => {
                 match chat {
                     RequestResponseEvent::Message { peer, message } => {
@@ -2616,7 +2625,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                             self.local_feedback(Some(req_id.clone()), Message::Feedback { crc:vec![crc], from_id:Some(from_id), to_id: Some(to), status: FeedbackStatus::Sending });
                             
                             if let Some((_,_,ttl2)) = peers.last() {
-                                tracing::info!("chat send fast relay ttl({ttl:?}) < ttl({ttl2:?}). use {peer:?} crc: {} ", crc);
+                                tracing::warn!("chat send fast relay ttl({ttl:?}) < ttl({ttl2:?}). use {peer:?} crc: {} ", crc);
                             }
                             else{
                                 tracing::warn!("chat send fast relay ttl({ttl:?}). {:?}", req_id);
@@ -2673,6 +2682,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
             RpcMessage::LocalPeerId(response_channel) => {
                 response_channel.send(*self.swarm.local_peer_id()).ok();
             }
+            #[cfg(feature = "bitswap")]
             RpcMessage::BitswapRequest {
                 ctx,
                 cids,
@@ -2708,6 +2718,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                     }
                 }
             }
+            #[cfg(feature = "bitswap")]
             RpcMessage::PushBitswapRequest {
                 data,
                 response_channels,
@@ -2740,6 +2751,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                         .map_err(|_| anyhow!("Failed to push bitswap"))?;
                 }
             }
+            #[cfg(feature = "bitswap")]
             RpcMessage::BitswapNotifyNewBlocks {
                 blocks,
                 response_channel,
@@ -2747,6 +2759,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 self.swarm.behaviour().notify_new_blocks(blocks);
                 response_channel.send(Ok(())).ok();
             }
+            #[cfg(feature = "bitswap")]
             RpcMessage::BitswapStopSession {
                 ctx,
                 response_channel,

@@ -6,7 +6,7 @@ use std::{
 
 use ahash::AHashMap;
 use libp2p::{
-    core::{connection::ConnectionId, transport::ListenerId, ConnectedPoint},
+    core::{transport::ListenerId, ConnectedPoint},
     identify::Info as IdentifyInfo,
     ping::Success as PingSuccess,
     swarm::{
@@ -94,126 +94,27 @@ impl NetworkBehaviour for PeerManager {
             .unwrap_or_default()
     }
 
-    fn inject_connection_established(
-        &mut self,
-        peer_id: &PeerId,
-        _connection_id: &ConnectionId,
-        _endpoint: &ConnectedPoint,
-        failed_addresses: Option<&Vec<Multiaddr>>,
-        other_established: usize,
-    ) {
-        if other_established == 0 {
-            let p = self.bad_peers.pop(peer_id);
-            if p.is_some() {
-                inc!(P2PMetrics::BadPeerRemoved);
-            }
-        }
+    fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {}
 
-        if let Some(failed_addresses) = failed_addresses {
-            if let Some(info) = self.info.get_mut(peer_id) {
-                if let Some(ref mut info) = info.last_info {
-                    for addr in failed_addresses {
-                        if let Some(i) = info.listen_addrs.iter().position(|a| a == addr) {
-                            info.listen_addrs.remove(i);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn inject_connection_closed(
-        &mut self,
-        _: &PeerId,
-        _: &ConnectionId,
-        _: &ConnectedPoint,
-        _: <Self::ConnectionHandler as IntoConnectionHandler>::Handler,
-        _remaining_established: usize,
-    ) {
-    }
-
-    fn inject_address_change(
-        &mut self,
-        _: &PeerId,
-        _: &ConnectionId,
-        _old: &ConnectedPoint,
-        _new: &ConnectedPoint,
-    ) {
-    }
-
-    fn inject_event(
+    fn on_connection_handler_event(
         &mut self,
         _peer_id: PeerId,
-        _connection: ConnectionId,
-        _event: <<Self::ConnectionHandler as IntoConnectionHandler>::Handler as ConnectionHandler>::OutEvent,
+        _connection_id: libp2p::swarm::ConnectionId,
+        _event: libp2p::swarm::THandlerOutEvent<Self>,
     ) {
     }
-
-    fn inject_dial_failure(
-        &mut self,
-        peer_id: Option<PeerId>,
-        _handler: Self::ConnectionHandler,
-        error: &DialError,
-    ) {
-        if let Some(peer_id) = peer_id {
-            match error {
-                DialError::ConnectionLimit(_) | DialError::DialPeerConditionFalse(_) => {}
-                _ => {
-                    if self.bad_peers.put(peer_id, ()).is_none() {
-                        inc!(P2PMetrics::BadPeer);
-                    }
-                    self.info.remove(&peer_id);
-                }
-            }
-        }
-    }
-
-    fn inject_listen_failure(
-        &mut self,
-        _local_addr: &Multiaddr,
-        _send_back_addr: &Multiaddr,
-        _handler: Self::ConnectionHandler,
-    ) {
-    }
-
-    fn inject_new_listener(&mut self, _id: ListenerId) {}
-
-    fn inject_new_listen_addr(&mut self, _id: ListenerId, _addr: &Multiaddr) {}
-
-    fn inject_expired_listen_addr(&mut self, _id: ListenerId, _addr: &Multiaddr) {}
-
-    fn inject_listener_error(&mut self, _id: ListenerId, _err: &(dyn std::error::Error + 'static)) {
-    }
-
-    fn inject_listener_closed(&mut self, _id: ListenerId, _reason: Result<(), &std::io::Error>) {}
-
-    fn inject_new_external_addr(&mut self, _addr: &Multiaddr) {}
-
-    fn inject_expired_external_addr(&mut self, _addr: &Multiaddr) {}
 
     fn poll(
         &mut self,
-        _cx: &mut Context<'_>,
+        cx: &mut Context<'_>,
         params: &mut impl PollParameters,
-    ) -> Poll<NetworkBehaviourAction<Self::OutEvent, Self::ConnectionHandler>> {
-        // TODO(ramfox):
-        // We can only get the supported protocols of the local node by examining the
-        // `PollParameters`, which mean you can only get the supported protocols by examining the
-        // `PollParameters` in this method (`poll`) of a network behaviour.
-        // I injected this responsibility in the `peer_manager`, because it's the only "simple"
-        // network behaviour we have implemented.
-        // There is an issue up to remove `PollParameters`, and a discussion into how to instead
-        // get the `supported_protocols` of the node:
-        // https://github.com/libp2p/rust-libp2p/issues/3124
-        // When that is resolved, we can hopefully remove this responsibility from the `peer_manager`,
-        // where it, frankly, doesn't belong.
+    ) -> Poll<libp2p::swarm::ToSwarm<Self::OutEvent, libp2p::swarm::THandlerInEvent<Self>>> {
         if self.supported_protocols.is_empty() {
             self.supported_protocols = params
                 .supported_protocols()
                 .map(|p| String::from_utf8_lossy(&p).to_string())
                 .collect();
         }
-
         Poll::Pending
     }
 }

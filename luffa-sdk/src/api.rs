@@ -44,32 +44,32 @@ impl P2pClient {
         Ok(res.addrs)
     }
 
-    // Fetches a block directly from the network.
-    #[tracing::instrument(skip(self))]
-    pub async fn fetch_bitswap(
-        &self,
-        ctx: u64,
-        cid: Cid,
-        providers: HashSet<PeerId>,
-    ) -> Result<Bytes> {
-        tracing::info!("rpc p2p client fetch_bitswap: {:?}", cid);
-        let providers = providers.into_iter().collect();
-        let res = self
-            .client
-            .fetch_bitswap(BitswapRequest {
-                ctx,
-                cid,
-                providers,
-            })
-            .await?;
-        Ok(res.data)
-    }
+    // // Fetches a block directly from the network.
+    // #[tracing::instrument(skip(self))]
+    // pub async fn fetch_bitswap(
+    //     &self,
+    //     ctx: u64,
+    //     cid: Cid,
+    //     providers: HashSet<PeerId>,
+    // ) -> Result<Bytes> {
+    //     tracing::info!("rpc p2p client fetch_bitswap: {:?}", cid);
+    //     let providers = providers.into_iter().collect();
+    //     let res = self
+    //         .client
+    //         .fetch_bitswap(BitswapRequest {
+    //             ctx,
+    //             cid,
+    //             providers,
+    //         })
+    //         .await?;
+    //     Ok(res.data)
+    // }
 
     #[tracing::instrument(skip(self))]
     pub async fn stop_session_bitswap(&self, ctx: u64) -> Result<()> {
-        self.client
-            .stop_session_bitswap(StopSessionBitswapRequest { ctx })
-            .await?;
+        // self.client
+        //     .stop_session_bitswap(StopSessionBitswapRequest { ctx })
+        //     .await?;
         Ok(())
     }
 
@@ -82,7 +82,7 @@ impl P2pClient {
                 .collect(),
         };
 
-        self.client.notify_new_blocks_bitswap(req).await?;
+        // self.client.notify_new_blocks_bitswap(req).await?;
         Ok(())
     }
 
@@ -158,12 +158,12 @@ impl P2pClient {
     }
 
 
-    #[tracing::instrument(skip(self, data))]
-    pub async fn push_data(&self, data: Bytes) -> Result<PushBitswapResponse> {
-        let req = PushBitswapRequest { data };
-        let rsp = self.client.push_bitswap(req).await?;
-        Ok(rsp)
-    }
+    // #[tracing::instrument(skip(self, data))]
+    // pub async fn push_data(&self, data: Bytes) -> Result<PushBitswapResponse> {
+    //     let req = PushBitswapRequest { data };
+    //     let rsp = self.client.push_bitswap(req).await?;
+    //     Ok(rsp)
+    // }
 
     #[tracing::instrument(skip(self))]
     pub async fn get_record(&self, key: &Cid) -> Result<GetRecordResponse> {

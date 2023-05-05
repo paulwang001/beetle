@@ -78,8 +78,10 @@ pub struct Libp2pConfig {
     /// Mdns discovery enabled.
     pub mdns: bool,
     /// Bitswap server mode enabled.
+    #[cfg(feature = "bitswap")]
     pub bitswap_server: bool,
     /// Bitswap client mode enabled.
+    #[cfg(feature = "bitswap")]
     pub bitswap_client: bool,
     /// Kademlia discovery enabled.
     pub kademlia: bool,
@@ -167,7 +169,9 @@ impl Source for Libp2pConfig {
 
         insert_into_config_map(&mut map, "kademlia", self.kademlia);
         insert_into_config_map(&mut map, "autonat", self.autonat);
+        #[cfg(feature = "bitswap")]
         insert_into_config_map(&mut map, "bitswap_client", self.bitswap_client);
+        #[cfg(feature = "bitswap")]
         insert_into_config_map(&mut map, "bitswap_server", self.bitswap_server);
         insert_into_config_map(&mut map, "mdns", self.mdns);
         insert_into_config_map(&mut map, "relay_server", self.relay_server);
@@ -216,7 +220,9 @@ impl Default for Libp2pConfig {
             relay_server: true,
             relay_client: true,
             gossipsub: true,
+            #[cfg(feature = "bitswap")]
             bitswap_client: true,
+            #[cfg(feature = "bitswap")]
             bitswap_server: false,
             max_conns_pending_out: 256,
             max_conns_pending_in: 256,

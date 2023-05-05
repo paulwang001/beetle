@@ -213,7 +213,7 @@ pub enum ClientError {
     #[error(transparent)]
     Bs58DecodeError(#[from] bs58::decode::Error),
     #[error(transparent)]
-    DecodingError(#[from] libp2p::identity::error::DecodingError),
+    DecodingError(#[from] libp2p::identity::DecodingError),
     #[error(transparent)]
     SerdeJsonError(#[from] serde_json::error::Error),
     #[error("{0}")]

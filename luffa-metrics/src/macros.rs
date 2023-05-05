@@ -54,7 +54,7 @@ macro_rules! make_metrics {
                         sub_registry.register(
                             stringify!([<$name:snake>]),
                             $description,
-                            Box::new([<$name:snake>].clone())
+                            [<$name:snake>].clone()
                         );
                     )+
 
@@ -74,7 +74,7 @@ macro_rules! make_metrics {
                     match m.name() {
                         $(
                             x if x ==  [<$module_name Metrics>]::$name.name() => {
-                                self.[<$name:snake>].inc_by(value);
+                                self.[<$name:snake>].inc_by(value.try_into().unwrap());
                             }
                         )+
                         name => {

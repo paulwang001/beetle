@@ -19,6 +19,7 @@ use libp2p::request_response::RequestResponse;
 use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{autonat, dcutr};
+#[cfg(feature = "bitswap")]
 use luffa_bitswap::{Bitswap, Block, Config as BitswapConfig, Store};
 
 mod event;
@@ -38,7 +39,10 @@ pub(crate) struct NodeBehaviour {
     ping: Ping,
     // pub(crate) keep : libp2p::swarm::keep_alive::Behaviour,
     pub(crate) identify: identify::Behaviour,
+
+    #[cfg(feature = "bitswap")]
     pub(crate) bitswap: Toggle<Bitswap<BitswapStore>>,
+
     pub(crate) kad: Toggle<Kademlia<MemoryStore>>,
     mdns: Toggle<Mdns>,
     pub(crate) chat: Toggle<RequestResponse<chat::ChatCodec>>,
@@ -50,9 +54,11 @@ pub(crate) struct NodeBehaviour {
     pub(crate) peer_manager: PeerManager,
 }
 
+#[cfg(feature = "bitswap")]
 #[derive(Debug, Clone)]
 pub(crate) struct BitswapStore(Arc<luffa_store::Store>);
 
+#[cfg(feature = "bitswap")]
 #[async_trait]
 impl Store for BitswapStore {
     async fn get(&self, cid: &Cid) -> Result<Block> {
@@ -90,6 +96,7 @@ impl NodeBehaviour {
         let pub_key = local_key.public();
         let peer_id = pub_key.to_peer_id();
 
+        #[cfg(feature = "bitswap")] 
         let bitswap = if config.bitswap_client || config.bitswap_server {
             // TODO(dig): server only mode is not implemented yet
             let bs_config = if config.bitswap_server {
@@ -107,7 +114,7 @@ impl NodeBehaviour {
 
         let mdns = if config.mdns {
             tracing::info!("init mdns");
-            Some(Mdns::new(Default::default())?)
+            Some(Mdns::new(Default::default(),peer_id.clone())?)
         } else {
             None
         }
@@ -208,7 +215,7 @@ impl NodeBehaviour {
             tracing::info!("init relay client");
             let relay_client =
                 relay_client.expect("missing relay client even though it was enabled");
-            let dcutr = dcutr::behaviour::Behaviour::new();
+            let dcutr = dcutr::behaviour::Behaviour::new(peer_id.clone());
             (Some(dcutr), Some(relay_client))
         } else {
             (None, None)
@@ -248,6 +255,7 @@ impl NodeBehaviour {
             ping,
             // keep: libp2p::swarm::keep_alive::Behaviour::default(),
             identify,
+            #[cfg(feature = "bitswap")]
             bitswap,
             mdns,
             chat:chat.into(),
@@ -261,6 +269,7 @@ impl NodeBehaviour {
         })
     }
 
+    #[cfg(feature = "bitswap")]
     pub fn notify_new_blocks(&self, blocks: Vec<Block>) {
         if let Some(bs) = self.bitswap.as_ref() {
             let client = bs.client().clone();

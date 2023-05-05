@@ -33,41 +33,41 @@ impl Metrics {
     pub(crate) fn new(registry: &mut Registry) -> Self {
         let sub_registry = registry.sub_registry_with_prefix("p2p");
         let bad_peers = Counter::default();
-        sub_registry.register(P2PMetrics::BadPeer.name(), "", Box::new(bad_peers.clone()));
+        sub_registry.register(P2PMetrics::BadPeer.name(), "", bad_peers.clone());
 
         let bad_peers_removed = Counter::default();
         sub_registry.register(
             P2PMetrics::BadPeerRemoved.name(),
             "",
-            Box::new(bad_peers_removed.clone()),
+            bad_peers_removed.clone(),
         );
 
         let skipped_peer_bitswap = Counter::default();
         sub_registry.register(
             P2PMetrics::SkippedPeerBitswap.name(),
             "",
-            Box::new(skipped_peer_bitswap.clone()),
+            skipped_peer_bitswap.clone(),
         );
         let skipped_peer_kad = Counter::default();
         sub_registry.register(
             P2PMetrics::SkippedPeerKad.name(),
             "",
-            Box::new(skipped_peer_kad.clone()),
+            skipped_peer_kad.clone(),
         );
 
         let loops = Counter::default();
-        sub_registry.register(P2PMetrics::LoopCounter.name(), "", Box::new(loops.clone()));
+        sub_registry.register(P2PMetrics::LoopCounter.name(), "", loops.clone());
         let chat = Counter::default();
-        sub_registry.register(P2PMetrics::ChatCounter.name(), "", Box::new(chat.clone()));
+        sub_registry.register(P2PMetrics::ChatCounter.name(), "", chat.clone());
         
         let chat_pending = Counter::default();
-        sub_registry.register(P2PMetrics::ChatPendingCounter.name(), "", Box::new(chat_pending.clone()));
+        sub_registry.register(P2PMetrics::ChatPendingCounter.name(), "", chat_pending.clone());
 
         let chat_pending_request = Counter::default();
-        sub_registry.register(P2PMetrics::ChatPendingRequest.name(), "", Box::new(chat_pending_request.clone()));
+        sub_registry.register(P2PMetrics::ChatPendingRequest.name(), "", chat_pending_request.clone());
         
         let chat_online = Counter::default();
-        sub_registry.register(P2PMetrics::ChatOnline.name(), "", Box::new(chat_online.clone()));
+        sub_registry.register(P2PMetrics::ChatOnline.name(), "", chat_online.clone());
 
         Self {
             bad_peers,

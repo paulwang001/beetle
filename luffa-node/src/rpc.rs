@@ -13,9 +13,11 @@ use libp2p::gossipsub::{
 use libp2p::identify::Info as IdentifyInfo;
 use libp2p::kad::record::Key;
 use libp2p::kad::{Quorum, Record};
+use libp2p::request_response::RequestId;
 use libp2p::Multiaddr;
 use libp2p::PeerId;
-use libp2p::request_response::RequestId;
+
+#[cfg(feature = "bitswap")]
 use luffa_bitswap::Block;
 
 use luffa_rpc_types::{
@@ -108,6 +110,7 @@ impl P2p {
 
     // TODO: expand to handle multiple cids at once. Probably not a tough fix, just want to push
     // forward right now
+    #[cfg(feature = "bitswap")]
     #[tracing::instrument(skip(self, req))]
     pub async fn fetch_bitswap(&self, req: BitswapRequest) -> Result<BitswapResponse> {
         let ctx = req.ctx;
@@ -147,6 +150,7 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self, req))]
+    #[cfg(feature = "bitswap")]
     pub async fn push_bitswap(&self, req: PushBitswapRequest) -> Result<PushBitswapResponse> {
         let PushBitswapRequest { data } = req;
 
@@ -165,6 +169,7 @@ impl P2p {
     }
 
     #[tracing::instrument(skip(self, req))]
+    #[cfg(feature = "bitswap")]
     pub async fn stop_session_bitswap(&self, req: StopSessionBitswapRequest) -> Result<()> {
         let ctx = req.ctx;
         debug!("stop session bitswap {}", ctx);
@@ -182,6 +187,7 @@ impl P2p {
         Ok(())
     }
 
+    #[cfg(feature = "bitswap")]
     #[tracing::instrument(skip(self, req))]
     pub async fn notify_new_blocks_bitswap(&self, req: NotifyNewBlocksBitswapRequest) -> Result<()> {
         let blocks = req
@@ -602,24 +608,19 @@ impl P2p {
 
         Ok(GossipsubUnsubscribeResponse { was_subscribed })
     }
-    
-    pub async fn chat_request(
-        &self,
-        req:ChatRequest,
-    )->Result<Option<ChatResponse>> {
+
+    pub async fn chat_request(&self, req: ChatRequest) -> Result<Option<ChatResponse>> {
         let (s, r) = oneshot::channel();
         let msg = RpcMessage::Chat(
             s,
             req,
         );
-    
+
         self.sender.send(msg).await?;
         let res = r.await??;
-    
+
         Ok(res)
-
     }
-
 }
 
 // /// dispatch a single request from the server 
@@ -712,20 +713,24 @@ pub enum RpcMessage {
     ExternalAddrs(oneshot::Sender<Vec<Multiaddr>>),
     Listeners(oneshot::Sender<Vec<Multiaddr>>),
     LocalPeerId(oneshot::Sender<PeerId>),
+    #[cfg(feature = "bitswap")]
     BitswapRequest {
         ctx: u64,
         cids: Vec<Cid>,
         response_channels: Vec<oneshot::Sender<Result<Block, String>>>,
         providers: HashSet<PeerId>,
     },
+    #[cfg(feature = "bitswap")]
     PushBitswapRequest {
         data: Bytes,
         response_channels: Vec<oneshot::Sender<Result<Cid, String>>>,
     },
+    #[cfg(feature = "bitswap")]
     BitswapNotifyNewBlocks {
         blocks: Vec<Block>,
         response_channel: oneshot::Sender<Result<()>>,
     },
+    #[cfg(feature = "bitswap")]
     BitswapStopSession {
         ctx: u64,
         response_channel: oneshot::Sender<Result<()>>,
@@ -739,7 +744,7 @@ pub enum RpcMessage {
     StopProviding(oneshot::Sender<Result<()>>, Key),
     GetRecord(oneshot::Sender<Result<Option<Record>>>, Key),
     PutRecord(oneshot::Sender<Result<Option<Record>>>, Record),
-    PutRecordTo(oneshot::Sender<Result<Option<Record>>>,Vec<PeerId>, Record),
+    PutRecordTo(oneshot::Sender<Result<Option<Record>>>, Vec<PeerId>, Record),
     NetListeningAddrs(oneshot::Sender<(PeerId, Vec<Multiaddr>)>),
     NetPeers(oneshot::Sender<HashMap<PeerId, Vec<Multiaddr>>>),
     NetConnectByPeerId(oneshot::Sender<Result<()>>, PeerId),
@@ -753,7 +758,7 @@ pub enum RpcMessage {
     CancelListenForIdentify(oneshot::Sender<()>, PeerId),
     AddressesOfPeer(oneshot::Sender<Vec<Multiaddr>>, PeerId),
     // LookupLocalPeerInfo(oneshot::Sender<Lookup>),
-    Chat(oneshot::Sender<Result<Option<ChatResponse>>>,ChatRequest),
+    Chat(oneshot::Sender<Result<Option<ChatResponse>>>, ChatRequest),
     Shutdown,
 }
 

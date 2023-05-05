@@ -71,9 +71,9 @@ impl Core {
     }
 
     pub(crate) fn encode(&self) -> Vec<u8> {
-        let mut buf = vec![];
+        let mut buf = libp2p::bytes::BytesMut::new();
         encode(&mut buf, self.registry()).unwrap();
-        buf
+        buf.to_vec()
     }
 
     pub(crate) fn set_enabled(&self, enabled: bool) {
