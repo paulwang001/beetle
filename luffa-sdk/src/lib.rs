@@ -517,6 +517,9 @@ impl Client {
         let to = u64::from_be_bytes(to);
 
         let my_id = self.get_local_id()?.unwrap();
+        if my_id == to {
+            return Ok(0);
+        }
         let tag = self.find_contacts_tag(my_id)?.unwrap();
 
         let secret_key = key.unwrap();

@@ -3,10 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use async_trait::async_trait;
-use cid::Cid;
 use libp2p::core::identity::Keypair;
-use libp2p::core::PeerId;
 use libp2p::gossipsub::{self, MessageAuthenticity};
 use libp2p::identify;
 use libp2p::kad::store::{MemoryStore, MemoryStoreConfig};
@@ -15,7 +12,7 @@ use libp2p::mdns::tokio::Behaviour as Mdns;
 use libp2p::multiaddr::Protocol;
 use libp2p::ping::Behaviour as Ping;
 use libp2p::relay;
-use libp2p::request_response::RequestResponse;
+use libp2p::request_response::Behaviour as RequestResponse;
 use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{autonat, dcutr};
@@ -165,7 +162,7 @@ impl NodeBehaviour {
                 // TODO: move parsing into config
                 let mut addr = multiaddr.to_owned();
                 if let Some(Protocol::P2p(mh)) = addr.pop() {
-                    let peer_id = PeerId::from_multihash(mh).unwrap();
+                    let peer_id = libp2p::PeerId::from_multihash(mh).unwrap();
                     tracing::info!("add boot>> {:?}  {:?}",peer_id,addr);
                     kademlia.add_address(&peer_id, addr);
                 } else {

@@ -2322,11 +2322,14 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         }
     }
     async fn handle_chat_routing(&mut self, peer_id: PeerId, crc: Vec<u64>) -> Result<()> {
+        if !self.swarm.is_connected(&peer_id) {
+            return Ok(());
+        }
         let local_id = self.local_peer_id();
         let mut digest = crc64fast::Digest::new();
         digest.write(&local_id.to_bytes());
         let my_id = digest.sum64();
-
+         
         let mut digest = crc64fast::Digest::new();
         digest.write(&peer_id.to_bytes());
         let to_id = digest.sum64();
@@ -2468,6 +2471,9 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
         let my_id = digest.sum64();
         let my_idx = self.get_peer_index(my_id);
         if let Some(p) = self.connected_peers.get(&did) {
+            if !self.swarm.is_connected(&p) {
+                return Ok(None);
+            }
             if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
                 let (tx, rx) = tokio::sync::oneshot::channel();
 
@@ -2483,49 +2489,49 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                 return Ok(Some(rx));
             }
         }
-        if let Some(e_idx) = self.connections.find_edge(my_idx, target) {
-            if let Some(w) = self.connections.edge_weight(e_idx) {
-                match w {
-                    ConnectionEdge::Local(p) => {
-                        let mut digest = crc64fast::Digest::new();
-                        digest.write(&p.clone().to_bytes());
-                        let p_id = digest.sum64();
-                        if p_id == did {
-                            if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
-                                let (tx, rx) = tokio::sync::oneshot::channel();
-                                let mut digest = crc64fast::Digest::new();
-                                digest.write(&p.clone().to_bytes());
-                                let to_id = digest.sum64();
-                                let req_id = chat.send_request(p, crate::behaviour::chat::Request(data));
-                                self.pending_request.insert(req_id, (crc,to_id,tx));
-                                tracing::warn!("warn: local chat to [{p:?}] send. crc >> {} match [{} {p_id} === {did}]", crc,p_id == did);
-                                let count = self.pending_request.len() as u64;
-                                record!(P2PMetrics::ChatPendingRequest,count);
-                                return Ok(Some(rx));
-                            }
-                        }
-                        else{
-                            tracing::warn!("[{crc}] to failed {p:?} [{p_id} != {did}]");
-                        }
-                    },
-                    _ => {
-                        // NA
-                    },
-                }
-            }
-            // let mut idx = e_idx;
+        // if let Some(e_idx) = self.connections.find_edge(my_idx, target) {
+        //     if let Some(w) = self.connections.edge_weight(e_idx) {
+        //         match w {
+        //             ConnectionEdge::Local(p) => {
+        //                 let mut digest = crc64fast::Digest::new();
+        //                 digest.write(&p.clone().to_bytes());
+        //                 let p_id = digest.sum64();
+        //                 if p_id == did {
+        //                     if let Some(chat) = self.swarm.behaviour_mut().chat.as_mut() {
+        //                         let (tx, rx) = tokio::sync::oneshot::channel();
+        //                         let mut digest = crc64fast::Digest::new();
+        //                         digest.write(&p.clone().to_bytes());
+        //                         let to_id = digest.sum64();
+        //                         let req_id = chat.send_request(p, crate::behaviour::chat::Request(data));
+        //                         self.pending_request.insert(req_id, (crc,to_id,tx));
+        //                         tracing::warn!("warn: local chat to [{p:?}] send. crc >> {} match [{} {p_id} === {did}]", crc,p_id == did);
+        //                         let count = self.pending_request.len() as u64;
+        //                         record!(P2PMetrics::ChatPendingRequest,count);
+        //                         return Ok(Some(rx));
+        //                     }
+        //                 }
+        //                 else{
+        //                     tracing::warn!("[{crc}] to failed {p:?} [{p_id} != {did}]");
+        //                 }
+        //             },
+        //             _ => {
+        //                 // NA
+        //             },
+        //         }
+        //     }
+        //     // let mut idx = e_idx;
 
-            // while let Some(e) = self.connections.next_edge(idx, Direction::Outgoing) {
-            //     let w = self.connections.edge_weight(e).unwrap();
-            //     tracing::warn!("local chat next edge :{w:?}");
-            //     idx = e;
-            // }
-            // while let Some(e) = self.connections.next_edge(idx, Direction::Incoming) {
-            //     let w = self.connections.edge_weight(e).unwrap();
-            //     tracing::warn!("local chat next edge :{w:?}");
-            //     idx = e;
-            // }
-        }
+        //     // while let Some(e) = self.connections.next_edge(idx, Direction::Outgoing) {
+        //     //     let w = self.connections.edge_weight(e).unwrap();
+        //     //     tracing::warn!("local chat next edge :{w:?}");
+        //     //     idx = e;
+        //     // }
+        //     // while let Some(e) = self.connections.next_edge(idx, Direction::Incoming) {
+        //     //     let w = self.connections.edge_weight(e).unwrap();
+        //     //     tracing::warn!("local chat next edge :{w:?}");
+        //     //     idx = e;
+        //     // }
+        // }
         tracing::warn!("local chat msg {crc} can not push to {did}");
         Ok(None)
     }

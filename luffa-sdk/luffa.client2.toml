@@ -1,3 +1,5 @@
+[store]
+path = "/tmp/.local/client100/store"
 [p2p]
-libp2p = { listening_multiaddrs = ["/ip4/0.0.0.0/udp/0/quic-v1"],bootstrap_peers=["/ip4/180.178.40.194/udp/8899/quic-v1/p2p/12D3KooWME7g9tBz3fK9r3VbAwpAQKSxVC9KoJA1xymX1VaoW2Yq"]}
-
+libp2p = { listening_multiaddrs = ["/ip4/0.0.0.0/udp/0/quic-v1"],bootstrap_peers=["/ip4/172.27.87.4/udp/8899/quic-v1/p2p/12D3KooWGnJiugpo97wWSQPhPVhjFf2opCSz1NuEhFbQ9Hp9xXNg"]}
+key_store_path = "/tmp/.local/client100/keys"

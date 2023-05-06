@@ -30,7 +30,6 @@ use tracing_subscriber::fmt::format::FmtSpan;
 use std::env::consts::{ARCH, OS};
 use std::time::Duration;
 use tokio::task::JoinHandle;
-use tracing::log::{debug, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter,fmt::Layer};
 use tracing_subscriber::filter::LevelFilter;

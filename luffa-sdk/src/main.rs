@@ -19,7 +19,6 @@ use std::task::Poll;
 use std::time::Duration;
 use std::{collections::VecDeque, sync::Arc, sync::Mutex};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tracing::log::warn;
 use tracing::{error, info};
 
 #[derive(Parser, Debug, Clone)]

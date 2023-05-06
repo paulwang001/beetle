@@ -111,7 +111,7 @@ once_cell = "1.15"
 prost = "0.11"
 prost-build = "0.11.1"
 indicatif = "0.17.1"
-libp2p = { version = "0.51.3", default-features = false }
+libp2p = { version = "0.51.3", default-features = false}
 
 luffa-util = { version = "0.1.0", path = "./luffa-util" }
 luffa-metrics = { version = "0.1.0", path = "./luffa-metrics" }

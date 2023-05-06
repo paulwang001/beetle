@@ -125,10 +125,10 @@ pub(crate) async fn build_swarm(
 
     let (transport, relay_client) = build_transport(keypair, config).await;
     let behaviour = NodeBehaviour::new(keypair, config, relay_client, db,agent).await?;
-
+    
     let limits = ConnectionLimits::default()
-        .with_max_pending_incoming(Some(config.max_conns_pending_in))
-        .with_max_pending_outgoing(Some(config.max_conns_pending_out))
+        // .with_max_pending_incoming(Some(config.max_conns_pending_in))
+        // .with_max_pending_outgoing(Some(config.max_conns_pending_out))
         .with_max_established_incoming(Some(config.max_conns_in))
         .with_max_established_outgoing(Some(config.max_conns_out))
         .with_max_established_per_peer(Some(config.max_conns_per_peer));
