@@ -18,7 +18,7 @@ use libp2p::core::ConnectedPoint;
 use libp2p::swarm::dial_opts::DialOpts;
 use libp2p::swarm::{
     CloseConnection, DialError, IntoConnectionHandler, NetworkBehaviour, NetworkBehaviourAction,
-    NotifyHandler, PollParameters,
+    NotifyHandler, PollParameters, ConnectionId,
 };
 use libp2p::{Multiaddr, PeerId};
 use luffa_metrics::record;
@@ -410,7 +410,7 @@ impl<S: Store> NetworkBehaviour for Bitswap<S> {
     fn addresses_of_peer(&mut self, _peer_id: &PeerId) -> Vec<Multiaddr> {
         Default::default()
     }
-
+     
     fn inject_connection_established(
         &mut self,
         peer_id: &PeerId,

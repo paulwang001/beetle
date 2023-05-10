@@ -1240,6 +1240,12 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         }
                                                         
                                                     }
+                                                    FeedbackStatus::Notice=>{
+                                                        let data = data.clone();
+                                                        self.emit_network_event(NetworkEvent::RequestResponse(
+                                                            ChatEvent::Response { request_id:None, data },
+                                                        ));
+                                                    }
                                                     _=>{
                                                         
                                                     }
@@ -1486,22 +1492,6 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                     else{
                                                         continue;
                                                     }
-                                                    match nonce.as_ref() {
-                                                        Some(nc)=>{
-                                                            if (nc.len() > 13 &&  &nc[31] == &u8::MAX) || nc.len() < 32 {
-                                                                let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(g_id), status: FeedbackStatus::Notice };
-                                                                let evt = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id,None);
-                                                                let data = evt.encode()?;
-                                                                self.emit_network_event(NetworkEvent::RequestResponse(
-                                                                    ChatEvent::Response { request_id:None, data },
-                                                                ));
-                                                            }
-                                                            
-                                                        }
-                                                        None=>{
-                
-                                                        }
-                                                    } 
                                                     
                                                 }
                                                 if let Ok(Some(rx)) =
@@ -1821,6 +1811,24 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                         let notice = Message::Feedback {crc:vec![crc],from_id:None, to_id: None, status: FeedbackStatus::Notice };
                                                         let evt = luffa_rpc_types::Event::new(to,&notice,None,from_id,None);
                                                         let data = evt.encode()?;
+                                                        if let Some(go) =
+                                                        self.swarm.behaviour_mut().gossipsub.as_mut()
+                                                        {
+                                                            if let Err(e) = go.publish(
+                                                                TopicHash::from_raw(TOPIC_CHAT),
+                                                                data.clone(),
+                                                            ) {
+                                                                match e  {
+                                                                    PublishError::InsufficientPeers=>{
+                                                                        
+                                                                    }
+                                                                    ee=>{
+                                                                        self.pub_pending.push_back((data.clone(),Instant::now(),1));
+                                                                    }
+                                                                }
+                                                            }
+                                                        
+                                                        }
                                                         self.emit_network_event(NetworkEvent::RequestResponse(
                                                             ChatEvent::Response { request_id:Some(request_id), data },
                                                         ));
@@ -2000,6 +2008,24 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                                 let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(g_id), status: FeedbackStatus::Notice };
                                                                 let evt = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id,None);
                                                                 let data = evt.encode()?;
+                                                                if let Some(go) =
+                                                                self.swarm.behaviour_mut().gossipsub.as_mut()
+                                                                {
+                                                                    if let Err(e) = go.publish(
+                                                                        TopicHash::from_raw(TOPIC_CHAT),
+                                                                        data.clone(),
+                                                                    ) {
+                                                                        match e  {
+                                                                            PublishError::InsufficientPeers=>{
+                                                                                
+                                                                            }
+                                                                            ee=>{
+                                                                                self.pub_pending.push_back((data.clone(),Instant::now(),1));
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                
+                                                                }
                                                                 self.emit_network_event(NetworkEvent::RequestResponse(
                                                                     ChatEvent::Response { request_id:None, data },
                                                                 ));
@@ -2120,10 +2146,7 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                             }
                                                         }
                                                     }
-                                                    // let pending = self.pending_routing.entry(to).or_insert(Vec::new());
-                                                    // if pending.iter().find(|(x,_)| *x == crc ).is_none() {
-                                                    //     pending.push((crc,std::time::Instant::now()));
-                                                    // }
+                                                
                                                 }
                                                 let g_id = to;        
                                                 let g_idx = self.get_contacts_index(to);
@@ -2159,6 +2182,24 @@ impl<KeyStorage: Storage> Node<KeyStorage> {
                                                                     let notice = Message::Feedback {crc:vec![],from_id:None, to_id: Some(g_id), status: FeedbackStatus::Notice };
                                                                     let evt = luffa_rpc_types::Event::new(*to_id,&notice,None,from_id,None);
                                                                     let data = evt.encode()?;
+                                                                    if let Some(go) =
+                                                                        self.swarm.behaviour_mut().gossipsub.as_mut()
+                                                                    {
+                                                                        if let Err(e) = go.publish(
+                                                                            TopicHash::from_raw(TOPIC_CHAT),
+                                                                            data.clone(),
+                                                                        ) {
+                                                                            match e  {
+                                                                                PublishError::InsufficientPeers=>{
+                                                                                    
+                                                                                }
+                                                                                ee=>{
+                                                                                    self.pub_pending.push_back((data.clone(),Instant::now(),1));
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    
+                                                                    }
                                                                     self.emit_network_event(NetworkEvent::RequestResponse(
                                                                         ChatEvent::Response { request_id:None, data },
                                                                     ));

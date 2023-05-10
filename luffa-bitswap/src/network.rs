@@ -11,7 +11,7 @@ use cid::Cid;
 use futures::Stream;
 use luffa_metrics::{bitswap::BitswapMetrics, inc};
 use luffa_metrics::{core::MRecorder, record};
-use libp2p::{core::connection::ConnectionId, PeerId};
+use libp2p::{PeerId, swarm::ConnectionId};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, error, info, trace};
 

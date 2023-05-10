@@ -2,10 +2,9 @@ use std::{sync::Arc, time::{Duration, Instant}, collections::{VecDeque, HashSet}
 
 use chrono::Utc;
 use libp2p::PeerId;
-use luffa_node::{NetworkEvent, GossipsubEvent};
+use luffa_node::{GossipsubEvent, NetworkEvent};
 use luffa_rpc_types::{
-    ChatContent, Contacts,ContactsTypes, Event,
-    FeedbackStatus, Message, AppStatus,
+    message_from, AppStatus, ChatContent, Contacts, ContactsTypes, Event, FeedbackStatus, Message,
 };
 use parking_lot::RwLock;
 use sled::Db;
@@ -448,6 +447,7 @@ impl Client {
                                                         | FeedbackStatus::Notice => {
                                                             let mut ls_crc = crc;
                                                             let client_t = client_t.clone();
+                                                            let client_s = client_t.clone();
                                                             let db_tt = db_t.clone();
                                                             let cb_t = cb.clone();
                                                             let idx_t = idx.clone();
@@ -468,19 +468,20 @@ impl Client {
                                                                     !fetchs.contains(c)
                                                                 });
                                                             }
-                                                            let fetching_crc_t =
-                                                                fetching_crc.clone();
-                                                            let session_last_crc_t = session_last_crc_t.clone();
-                                                            let msg_tx = sender.clone();
-
-                                                            tokio::spawn(async move {
-                                                                let client_t = client_t.clone();
+                                                            let having_crc = Arc::new(RwLock::new(HashSet::<u64>::new()));
+                                                            for crc in ls_crc {
+                                                                let fetching_crc_t =
+                                                                    fetching_crc.clone();
+                                                                let session_last_crc_t = session_last_crc_t.clone();
+                                                                let msg_tx = sender.clone();
+                                                                let client_tt = client_t.clone();
                                                                 let db_tt = db_tt.clone();
                                                                 let cb_t = cb_t.clone();
                                                                 let idx_t = idx_t.clone();
                                                                 let schema_t = schema_t.clone();
-                                                                for crc in ls_crc {
-                                                                    match client_t
+                                                                let having_crc = having_crc.clone();
+                                                                tokio::spawn(async move {
+                                                                    match client_tt
                                                                         .get_crc_record(crc)
                                                                         .await
                                                                     {
@@ -502,29 +503,19 @@ impl Client {
 
                                                                                 if !Self::have_in_tree(db_tt.clone(), crc, &table) {
                                                                                     Self::process_event(
-                                                                                        db_tt.clone(), cb_t.clone(), client_t.clone(), idx_t.clone(), schema_t.clone(), &data, my_id,
+                                                                                        db_tt.clone(), cb_t.clone(), client_tt.clone(), idx_t.clone(), schema_t.clone(), &data, my_id,
                                                                                         session_last_crc_t.clone(),
                                                                                         msg_tx.clone(),
                                                                                     )
                                                                                         .await;
                                                                                 } else {
                                                                                     tracing::error!("have in tree {crc}");
-                                                                                    // client_t.chat_request(bytes::Bytes::from());
-                                                                                    let feed = luffa_rpc_types::Message::Feedback { crc: vec![crc], from_id: Some(my_id), to_id: Some(0), status: luffa_rpc_types::FeedbackStatus::Reach };
-                                                                                    let event = luffa_rpc_types::Event::new(
-                                                                                        0,
-                                                                                        &feed,
-                                                                                        None,
-                                                                                        my_id,
-                                                                                        None,
-                                                                                    );
-                                                                                    tracing::warn!("having>>> send feedback reach to relay");
-                                                                                    let event = event.encode().unwrap();
-                                                                                    if let Err(e) =
-                                                                                        client_t.chat_request(bytes::Bytes::from(event)).await
                                                                                     {
-                                                                                        error!("{e:?}");
+                                                                                        let mut having_crc =
+                                                                                        having_crc.write();
+                                                                                        having_crc.insert(crc);
                                                                                     }
+                                                                                    
                                                                                 }
                                                                             }
                                                                         }
@@ -537,8 +528,29 @@ impl Client {
                                                                             fetching_crc_t.write();
                                                                         f_crc.remove(&crc);
                                                                     }
-                                                                }
-                                                            });
+                                                                });
+                                                            }
+                                                            {
+                                                                let having_crc = having_crc.read();
+                                                                let crc = having_crc.iter().map(|x| *x).collect::<Vec<_>>();
+                                                                let feed = luffa_rpc_types::Message::Feedback { crc, from_id: Some(my_id), to_id: Some(0), status: luffa_rpc_types::FeedbackStatus::Reach };
+                                                                let event = luffa_rpc_types::Event::new(
+                                                                    0,
+                                                                    &feed,
+                                                                    None,
+                                                                    my_id,
+                                                                    None,
+                                                                );
+                                                                tracing::warn!("having>>> send feedback reach to relay");
+                                                                let event = event.encode().unwrap();
+                                                                tokio::spawn(async move {
+                                                                    if let Err(e) =
+                                                                        client_s.chat_request(bytes::Bytes::from(event)).await
+                                                                    {
+                                                                        error!("{e:?}");
+                                                                    }
+                                                                });
+                                                            }
                                                         }
                                                         _ => {
                                                             tracing::warn!("from relay request no nonce msg Feedback>>>>{status:?}");
@@ -784,7 +796,14 @@ impl Client {
                                     &format!("message_{to}"),
                                     FeedbackStatus::Failed as u8,
                                 );
-
+                                let msg = req.msg.clone();
+                                if let Some(msg) = message_from(msg) {
+                                    if msg.is_contacts_exchange() {
+                                        let mut push = pendings_t.write().await;
+                                        push.push_back((req, count + 1, Instant::now()));
+                                        return;
+                                    }
+                                }
                                 some_pendding.remove(&req.crc.to_be_bytes()).unwrap();
                                 some_pendding.flush().unwrap();
                                 return;

@@ -126,8 +126,8 @@ async fn main() -> Result<()> {
         }
         let mut count = 0u64;
         loop {
-            tokio::time::sleep(Duration::from_secs(2)).await;
-            if count % 6 == 0 {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            if count % 60 == 0 {
                 if let Ok(_) = tokio::time::timeout(Duration::from_secs(10), async {
                     tracing::info!("client publicsh relay.");
                     let msg = luffa_rpc_types::Message::RelayNode { did: my_id };
