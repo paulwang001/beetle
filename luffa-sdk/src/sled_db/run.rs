@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::{Duration, Instant}, collections::{VecDeque, HashSet}};
+use std::{sync::Arc, time::{Duration, Instant}, collections::{VecDeque, HashSet, HashMap}};
 
 use chrono::Utc;
 use libp2p::PeerId;
@@ -42,6 +42,7 @@ impl Client {
         client: P2pClient,
         mut events: tokio::sync::mpsc::Receiver<NetworkEvent>,
         p2p_rpc: JoinHandle<()>,
+        nodes: Arc<RwLock<HashMap<u64, Instant>>>,
     ) {
         // let (tx, rx) = tokio::sync::mpsc::channel::<NetworkEvent>(4096);
         let cb = Arc::new(cb);
@@ -51,21 +52,19 @@ impl Client {
         let my_id = digest.sum64();
         let db_t = db.clone();
         let client_t = client.clone();
+        let nodes_t = nodes.clone();
         let sync_task = tokio::spawn(async move {
             let mut count = 0_u64;
             loop {
-                match client_t.get_peers().await {
-                    Ok(peers) => {
-                        if peers.is_empty() {
-                            tokio::time::sleep(Duration::from_millis(500)).await;
-                            continue;
-                        }
-                    }
-                    _ => {
-                        tokio::time::sleep(Duration::from_millis(500)).await;
-                        continue;
-                    }
+                let is_ready = {
+                    let nodes = nodes_t.read();
+                    nodes.iter().filter(|(_,x)| x.elapsed().as_millis() < 5000).count() > 0
+                };
+                if !is_ready {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
                 }
+                
                 if count % 6 == 0 {
                     tracing::info!("subscribed all as client,status sync");
                     let msg = luffa_rpc_types::Message::StatusSync {
@@ -202,6 +201,7 @@ impl Client {
         let schema_t = schema.clone();
         let schema_tt = schema.clone();
         let cb_local = cb.clone();
+        let nodes_t = nodes.clone();
         let process = tokio::spawn(async move {
             let fetching_crc = Arc::new(RwLock::new(HashSet::<u64>::new()));
             while let Some(evt) = events.recv().await {
@@ -629,10 +629,20 @@ impl Client {
                         // TODO: a group member or my friend offline?
                     }
                     NetworkEvent::PeerConnected(peer_id) => {
-                        tracing::info!("---------PeerConnected-----------{:?}", peer_id);
+                        tracing::error!("---------PeerConnected-----------{:?}", peer_id);
+                        // let mut digest = crc64fast::Digest::new();
+                        // digest.write(&peer_id.to_bytes());
+                        // let relay_id = digest.sum64();
+                        // let mut nodes = nodes_t.write();
+                        // nodes.insert(relay_id, Instant::now());
                     }
                     NetworkEvent::PeerDisconnected(peer_id) => {
                         tracing::debug!("---------PeerDisconnected-----------{:?}", peer_id);
+                        let mut digest = crc64fast::Digest::new();
+                        digest.write(&peer_id.to_bytes());
+                        let relay_id = digest.sum64();
+                        let mut nodes = nodes_t.write();
+                        nodes.remove(&relay_id);
                     }
                     NetworkEvent::CancelLookupQuery(peer_id) => {
                         tracing::debug!("---------CancelLookupQuery-----------{:?}", peer_id);
@@ -641,7 +651,8 @@ impl Client {
                         let mut digest = crc64fast::Digest::new();
                         digest.write(&info.peer.to_bytes());
                         let relay_id = digest.sum64();
-
+                        let mut nodes = nodes_t.write();
+                        nodes.insert(relay_id, Instant::now());
                         cb.on_message(
                             0,
                             0,
@@ -675,29 +686,15 @@ impl Client {
         let cb_tt = cb_local.clone();
         let client_pending = client.clone();
         let pending_task = tokio::spawn(async move {
-            // let c = client_pending.clone();
-            let client_connected = || async {
-                match client_pending.get_peers().await {
-                    Ok(peers) => {
-                        if peers.is_empty() {
-                            false
-                        } else {
-                            true
-                        }
-                    }
-                    _ => true,
-                }
-            };
             let mut first = true;
             loop {
-                {
-                    let p = pendings_t.read().await;
-                    if p.is_empty() {
-                        tokio::time::sleep(Duration::from_millis(500)).await;
-                        continue;
-                    }
+                let is_ready = {
+                    nodes.read().iter().filter(|(_,t)|t.elapsed().as_millis() < 5000).count() > 0
+                };
+                if !is_ready {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
                 }
-
                 if first {
                     let feed = Message::StatusSync {
                         from_id: my_id,
@@ -709,8 +706,16 @@ impl Client {
                     cb_tt.on_message(0, my_id, 0, now, feed);
                     first = false;
                 }
+                {
+                    let p = pendings_t.read().await;
+                    if p.is_empty() {
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
+                }
+
                 if let Some((req, count, _time, all_size)) =
-                    {
+                {
                     let mut p = pendings_t.write().await;
                     let all_size = p.len();
                     tracing::info!("pending size:{}", all_size);
@@ -723,7 +728,7 @@ impl Client {
                             p.push_back((r, c, t));
                             continue;
                         }
-                        else if t.elapsed().as_millis() < 300 && r.nonce.is_some() {
+                        if r.nonce.is_some() {
                             if c > 32 {
                                 let now = Utc::now().timestamp_millis() as u64;
                                 let (tt,u)= {
@@ -743,9 +748,9 @@ impl Client {
                                 let err = Message::InnerError { kind: 200, reason: format!("Warnning >>crc {crc} send count {c} in {tt} {u}") };
                                 let err = serde_cbor::to_vec(&err).unwrap();
                                 cb_tt.on_message(r.crc, 0, 0, now, err);
+                                continue;
                             }
-                            p.push_back((r, c, t));
-                            continue;
+                            
                         }
                         req = Some((r, c, t, all_size));
                         break;
@@ -754,7 +759,7 @@ impl Client {
                 }
                 {
                     let to = req.to;
-                    tokio::time::sleep(Duration::from_millis(300)).await;
+                    tokio::time::sleep(Duration::from_millis(10)).await;
                     let event_time = req.event_time;
                     // let nonce = &req.nonce;
                     let data = req.encode().unwrap();
@@ -808,18 +813,29 @@ impl Client {
                                 some_pendding.flush().unwrap();
                                 return;
                             }
+                            else{
+                                let mut push = pendings_t.write().await;
+                                push.push_front((req, count + 1, Instant::now()));
+                            }
+                        }
+                        else{
+                            let mut push = pendings_t.write().await;
+                            push.push_back((req, count + 1, Instant::now()));
                         }
 
-                        let mut push = pendings_t.write().await;
-                        push.push_back((req, count + 1, Instant::now()));
+                        
                     };
 
-                    if !client_connected().await {
-                        handle_send_failed().await;
-                        tokio::time::sleep(Duration::from_millis(500)).await;
-                        continue;
-                    }
+                    // if !client_connected().await {
+                    //     handle_send_failed().await;
+                    //     tokio::time::sleep(Duration::from_millis(100)).await;
+                    //     continue;
+                    // }
 
+                    if nonce_is_some {
+
+                        tracing::error!("sending {crc}");
+                    }
                     match client_pending
                         .chat_request(bytes::Bytes::from(data.clone()))
                         .await
@@ -836,20 +852,23 @@ impl Client {
                                 let table = format!("message_{to}");
                                 Self::save_to_tree_status(db_t2.clone(), crc, &table, FeedbackStatus::Send as u8);
                                 cb_tt.on_message(crc, my_id, to, event_time, feed);
-                                some_pendding.remove(&crc.to_be_bytes()).unwrap();
-                                some_pendding.flush().unwrap();
+                                tracing::error!("send ok {}  {crc}",res.is_some());
                             }
-                            tracing::debug!("{res:?}");
+                            else{
+                                tracing::error!("2 >> send ok {}  {crc}",res.is_some());
+                            }
+                            some_pendding.remove(&crc.to_be_bytes()).unwrap();
+                            some_pendding.flush().unwrap();
                         }
                         Err(e) => {
                             tracing::error!("pending chat request failed [{}]: {e:?}",crc);
-                            tokio::time::sleep(Duration::from_millis(300)).await;
-
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                            
                             handle_send_failed().await;
                         }
                     }
                 } else {
-                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             }
         });
@@ -1041,7 +1060,7 @@ impl Client {
                             if will_save && nonce.is_some() {
                                 Self::save_to_tree(
                                     db_t.clone(),
-                                    e.crc,
+                                    crc,
                                     &table,
                                     data.clone(),
                                     event_time,
@@ -1054,7 +1073,6 @@ impl Client {
                         None
                     };
                     if to != my_id {
-                        let client = client.clone();
                         if msg.is_important() {
                             let last_crc = session_last_crc.write();
                             match last_crc.insert(to.to_be_bytes(), req.crc.to_be_bytes().to_vec())
@@ -1067,20 +1085,7 @@ impl Client {
                                 }
                             }
                         }
-                        let event_time = req.event_time;
-                        let pendings_t = pendings.clone();
-                        let cb_t = cb_local.clone();
-                        // if req.nonce.is_some() {
-                        //     let sending = Message::Feedback {
-                        //         crc: vec![req.crc],
-                        //         from_id: Some(my_id),
-                        //         to_id: Some(to),
-                        //         status: FeedbackStatus::Sending,
-                        //     };
-                        //     let sending = serde_cbor::to_vec(&sending).unwrap();
-                        //     cb_t.on_message(req.crc, my_id, to, event_time, sending);
-                        // }
-                        let db_t2 = db_t.clone();
+                        
                         if let Some(job) = save_job {
                             match job.await {
                                 Ok(crc)=>{
@@ -1098,59 +1103,19 @@ impl Client {
                                 tracing::info!("channel send failed {e:?}");
                             }
                         }
-                        tokio::spawn(async move {
-                            let data = req.encode().unwrap();
-                            tracing::info!("sending: [ {} ] size:{}", req.crc, data.len());
-
-                            if req.nonce.is_some() {
-                                let some_pendding = db_t2.open_tree("some_pendding").unwrap();
-                                some_pendding.insert(req.crc.to_be_bytes(), data.clone()).unwrap();
-                                some_pendding.flush().unwrap();
-                            }
-
-                            match client.chat_request(bytes::Bytes::from(data.clone())).await {
-                                Ok(res) => {
-                                    tracing::warn!("send: [ {} ] ", req.crc);
-
-                                    if req.nonce.is_some() {
-                                        let some_pendding = db_t2.open_tree("some_pendding").unwrap();
-                                        some_pendding.remove(req.crc.to_be_bytes()).unwrap();
-                                        some_pendding.flush().unwrap();
-
-                                        let feed = Message::Feedback {
-                                            crc: vec![req.crc],
-                                            from_id: Some(my_id),
-                                            to_id: Some(to),
-                                            status: FeedbackStatus::Send,
-                                        };
-                                        let feed = serde_cbor::to_vec(&feed).unwrap();
-                                        let table = format!("message_{to}");
-                                        Self::save_to_tree_status(
-                                            db_t2.clone(),
-                                            req.crc,
-                                            &table,
-                                            1,
-                                        );
-                                        cb_t.on_message(req.crc, my_id, to, event_time, feed);
-                                    }
-                                    tracing::debug!("{res:?}");
-                                }
-                                Err(e) => {
-                                    tracing::error!("chat request failed [{}]: {e:?}", req.crc);
-                                    // if req.nonce.is_some() {
-                                    // // tokio::time::sleep(Duration::from_millis(1000)).await;
-                                    // if req.nonce.is_some() {
-                                    //     let feed = Message::Feedback { crc: vec![req.crc], from_id: Some(my_id), to_id: Some(to), status: FeedbackStatus::Sending };
-                                    //     let feed = serde_cbor::to_vec(&feed).unwrap();
-                                    //     cb_t.on_message(req.crc, my_id, to,event_time, feed);
-                                    // }
-                                    let mut push = pendings_t.write().await;
-                                    push.push_back((req, 1, Instant::now()));
-
-                                    // }
-                                }
-                            }
-                        });
+                        let data = req.encode().unwrap();
+                        if req.nonce.is_some() {
+                            let some_pendding = db_t.open_tree("some_pendding").unwrap();
+                            some_pendding.insert(req.crc.to_be_bytes(), data.clone()).unwrap();
+                            some_pendding.flush().unwrap();
+                        }
+                        let pendings_t = pendings.clone();
+                        let mut push = pendings_t.write().await;
+                        if req.nonce.is_some() {
+                            tracing::error!("pending send crc {}",req.crc);
+                        }
+                        push.push_back((req, 1, Instant::now()));
+                        
                     } else {
                         tracing::error!("is to me----> {req:?} |||| {msg:?}");
                         if let Err(e) = channel.send(Ok(0)) {

@@ -11,6 +11,7 @@ use luffa_rpc_types::{
     RtcAction,
 };
 use luffa_sdk::{Callback, Client, OfferStatus};
+use std::collections::HashMap;
 use std::future::{Future, IntoFuture};
 use std::path::PathBuf;
 use std::sync::mpsc::sync_channel;
@@ -92,12 +93,22 @@ fn main() -> Result<()> {
     //         std::thread::sleep(std::time::Duration::from_secs(5));
     //     }
     // });
-
+    let connected_nodes = Arc::new(RwLock::new(HashMap::<u64, std::time::Instant>::new()));
+    let connected_nodes_t = connected_nodes.clone();
     std::thread::spawn(move || {
-        let mut x = 0;
+        let mut idx = 0_u64;
         let mut code = String::new();
         loop {
-            std::thread::sleep(Duration::from_secs(10));
+            let is_ready =
+            {
+                let nodes = connected_nodes_t.read().unwrap();
+                nodes.iter().filter(|(_,t)| t.elapsed().as_millis() < 5000).count() > 0
+            };
+            std::thread::sleep(Duration::from_millis(1000));
+            if !is_ready {
+                tracing::error!("waiting ...");
+                continue;
+            }
             let peer_id = client.get_local_id().unwrap().unwrap();
             tracing::warn!("peer id: {peer_id:?}");
             let peers = client.relay_list();
@@ -107,7 +118,6 @@ fn main() -> Result<()> {
                 Some(to_id) => {
                     match client.find_contacts_tag(to_id).unwrap() {
                         Some(tag) => {
-                            x += 1;
                             tracing::info!("is man");
 
                             // let msg = Message::WebRtc { stream_id: 1000, action: RtcAction::Push { audio_id: 2, video_id: 3 } };
@@ -222,7 +232,8 @@ fn main() -> Result<()> {
                                 content: luffa_rpc_types::ChatContent::Send {
                                     data: luffa_rpc_types::ContentData::Text {
                                         source: luffa_rpc_types::DataSource::Text {
-                                            content: mnemonic.into_phrase(),
+                                            // content: mnemonic.into_phrase(),
+                                            content: format!("{idx}"),
                                         },
                                         reference: None,
                                     },
@@ -230,10 +241,11 @@ fn main() -> Result<()> {
                             };
                             let msg = message_to(msg).unwrap();
                             let crc = client.send_msg(c.did, msg).unwrap();
-                            tracing::warn!(
+                            tracing::error!(
                                 "private msg send seccess {crc}"
                             );
                             n+=1;
+                            idx+=1;
                         }
                         if members.len() < 4 {
                             let msg = Message::InnerError {
@@ -327,6 +339,8 @@ fn main() -> Result<()> {
         match &msg {
             Message::Ping { relay_id, ttl_ms } => {
                 tracing::info!("-----relay------{} ---ttl:{} ms", relay_id, ttl_ms);
+                let mut nodes = connected_nodes.write().unwrap();
+                nodes.insert(*relay_id, std::time::Instant::now());
             }
             Message::WebRtc { action } => match action {
                 RtcAction::Status { code, info } => {}

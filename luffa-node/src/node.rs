@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::error::Error;
 use std::fmt;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
@@ -9,17 +8,12 @@ use std::time::{Duration, Instant};
 use ahash::AHashMap;
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
-use cid::Cid;
 use futures_util::stream::StreamExt;
-use libipld::{
-    cbor::DagCborCodec,
-    prelude::{Codec, Decode, Encode},
-    Ipld, IpldCodec,
-};
+
 use libp2p::core::Multiaddr;
-use libp2p::gossipsub::error::PublishError;
-use libp2p::gossipsub::{GossipsubMessage, MessageId, TopicHash};
+use libp2p::gossipsub::PublishError;
 pub use libp2p::gossipsub::{IdentTopic, Topic};
+use libp2p::gossipsub::{Message as GossipsubMessage, MessageId, TopicHash};
 use libp2p::identify::{Event as IdentifyEvent, Info as IdentifyInfo};
 use libp2p::identity::Keypair;
 use libp2p::kad::kbucket::{Distance, NodeStatus};
@@ -33,7 +27,8 @@ use libp2p::multiaddr::Protocol;
 use libp2p::ping;
 use libp2p::ping::Result as PingResult;
 use libp2p::request_response::{
-    InboundFailure, OutboundFailure, RequestId, RequestResponseEvent, RequestResponseMessage,
+    Event as RequestResponseEvent, InboundFailure, Message as RequestResponseMessage,
+    OutboundFailure, RequestId,
 };
 use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::{ConnectionHandler, IntoConnectionHandler, NetworkBehaviour, SwarmEvent};
@@ -41,10 +36,10 @@ use libp2p::{PeerId, Swarm};
 
 #[cfg(feature = "bitswap")]
 use luffa_bitswap::{BitswapEvent, Block};
+
 use luffa_metrics::{core::MRecorder, inc, libp2p_metrics, p2p::P2PMetrics, record};
 use luffa_rpc_types::p2p::{ChatRequest, ChatResponse};
 use luffa_rpc_types::{AppStatus, ChatContent, ContactsTypes, FeedbackStatus, Message};
-use multihash::MultihashDigest;
 use petgraph::algo::astar;
 use petgraph::prelude::*;
 use tokio::sync::mpsc::{channel, Receiver, Sender};

@@ -1,1 +1,1 @@
-cargo ndk -t armeabi-v7a -t arm64-v8a -o ./jniLibs build --release --lib
+cargo ndk -t armeabi-v7a -t arm64-v8a -o ./jniLibs build --release --lib  -Zbuild-std

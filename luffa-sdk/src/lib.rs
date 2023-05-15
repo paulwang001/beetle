@@ -318,6 +318,7 @@ pub struct Client {
     store: Arc<RwLock<Option<Arc<luffa_store::Store>>>>,
     is_init: Arc<AtomicBool>,
     is_started: Arc<std::sync::Mutex<bool>>,
+    nodes: Arc<RwLock<HashMap<u64, Instant>>>,
 }
 
 impl ContactsDb for Client {}
@@ -359,6 +360,7 @@ impl Client {
             idx: Arc::new(RwLock::new(None)),
             is_init: Default::default(),
             is_started: Default::default(),
+            nodes: Default::default(),
         }
     }
 
@@ -1139,7 +1141,14 @@ impl Client {
         };
         Ok(res)
     }
-
+    pub fn is_ready(&self) -> bool {
+        self.nodes
+            .read()
+            .iter()
+            .filter(|(_, x)| x.elapsed().as_millis() < 5000)
+            .count()
+            > 0
+    }
     pub fn recent_messages(&self, did: u64, offset: u32, limit: u32) -> ClientResult<Vec<u64>> {
         let mut msgs = vec![];
         let table = format!("message_{did}_time");
@@ -2784,10 +2793,11 @@ impl Client {
                 *x = Some(client.clone());
             }
             let sender = self.sender.read().clone().unwrap();
+            let nodes = self.nodes.clone();
             tokio::spawn(async move {
                 debug!("runing...");
                 Self::run(
-                    db, cb, rx, sender, idx_writer, schema, &peer, client, events, p2p_rpc,
+                    db, cb, rx, sender, idx_writer, schema, &peer, client, events, p2p_rpc,nodes,
                 )
                 .await;
                 debug!("run exit!....");
@@ -3237,8 +3247,8 @@ pub async fn start_node(
 )> {
     config.libp2p.dial_concurrency_factor = 3;
     config.libp2p.max_conns_per_peer = 1;
-    config.libp2p.max_conns_in = 2;
-    config.libp2p.max_conns_out = 2;
+    config.libp2p.max_conns_in = 3;
+    config.libp2p.max_conns_out = 3;
     // let len = config.libp2p.bootstrap_peers.len();
     // let x: usize = rand::random();
     // let x = x % len;
