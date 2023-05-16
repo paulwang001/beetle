@@ -46,6 +46,8 @@ crc64fast.workspace = true
 tiny-bip39 = "1.0.0"
 chrono.workspace = true
 
+sled.workspace = true
+
 [dependencies.libp2p]
 workspace = true
 features = [

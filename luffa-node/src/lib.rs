@@ -1,3 +1,4 @@
+mod SledStore;
 pub mod behaviour;
 pub mod cli;
 pub mod config;
